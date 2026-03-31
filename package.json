@@ -1,0 +1,21 @@
+{
+  "version": "0.0.1",
+  "keywords": [],
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test:watch": "jest --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ranwawa/configurations.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ranwawa/configurations/issues"
+  },
+  "homepage": "https://github.com/ranwawa/configurations#readme",
+  "author": "ranwawa <274544338@qq.com> (https://github.com/ranwawa)",
+  "license": "ISC",
+  "name": "@ranwawa/along",
+  "description": ""
+}
