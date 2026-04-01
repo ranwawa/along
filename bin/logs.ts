@@ -11,16 +11,16 @@ import { Command } from "commander";
 import chalk from "chalk";
 
 async function listLogs(num?: string, limit: number = 10) {
-  if (!fs.existsSync(config.TEMP_DIR)) {
+  if (!fs.existsSync(config.LOG_DIR)) {
     log_error("日志目录不存在，暂无日志");
     return;
   }
 
   let files = fs
-    .readdirSync(config.TEMP_DIR)
+    .readdirSync(config.LOG_DIR)
     .filter((f) => f.endsWith(".log"))
     .map((f) => {
-      const filePath = path.join(config.TEMP_DIR, f);
+      const filePath = path.join(config.LOG_DIR, f);
       const stat = fs.statSync(filePath);
       return { name: f, path: filePath, mtime: stat.mtime, size: stat.size };
     })

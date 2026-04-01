@@ -2,19 +2,18 @@
 import { $ } from "bun";
 import {
   log_info,
-  log_error,
   log_warn,
   log_success,
   checkGitRepo,
-  get_repo_root,
   check_process_running,
-  iso_timestamp,
   logger,
+  log_error,
 } from "./common";
 import { get_gh_client, isNotFoundError } from "./github-client";
 import type { GitHubClient } from "./github-client";
 import chalk from "chalk";
 import { config } from "./config";
+import { cleanupIssue } from "./cleanup-utils";
 import path from "path";
 import fs from "fs";
 
@@ -25,7 +24,6 @@ interface SessionInfo {
   type: "issue";
   number: string;
   statusFile: string;
-  todoFile: string;
   worktreePath: string;
   branchName: string;
   data: any;
@@ -53,7 +51,6 @@ function scanSessions(sessionsDir: string, worktreesDir: string): SessionInfo[] 
     const [, number] = match;
     const type = "issue";
     const statusFile = path.join(sessionsDir, file);
-    const todoFile = path.join(sessionsDir, `${number}-todo.md`);
     const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
     const worktreePath = path.join(worktreesDir, `${number}`);
     const branchName = data.branchName || data.headRef || "";
@@ -62,7 +59,6 @@ function scanSessions(sessionsDir: string, worktreesDir: string): SessionInfo[] 
       type,
       number,
       statusFile,
-      todoFile,
       worktreePath,
       branchName,
       data,
@@ -78,7 +74,6 @@ async function isSessionRunning(session: SessionInfo): Promise<boolean> {
   if (!pid) return false;
   return check_process_running(pid);
 }
-
 
 /** 判断 Issue 类型 session 是否可清理 */
 async function checkIssueSession(client: GitHubClient, session: SessionInfo): Promise<string | null> {
@@ -103,48 +98,26 @@ async function checkIssueSession(client: GitHubClient, session: SessionInfo): Pr
   }
 }
 
-/** 执行单个 session 的清理 */
-async function cleanupSession(session: SessionInfo) {
-  // 清理 worktree
-  const worktreeList = await $`git worktree list`.text();
-  if (fs.existsSync(session.worktreePath) || worktreeList.includes(session.worktreePath)) {
-    log_info(`  删除 worktree: ${session.worktreePath}`);
-    try {
-      await $`git worktree remove ${session.worktreePath} --force`.quiet();
-    } catch {
-      log_warn("  git worktree remove 失败，手动删除...");
-      await $`rm -rf ${session.worktreePath}`;
+/** 清理过期的归档文件（超过 30 天） */
+function pruneArchive(silent?: boolean) {
+  const archiveDir = path.join(config.SESSION_DIR, "archive");
+  if (!fs.existsSync(archiveDir)) return;
+
+  const now = Date.now();
+  const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 天
+  let pruned = 0;
+
+  for (const file of fs.readdirSync(archiveDir)) {
+    const filePath = path.join(archiveDir, file);
+    const stat = fs.statSync(filePath);
+    if (now - stat.mtimeMs > maxAge) {
+      fs.unlinkSync(filePath);
+      pruned++;
     }
   }
 
-  // 删除本地分支
-  if (session.branchName) {
-    try {
-      const branches = await $`git branch --list ${session.branchName}`.text();
-      if (branches.includes(session.branchName)) {
-        log_info(`  删除本地分支: ${session.branchName}`);
-        await $`git branch -D ${session.branchName}`.quiet().nothrow();
-      }
-    } catch {}
-  }
-
-  // 归档 session 文件
-  const archiveDir = path.join(path.dirname(session.statusFile), "archive");
-  fs.mkdirSync(archiveDir, { recursive: true });
-  const timestamp = Math.floor(Date.now() / 1000);
-
-  if (fs.existsSync(session.statusFile)) {
-    const data = { ...session.data, cleanupTime: iso_timestamp(), cleanupReason: "gc" };
-    const archiveFile = path.join(archiveDir, `${session.type}-${session.number}-${timestamp}.json`);
-    await Bun.write(archiveFile, JSON.stringify(data, null, 2));
-    fs.unlinkSync(session.statusFile);
-    log_info(`  状态文件已归档`);
-  }
-
-  if (fs.existsSync(session.todoFile)) {
-    const archiveTodo = path.join(archiveDir, `${session.type}-${session.number}-todo-${timestamp}.md`);
-    fs.renameSync(session.todoFile, archiveTodo);
-    log_info(`  追踪文件已归档`);
+  if (pruned > 0 && !silent) {
+    log_info(`已清理 ${pruned} 个过期归档文件（>30天）`);
   }
 }
 
@@ -185,6 +158,8 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
 
   if (candidates.length === 0) {
     if (!options.silent) log_info("没有需要清理的 worktree");
+    // 即使没有候选，也清理过期归档
+    pruneArchive(options.silent);
     return;
   }
 
@@ -209,11 +184,14 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   // 执行清理
   for (const { session, reason } of candidates) {
     if (!options.silent) log_info(`清理 ${session.type} #${session.number}（${reason}）`);
-    await cleanupSession(session);
+    await cleanupIssue(session.number, { reason: "gc", silent: options.silent });
   }
 
   // 最终 prune
   await $`git worktree prune`.quiet().nothrow();
+
+  // 清理过期归档
+  pruneArchive(options.silent);
 
   if (!options.silent) log_success(`清理完成，共清理 ${candidates.length} 个 worktree`);
 }
