@@ -1,7 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { config } from "./config";
-import { iso_timestamp, log_success, log_warn } from "./common";
+import { consola } from "consola";
+import { iso_timestamp } from "./common";
+
+const logger = consola.withTag("todo-helper");
 
 const STEP_LABELS: Record<number, string> = {
   1: "第一步",
@@ -36,13 +39,13 @@ export function saveStepOutput(issueNumber: string, stepNumber: number, scriptNa
 export function completeTodoStep(issueNumber: string, stepNumber: number, summary: string, outputFileName?: string): void {
   const todoFile = path.join(config.SESSION_DIR, `${issueNumber}-todo.md`);
   if (!fs.existsSync(todoFile)) {
-    log_warn(`todo 文件不存在: ${todoFile}`);
+    logger.warn(`todo 文件不存在: ${todoFile}`);
     return;
   }
 
   const label = STEP_LABELS[stepNumber];
   if (!label) {
-    log_warn(`未知步骤编号: ${stepNumber}`);
+    logger.warn(`未知步骤编号: ${stepNumber}`);
     return;
   }
 
@@ -53,7 +56,7 @@ export function completeTodoStep(issueNumber: string, stepNumber: number, summar
   const pattern = new RegExp(`^(- \\[ \\] ${label}[：:].*)$`, "m");
   const match = content.match(pattern);
   if (!match) {
-    log_warn(`未找到待勾选的步骤: ${label}`);
+    logger.warn(`未找到待勾选的步骤: ${label}`);
     return;
   }
 
@@ -64,5 +67,5 @@ export function completeTodoStep(issueNumber: string, stepNumber: number, summar
 
   content = content.replace(pattern, replacement);
   fs.writeFileSync(todoFile, content, "utf-8");
-  log_success(`todo 已自动更新: ${label}`);
+  logger.success(`todo 已自动更新: ${label}`);
 }

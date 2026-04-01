@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { get_gh_client } from "./github-client";
-import { log_info, log_error, log_success } from "./common";
+import { consola } from "consola";
+
+const logger = consola.withTag("issue-comment");
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
 
 async function main() {
@@ -20,12 +22,12 @@ async function main() {
   try {
     const clientRes = await get_gh_client();
     if (!clientRes.success) {
-      log_error(`GitHub 客户端初始化失败: ${clientRes.error}`);
+      logger.error(`GitHub 客户端初始化失败: ${clientRes.error}`);
       process.exit(1);
     }
 
     await clientRes.data.addIssueComment(issueNumber, message);
-    log_success(`在 Issue #${issueNumber} 中发表评论成功`);
+    logger.success(`在 Issue #${issueNumber} 中发表评论成功`);
 
     // 如果指定了 --step，自动更新 todo
     if (opts.step) {
@@ -43,7 +45,7 @@ async function main() {
       completeTodoStep(issueNumber, stepNum, "已同步计划到 Issue 评论", outputFile);
     }
   } catch (error: any) {
-    log_error(`发表评论失败: ${error.message}`);
+    logger.error(`发表评论失败: ${error.message}`);
     process.exit(1);
   }
 }

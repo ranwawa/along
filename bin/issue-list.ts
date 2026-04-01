@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 import { $ } from "bun";
+import { consola } from "consola";
 import {
   checkGitRepo,
   get_repo_root,
   calculate_runtime,
-  logger,
-  log_error,
 } from "./common";
+
+const logger = consola.withTag("issue-list");
 import { config } from "./config";
 import chalk from "chalk";
 import path from "path";
@@ -61,7 +62,7 @@ async function main() {
   const options = program.opts();
   const gitResult = await checkGitRepo();
   if (!gitResult.success) {
-    log_error(gitResult.error);
+    logger.error(gitResult.error);
     process.exit(1);
   }
 

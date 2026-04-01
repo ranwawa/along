@@ -1,10 +1,11 @@
 import { $ } from "bun";
+import { consola } from "consola";
 import {
-  log_info,
-  log_warn,
   check_process_running,
   iso_timestamp,
 } from "./common";
+
+const logger = consola.withTag("cleanup-utils");
 import { config } from "./config";
 import path from "path";
 import fs from "fs";
@@ -16,11 +17,11 @@ export interface CleanupOptions {
 }
 
 function info(msg: string, silent?: boolean) {
-  if (!silent) log_info(msg);
+  if (!silent) logger.info(msg);
 }
 
 function warn(msg: string, silent?: boolean) {
-  if (!silent) log_warn(msg);
+  if (!silent) logger.warn(msg);
 }
 
 /**

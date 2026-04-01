@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { get_gh_client } from "./github-client";
-import { log_info, log_error, log_success, success, failure } from "./common";
+import { consola } from "consola";
+
+const logger = consola.withTag("issue-details");
 import chalk from "chalk";
 
 async function main() {
@@ -17,7 +19,7 @@ async function main() {
   try {
     const clientRes = await get_gh_client();
     if (!clientRes.success) {
-      log_error(`GitHub 客户端初始化失败: ${clientRes.error}`);
+      logger.error(`GitHub 客户端初始化失败: ${clientRes.error}`);
       process.exit(1);
     }
 
@@ -25,7 +27,7 @@ async function main() {
 
     // 1. 防御性校验：检查 Issue 是否已经关闭
     if (issue.state && issue.state.toUpperCase() === "CLOSED") {
-      log_error(`[系统拦截] Issue #${issueNumber} 已经被标记为关闭 (CLOSED)。如果该任务已完成，请不要继续往下进行了，立刻停止这整个会话！`);
+      logger.error(`[系统拦截] Issue #${issueNumber} 已经被标记为关闭 (CLOSED)。如果该任务已完成，请不要继续往下进行了，立刻停止这整个会话！`);
       process.exit(1);
     }
 
@@ -35,13 +37,13 @@ async function main() {
       typeof label === 'string' ? label.toUpperCase() === "WIP" : label.name.toUpperCase() === "WIP"
     );
     if (isWip) {
-       log_error(`[系统拦截] Issue #${issueNumber} 当前已经打上了 WIP 标签。说明团队中可能已经有人或其他模型正在处理它了。为了防止冲突，请立即停止这整个会话并向上级汇报！`);
+       logger.error(`[系统拦截] Issue #${issueNumber} 当前已经打上了 WIP 标签。说明团队中可能已经有人或其他模型正在处理它了。为了防止冲突，请立即停止这整个会话并向上级汇报！`);
        process.exit(1);
     }
 
-    log_success(`获取 Issue #${issueNumber} 上下文成功！校验通过。`);
+    logger.success(`获取 Issue #${issueNumber} 上下文成功！校验通过。`);
   } catch (error: any) {
-    log_error(`获取 Issue 详情失败: ${error.message}`);
+    logger.error(`获取 Issue 详情失败: ${error.message}`);
     process.exit(1);
   }
 }

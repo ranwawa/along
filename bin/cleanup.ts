@@ -1,9 +1,7 @@
 #!/usr/bin/env bun
-import {
-  log_info,
-  log_error,
-  log_success,
-} from "./common";
+import { consola } from "consola";
+
+const logger = consola.withTag("cleanup");
 import { config } from "./config";
 import { checkAndKillProcess, cleanupIssue } from "./cleanup-utils";
 import path from "path";
@@ -24,17 +22,17 @@ async function main() {
 
   const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
 
-  log_info(`清理 Issue #${issueNumber}...`);
+  logger.info(`清理 Issue #${issueNumber}...`);
 
   const { canProceed, error } = await checkAndKillProcess(statusFile, issueNumber, { force });
   if (!canProceed) {
-    log_error(error!);
+    logger.error(error!);
     process.exit(1);
   }
 
   await cleanupIssue(issueNumber, { force, reason: force ? "force" : "normal" });
 
-  log_success(`Issue #${issueNumber} 清理完成`);
+  logger.success(`Issue #${issueNumber} 清理完成`);
 }
 
 main();

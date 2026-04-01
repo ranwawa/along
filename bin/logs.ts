@@ -5,14 +5,16 @@
 
 import path from "path";
 import fs from "fs";
-import { logger, log_info, log_success, log_error } from "./common";
+import { consola } from "consola";
+
+const logger = consola.withTag("logs");
 import { config } from "./config";
 import { Command } from "commander";
 import chalk from "chalk";
 
 async function listLogs(num?: string, limit: number = 10) {
   if (!fs.existsSync(config.LOG_DIR)) {
-    log_error("日志目录不存在，暂无日志");
+    logger.error("日志目录不存在，暂无日志");
     return;
   }
 
@@ -31,11 +33,11 @@ async function listLogs(num?: string, limit: number = 10) {
   }
 
   if (files.length === 0) {
-    log_info(num ? `Issue #${num} 暂无日志` : "暂无日志");
+    logger.info(num ? `Issue #${num} 暂无日志` : "暂无日志");
     return;
   }
 
-  log_success(`找到 ${files.length} 个日志文件`);
+  logger.success(`找到 ${files.length} 个日志文件`);
   console.log("");
 
   files.slice(0, limit).forEach((file, idx) => {
@@ -50,13 +52,13 @@ async function listLogs(num?: string, limit: number = 10) {
   });
 
   if (files.length > limit) {
-    log_info(`... 还有 ${files.length - limit} 个日志文件未显示`);
+    logger.info(`... 还有 ${files.length - limit} 个日志文件未显示`);
   }
 }
 
 async function showLog(filePath: string, lines: number = 100) {
   if (!fs.existsSync(filePath)) {
-    log_error(`日志文件不存在: ${filePath}`);
+    logger.error(`日志文件不存在: ${filePath}`);
     return;
   }
 

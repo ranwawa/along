@@ -1,14 +1,12 @@
 #!/usr/bin/env bun
 import { $ } from "bun";
+import { consola } from "consola";
 import {
-  log_info,
-  log_warn,
-  log_success,
   checkGitRepo,
   check_process_running,
-  logger,
-  log_error,
 } from "./common";
+
+const logger = consola.withTag("worktree-gc");
 import { get_gh_client, isNotFoundError } from "./github-client";
 import type { GitHubClient } from "./github-client";
 import chalk from "chalk";
@@ -82,7 +80,7 @@ async function checkIssueSession(client: GitHubClient, session: SessionInfo): Pr
     try {
       const prs = []; // listPullRequestsByHead 已被删除，暂时设为空
     } catch (e: any) {
-      log_warn(`查找 Issue #${session.number} 关联 PR 失败: ${e.message}`);
+      logger.warn(`查找 Issue #${session.number} 关联 PR 失败: ${e.message}`);
     }
   }
 
@@ -93,7 +91,7 @@ async function checkIssueSession(client: GitHubClient, session: SessionInfo): Pr
     return null;
   } catch (e: any) {
     if (isNotFoundError(e)) return `Issue #${session.number} 不存在`;
-    log_warn(`检查 Issue #${session.number} 失败: ${e.message}`);
+    logger.warn(`检查 Issue #${session.number} 失败: ${e.message}`);
     return null;
   }
 }
@@ -117,7 +115,7 @@ function pruneArchive(silent?: boolean) {
   }
 
   if (pruned > 0 && !silent) {
-    log_info(`已清理 ${pruned} 个过期归档文件（>30天）`);
+    logger.info(`已清理 ${pruned} 个过期归档文件（>30天）`);
   }
 }
 
@@ -128,14 +126,14 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
 
   const sessions = scanSessions(sessionsDir, worktreesDir);
   if (sessions.length === 0) {
-    if (!options.silent) log_info("没有活跃的 session");
+    if (!options.silent) logger.info("没有活跃的 session");
     return;
   }
 
   // 获取 GitHub 客户端
   const clientRes = await get_gh_client();
   if (!clientRes.success) {
-    if (!options.silent) log_warn(`无法连接 GitHub API，跳过 GC: ${clientRes.error}`);
+    if (!options.silent) logger.warn(`无法连接 GitHub API，跳过 GC: ${clientRes.error}`);
     return;
   }
   const client = clientRes.data;
@@ -145,7 +143,7 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   for (const session of sessions) {
     // 检查进程是否仍在运行
     if (!options.force && await isSessionRunning(session)) {
-      if (!options.silent) log_info(`跳过 ${session.type} #${session.number}（进程运行中）`);
+      if (!options.silent) logger.info(`跳过 ${session.type} #${session.number}（进程运行中）`);
       continue;
     }
 
@@ -157,7 +155,7 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   }
 
   if (candidates.length === 0) {
-    if (!options.silent) log_info("没有需要清理的 worktree");
+    if (!options.silent) logger.info("没有需要清理的 worktree");
     // 即使没有候选，也清理过期归档
     pruneArchive(options.silent);
     return;
@@ -177,13 +175,13 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   }
 
   if (options.dryRun) {
-    if (!options.silent) log_info(`共 ${candidates.length} 个可清理（dry-run 模式，未执行）`);
+    if (!options.silent) logger.info(`共 ${candidates.length} 个可清理（dry-run 模式，未执行）`);
     return;
   }
 
   // 执行清理
   for (const { session, reason } of candidates) {
-    if (!options.silent) log_info(`清理 ${session.type} #${session.number}（${reason}）`);
+    if (!options.silent) logger.info(`清理 ${session.type} #${session.number}（${reason}）`);
     await cleanupIssue(session.number, { reason: "gc", silent: options.silent });
   }
 
@@ -193,7 +191,7 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   // 清理过期归档
   pruneArchive(options.silent);
 
-  if (!options.silent) log_success(`清理完成，共清理 ${candidates.length} 个 worktree`);
+  if (!options.silent) logger.success(`清理完成，共清理 ${candidates.length} 个 worktree`);
 }
 
 
@@ -211,7 +209,7 @@ async function main() {
 
   const gitResult = await checkGitRepo();
   if (!gitResult.success) {
-    log_error(gitResult.error);
+    logger.error(gitResult.error);
     process.exit(1);
   }
 

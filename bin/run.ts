@@ -2,18 +2,16 @@
 import { $ } from "bun";
 import path from "path";
 import fs from "fs";
+import { consola } from "consola";
 import {
-  log_info,
-  log_error,
-  log_warn,
-  log_success,
-  logger,
   success,
   failure,
   checkGitRepo,
   iso_timestamp,
 } from "./common";
 import type { Result } from "./common";
+
+const logger = consola.withTag("run");
 import { readRepoInfo } from "./github-client";
 import chalk from "chalk";
 import { config } from "./config";
@@ -57,7 +55,7 @@ async function ensureWorktree(
   const worktreePath = path.join(config.WORKTREE_DIR, `${num}`);
   if (fs.existsSync(worktreePath)) return success(worktreePath);
 
-  log_warn("工作目录不存在，将自动初始化...");
+  logger.warn("工作目录不存在，将自动初始化...");
 
   const branchName = `along-tmp-${num}`;
 
@@ -82,7 +80,7 @@ async function ensureWorktree(
 
   await initSessionFiles(worktreePath, num, statusFile, statusData, todoFile);
 
-  log_success("初始化完成\n");
+  logger.success("初始化完成\n");
   return success(worktreePath);
 }
 
@@ -117,7 +115,7 @@ function ensureEditorPermissions(worktreePath: string) {
   }
 
   fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
-  log_info(`已自动授权 opencode 访问 ${config.USER_ALONG_DIR}/`);
+  logger.info(`已自动授权 opencode 访问 ${config.USER_ALONG_DIR}/`);
 }
 
 async function executeTask(
@@ -138,9 +136,9 @@ async function executeTask(
 
   const startCmd = `cd ${worktreePath} && ${cmd}`;
 
-  log_info(`准备启动 Agent (${editor?.name || logTag})...`);
-  log_info(`工作目录: ${chalk.cyan(worktreePath)}`);
-  log_info(`执行命令: ${chalk.cyan(cmd)}`);
+  logger.info(`准备启动 Agent (${editor?.name || logTag})...`);
+  logger.info(`工作目录: ${chalk.cyan(worktreePath)}`);
+  logger.info(`执行命令: ${chalk.cyan(cmd)}`);
   
   sessionManager.updateStep("启动 Agent", `执行命令: ${cmd}`);
   sessionManager.log(`Starting agent with command: ${cmd}`);
@@ -155,7 +153,7 @@ async function execCi(
   format: string,
   sessionManager: SessionManager,
 ): Promise<number> {
-  log_info("CI 模式：直接执行...");
+  logger.info("CI 模式：直接执行...");
   sessionManager.log("CI mode: executing directly");
   
   const stdout: string[] = [];
@@ -218,7 +216,7 @@ async function execTmux(
   sessionManager?: SessionManager,
 ) {
   const session = sessionName || `pi-${num}`;
-  log_info(`在 tmux 中创建新窗口并自动切换到会话: ${session}...`);
+  logger.info(`在 tmux 中创建新窗口并自动切换到会话: ${session}...`);
   if (sessionManager) {
     sessionManager.log(`Starting tmux session: ${session}`);
   }
@@ -245,14 +243,14 @@ async function execTmux(
     if (!detach) {
       await $`tmux select-window -t ${session}`;
     } else {
-      log_success(`Tmux 窗口已创建并在后台运行: ${session}`);
+      logger.success(`Tmux 窗口已创建并在后台运行: ${session}`);
       if (sessionManager) {
         sessionManager.log(`Tmux window created and running in background: ${session}`);
       }
     }
   } catch (error: any) {
     const errorMsg = `Failed to create tmux window: ${error.message}`;
-    log_error(errorMsg);
+    logger.error(errorMsg);
     if (sessionManager) {
       sessionManager.markAsCrashed(errorMsg, error.stack);
     }
@@ -261,7 +259,7 @@ async function execTmux(
 }
 
 async function execForeground(cmd: string): Promise<number> {
-  log_info("前台运行模式...");
+  logger.info("前台运行模式...");
   const proc = Bun.spawn(["bash", "-c", cmd], {
     stdout: "inherit",
     stderr: "inherit",
@@ -441,7 +439,7 @@ async function handleAction(num: string, options: any) {
     const res = await runTask(num, options, sessionManager);
     if (!res.success) {
       sessionManager.markAsError(res.error);
-      log_error(res.error);
+      logger.error(res.error);
       process.exit(1);
     }
 
@@ -449,7 +447,7 @@ async function handleAction(num: string, options: any) {
   } catch (error: any) {
     const errorMsg = error.message || String(error);
     sessionManager.markAsCrashed(errorMsg, error.stack);
-    log_error(`任务执行异常: ${errorMsg}`);
+    logger.error(`任务执行异常: ${errorMsg}`);
     console.error(error.stack);
     process.exit(1);
   }

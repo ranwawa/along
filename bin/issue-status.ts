@@ -1,18 +1,16 @@
 #!/usr/bin/env bun
 import { $ } from "bun";
+import { consola } from "consola";
 import {
-  log_info,
-  log_error,
-  log_warn,
-  log_success,
   checkGitRepo,
   get_repo_root,
   iso_timestamp,
-  logger,
   Result,
   success,
   failure,
 } from "./common";
+
+const logger = consola.withTag("issue-status");
 import { config } from "./config";
 import path from "path";
 import fs from "fs";
@@ -50,20 +48,20 @@ async function main() {
 
   const gitResult = await checkGitRepo();
   if (!gitResult.success) {
-    log_error(gitResult.error);
+    logger.error(gitResult.error);
     process.exit(1);
   }
 
   const repoRoot = await get_repo_root();
   const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
 
-  log_info(`更新 Issue #${issueNumber} 状态为: ${status}`);
+  logger.info(`更新 Issue #${issueNumber} 状态为: ${status}`);
   const result = await updateStatus(statusFile, status, message, step);
   if (!result.success) {
-    log_error(result.error);
+    logger.error(result.error);
     process.exit(1);
   }
-  log_success("状态更新成功");
+  logger.success("状态更新成功");
 }
 
 main();

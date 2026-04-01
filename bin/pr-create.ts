@@ -3,7 +3,10 @@ import { $ } from "bun";
 import { Command } from "commander";
 import fs from "fs";
 import path from "path";
-import { log_info, log_error, log_success, iso_timestamp } from "./common";
+import { consola } from "consola";
+import { iso_timestamp } from "./common";
+
+const logger = consola.withTag("pr-create");
 import { config } from "./config";
 import { getDefaultBranch } from "./worktree-init";
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
@@ -28,13 +31,13 @@ async function main() {
   const [issueNumber, title, body] = program.args;
 
   if (!issueNumber || !title || !body) {
-    log_error("缺少必要参数: issue-number, title, body");
+    logger.error("缺少必要参数: issue-number, title, body");
     process.exit(1);
   }
 
   const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
   if (!fs.existsSync(statusFile)) {
-    log_error(`状态文件不存在: ${statusFile}`);
+    logger.error(`状态文件不存在: ${statusFile}`);
     process.exit(1);
   }
 
@@ -43,12 +46,12 @@ async function main() {
   const repo = statusData.repo;
 
   if (!branchName) {
-    log_error("状态文件中缺少 branchName，请先执行 branch-create");
+    logger.error("状态文件中缺少 branchName，请先执行 branch-create");
     process.exit(1);
   }
 
   if (!repo?.owner || !repo?.name) {
-    log_error("状态文件中缺少仓库信息");
+    logger.error("状态文件中缺少仓库信息");
     process.exit(1);
   }
 
@@ -56,7 +59,7 @@ async function main() {
 
   try {
     const defaultBranch = await getDefaultBranch();
-    log_info(`创建 PR: ${branchName} -> ${defaultBranch}`);
+    logger.info(`创建 PR: ${branchName} -> ${defaultBranch}`);
 
     const result = await $`gh pr create \
       --repo ${repo.owner}/${repo.name} \
@@ -66,7 +69,7 @@ async function main() {
       --body ${body}`.cwd(worktreePath).text();
 
     const prUrl = result.trim();
-    log_success(`PR 创建成功: ${prUrl}`);
+    logger.success(`PR 创建成功: ${prUrl}`);
 
     // 自动更新 status.json：记录 PR URL，保持 running 状态
     statusData.prUrl = prUrl;
@@ -93,7 +96,7 @@ async function main() {
     const outputFile = saveStepOutput(issueNumber, 5, "pr-create", outputContent);
     completeTodoStep(issueNumber, 5, `PR: ${prUrl}`, outputFile);
   } catch (error: any) {
-    log_error(`PR 创建失败: ${error.message}`);
+    logger.error(`PR 创建失败: ${error.message}`);
     process.exit(1);
   }
 }

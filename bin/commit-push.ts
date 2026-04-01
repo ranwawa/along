@@ -5,7 +5,10 @@ import path from "path";
 import crypto from "crypto";
 import { Command } from "commander";
 import { $ } from "bun";
-import { log_info, log_error, log_success, git, iso_timestamp } from "./common";
+import { consola } from "consola";
+import { git, iso_timestamp } from "./common";
+
+const logger = consola.withTag("commit-push");
 import { runCommand } from "./exec";
 import chalk from "chalk";
 import { config } from "./config";
@@ -34,7 +37,7 @@ function updateStatusAfterPush(branchName: string): string | null {
         data.lastMessage = "代码已提交推送";
         data.currentStep = "创建 PR";
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-        log_success("状态文件已自动更新");
+        logger.success("状态文件已自动更新");
         return String(data.issueNumber);
       }
     } catch {}
@@ -59,13 +62,13 @@ async function main() {
     try {
       commits = JSON.parse(opts.json);
     } catch (e) {
-      log_error("解析 --json 失败，请检查格式");
+      logger.error("解析 --json 失败，请检查格式");
       process.exit(1);
     }
   } else if (opts.message && opts.files) {
     commits = [{ message: opts.message, files: opts.files }];
   } else {
-    log_error("必须提供 --message 和 --files，或者提供 --json");
+    logger.error("必须提供 --message 和 --files，或者提供 --json");
     program.help();
     process.exit(1);
   }
@@ -83,7 +86,7 @@ async function main() {
     }
 
     if (!status) {
-       log_info("未检测到任何待提交的变更");
+       logger.info("未检测到任何待提交的变更");
     } else {
       for (const commit of commits) {
         if (!commit.files || commit.files.length === 0) continue;
@@ -107,7 +110,7 @@ async function main() {
     // 2. 检查是否还有未提交的变更
     const remainingStatus = runCommand("git status --porcelain");
     if (remainingStatus) {
-        log_error(
+        logger.error(
             `检测到尚有未提交的变更 (Uncommitted changes detected):\n${remainingStatus}\n\n` +
             `[🚨 警告] 如果这些是你在处理任务时生成的临时脚本、测试文件或备注日志（如 .sh, .py, .txt 等），请使用 rm 命令将它们删除！绝对不要将它们提交到代码库中。\n` +
             `如果这些是业务需要的常规代码变更，请将其加入提交列表后再次执行。`
@@ -116,12 +119,12 @@ async function main() {
     }
 
     // 3. rebase 最新 origin/master，避免 PR 时代码冲突
-    log_info("正在获取并同步 origin/master...");
+    logger.info("正在获取并同步 origin/master...");
     await git.fetch("origin", "master");
     try {
       await git.rebase(["origin/master"]);
     } catch (e: any) {
-       log_error(`Rebase 失败，请手动解决冲突:\n${e.message}`);
+       logger.error(`Rebase 失败，请手动解决冲突:\n${e.message}`);
        process.exit(1);
     }
 
@@ -135,14 +138,14 @@ async function main() {
     }
 
     if (!hasRemoteBranch) {
-      log_info(`推送新分支 ${currentBranch} 到远端...`);
+      logger.info(`推送新分支 ${currentBranch} 到远端...`);
       await git.push(["--set-upstream", "origin", currentBranch]);
     } else {
-      log_info(`推送到远端...`);
+      logger.info(`推送到远端...`);
       await git.push();
     }
 
-    log_success(`成功提交并推送到分支 ${currentBranch}`);
+    logger.success(`成功提交并推送到分支 ${currentBranch}`);
 
     // 自动更新 status.json + todo
     const issueNumber = updateStatusAfterPush(currentBranch);
@@ -162,7 +165,7 @@ async function main() {
       completeTodoStep(issueNumber, 4, `已提交并推送 ${commits.length} 个 commit`, outputFile);
     }
   } catch (error: any) {
-    log_error(`操作失败: ${error.message}`);
+    logger.error(`操作失败: ${error.message}`);
     process.exit(1);
   }
 }

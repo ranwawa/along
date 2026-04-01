@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { get_gh_client } from "./github-client";
-import { log_info, log_error, log_success } from "./common";
+import { consola } from "consola";
+
+const logger = consola.withTag("issue-label");
 
 async function main() {
   const program = new Command();
@@ -18,14 +20,14 @@ async function main() {
   try {
     const clientRes = await get_gh_client();
     if (!clientRes.success) {
-      log_error(`GitHub 客户端初始化失败: ${clientRes.error}`);
+      logger.error(`GitHub 客户端初始化失败: ${clientRes.error}`);
       process.exit(1);
     }
 
     await clientRes.data.addIssueLabels(issueNumber, labels);
-    log_success(`在 Issue #${issueNumber} 中添加标签成功: ${labels.join(", ")}`);
+    logger.success(`在 Issue #${issueNumber} 中添加标签成功: ${labels.join(", ")}`);
   } catch (error: any) {
-    log_error(`添加标签失败: ${error.message}`);
+    logger.error(`添加标签失败: ${error.message}`);
     process.exit(1);
   }
 }

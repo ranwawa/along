@@ -7,7 +7,9 @@
 import fs from "fs";
 import path from "path";
 import { config } from "./config";
-import { logger, log_success, log_error, log_info } from "./common";
+import { consola } from "consola";
+
+const logger = consola.withTag("sync-editor");
 
 /**
  * 处理单个资源映射的软链创建
@@ -50,7 +52,7 @@ function syncMapping(mapping: any, selectedEditor: any, projectRoot: string) {
 
   try {
     fs.symlinkSync(relativeSource, targetPath, "dir");
-    log_success(`已同步软链: ${mapping.to} -> ${relativeSource}`);
+    logger.success(`已同步软链: ${mapping.to} -> ${relativeSource}`);
   } catch (e: any) {
     logger.error(`创建软链失败 ${mapping.to}: ${e.message}`);
   }
@@ -67,7 +69,7 @@ async function getSelectedEditor(editors: any[]) {
 
   const selectedEditor = editors.find((e: any) => e.id === editorId);
   if (!selectedEditor) {
-    log_error("无效的选择");
+    logger.error("无效的选择");
     process.exit(1);
   }
   return selectedEditor;
@@ -76,19 +78,19 @@ async function getSelectedEditor(editors: any[]) {
 async function main() {
   const editors = config.EDITORS;
   if (!editors || editors.length === 0) {
-    log_error("未找到编辑器配置");
+    logger.error("未找到编辑器配置");
     process.exit(1);
   }
 
   const selectedEditor = await getSelectedEditor(editors);
-  log_info(`正在为 ${selectedEditor.name} 同步资源...`);
+  logger.info(`正在为 ${selectedEditor.name} 同步资源...`);
 
   const projectRoot = process.cwd();
   for (const mapping of selectedEditor.mappings) {
     syncMapping(mapping, selectedEditor, projectRoot);
   }
 
-  log_success("同步完成！");
+  logger.success("同步完成！");
 }
 
 main().catch((err) => {

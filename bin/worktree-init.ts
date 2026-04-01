@@ -5,14 +5,14 @@
 import fs from "fs";
 import path from "path";
 import chalk from "chalk";
+import { consola } from "consola";
 import {
-  log_info,
-  log_warn,
-  log_error,
   success,
   failure,
   git,
 } from "./common";
+
+const logger = consola.withTag("worktree-init");
 import type { Result } from "./common";
 import { config } from "./config";
 
@@ -46,9 +46,9 @@ export async function setupWorktree(worktreePath: string, branchName: string): P
   }
 
   const defaultBranch = await getDefaultBranch();
-  log_info(`检测到远程默认分支: ${defaultBranch}`);
+  logger.info(`检测到远程默认分支: ${defaultBranch}`);
 
-  log_info("获取远程最新代码...");
+  logger.info("获取远程最新代码...");
   try {
     await git.fetch("origin", defaultBranch);
   } catch (e: any) {
@@ -56,7 +56,7 @@ export async function setupWorktree(worktreePath: string, branchName: string): P
   }
   console.log(chalk.green("✓"), "获取远程最新代码完成");
 
-  log_info("创建 worktree...");
+  logger.info("创建 worktree...");
   try {
     await git.raw(["worktree", "add", worktreePath, "-B", branchName, `origin/${defaultBranch}`]);
   } catch (e: any) {
@@ -94,16 +94,16 @@ function copyDirectory(src: string, dest: string) {
 
 export async function initSessionFiles(worktreePath: string, issueNumber: string, statusFile: string, statusData: any, todoFile: string) {
   // 1. 创建 .along 并标记
-  log_info("创建 worktree 标记...");
+  logger.info("创建 worktree 标记...");
   fs.mkdirSync(path.join(worktreePath, ".along"), { recursive: true });
   fs.writeFileSync(path.join(worktreePath, ".along/issue-mark"), issueNumber);
   console.log(chalk.green("✓"), "创建 worktree 标记完成");
 
   // 2. 自动环境同步（从 along 源目录复制 skills 和 prompts）
-  log_info("同步编辑器环境...");
+  logger.info("同步编辑器环境...");
   const currentTag = config.getLogTag();
   const currentEditor = config.EDITORS.find(e => e.id === currentTag) || config.EDITORS[0];
-  log_info(`检测到编辑器环境: ${currentEditor.name}`);
+  logger.info(`检测到编辑器环境: ${currentEditor.name}`);
 
   for (const mapping of currentEditor.mappings) {
     const sourceDir = path.join(config.ROOT_DIR, mapping.from);
@@ -118,7 +118,7 @@ export async function initSessionFiles(worktreePath: string, issueNumber: string
         try {
           fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 3 });
         } catch (rmError: any) {
-          log_warn(`删除目标失败，尝试强制移除: ${rmError.message}`);
+          logger.warn(`删除目标失败，尝试强制移除: ${rmError.message}`);
           const backupPath = `${targetPath}.backup-${Date.now()}`;
           try {
             fs.renameSync(targetPath, backupPath);
@@ -135,20 +135,20 @@ export async function initSessionFiles(worktreePath: string, issueNumber: string
       }
 
       copyDirectory(sourceDir, targetPath);
-      log_info(`  已同步: ${chalk.cyan(mapping.to)}`);
+      logger.info(`  已同步: ${chalk.cyan(mapping.to)}`);
     } catch (e: any) {
-      log_error(`  同步失败 (${mapping.to}): ${e.message}`);
+      logger.error(`  同步失败 (${mapping.to}): ${e.message}`);
       throw e;
     }
   }
   console.log(chalk.green("✓"), "同步编辑器环境完成");
 
-  log_info("创建状态文件...");
+  logger.info("创建状态文件...");
   fs.mkdirSync(path.dirname(statusFile), { recursive: true });
   fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2));
   console.log(chalk.green("✓"), "创建状态文件完成");
 
-  log_info("创建初始 todo 文件...");
+  logger.info("创建初始 todo 文件...");
   const todoContent = `- [ ] 第一步：理解 Issue 并创建语义化分支\n- [ ] 第二步：分析代码库并制定实施计划\n- [ ] 第三步：实施修复\n- [ ] 第四步：提交并推送代码\n- [ ] 第五步：创建 PR 并更新状态\n`;
   fs.writeFileSync(todoFile, todoContent);
   console.log(chalk.green("✓"), "创建初始 todo 文件完成");

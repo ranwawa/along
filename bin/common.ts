@@ -3,26 +3,8 @@ import { simpleGit } from "simple-git";
 
 import { config } from "./config";
 
-// 导出 consola 实例供直接使用
-export const logger = consola.withTag(config.getLogTag());
+const logger = consola.withTag(config.getLogTag());
 export const git = simpleGit();
-
-// 日志函数 (保持兼容性，但内部改用 consola)
-export function log_info(message: string) {
-  logger.info(message);
-}
-
-export function log_warn(message: string) {
-  logger.warn(message);
-}
-
-export function log_error(message: string) {
-  logger.error(message);
-}
-
-export function log_success(message: string) {
-  logger.success(message);
-}
 
 export type Result<T> = { success: true; data: T } | { success: false; error: string };
 
