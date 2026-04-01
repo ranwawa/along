@@ -11,15 +11,18 @@ import {
   success,
   failure,
   checkGitRepo,
+  iso_timestamp,
 } from "./common";
 import type { Result } from "./common";
-import { get_gh_client, readRepoInfo } from "./github-client";
+import { readRepoInfo } from "./github-client";
 import chalk from "chalk";
 import { config } from "./config";
 import { runGc } from "./worktree-gc";
 import { Task } from "./task";
 import { Issue } from "./issue";
 import { SessionManager } from "./session-manager";
+import { setupWorktree, initSessionFiles, getBranchName } from "./worktree-init";
+import { printStatusBoard } from "./status";
 
 /**
  * run - 极简一键启动入口
@@ -50,26 +53,35 @@ async function identifyTask(
 async function ensureWorktree(
   num: string,
   taskData: any,
-  binDir: string,
 ): Promise<Result<string>> {
   const worktreePath = path.join(config.WORKTREE_DIR, `${num}`);
   if (fs.existsSync(worktreePath)) return success(worktreePath);
 
   log_warn("工作目录不存在，将自动初始化...");
-  const startScript = path.join(binDir, `issue-start.ts`);
-  const dataStr = JSON.stringify(taskData);
 
-  const initProc = Bun.spawn(
-    ["bun", startScript, num, "--data", dataStr, "--skip-checks"],
-    {
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
+  const branchSuffix = Math.floor(Date.now() / 1000).toString();
+  const branchName = getBranchName(num, taskData.title || "", branchSuffix);
 
-  if ((await initProc.exited) !== 0) {
-    return failure(`issue-start 失败，请检查错误信息`);
-  }
+  const wtResult = await setupWorktree(worktreePath, branchName);
+  if (!wtResult.success) return failure(wtResult.error);
+
+  const repoInfoRes = await readRepoInfo(true);
+  if (!repoInfoRes.success) return failure(repoInfoRes.error);
+  const { owner, repo: repoName } = repoInfoRes.data;
+
+  const statusFile = path.join(config.SESSION_DIR, `${num}-status.json`);
+  const todoFile = path.join(config.SESSION_DIR, `${num}-todo.md`);
+  const statusData = {
+    issueNumber: Number(num),
+    status: "running",
+    startTime: iso_timestamp(),
+    branchName,
+    worktreePath,
+    title: taskData.title,
+    repo: { owner, name: repoName },
+  };
+
+  await initSessionFiles(worktreePath, num, statusFile, statusData, todoFile);
 
   log_success("初始化完成\n");
   return success(worktreePath);
@@ -251,7 +263,6 @@ async function runTask(num: string, options: any, sessionManager: SessionManager
   const wtResult = await ensureWorktree(
     num,
     task.taskData,
-    config.BIN_DIR,
   );
   if (!wtResult.success) return failure(wtResult.error);
 
@@ -301,13 +312,7 @@ async function checkEnv() {
 }
 
 async function showStatusBoard() {
-  const binDir = config.BIN_DIR;
-  const proc = Bun.spawn(["bun", path.join(binDir, "status.ts")], {
-    stdout: "inherit",
-    stderr: "inherit",
-    stdin: "inherit",
-  });
-  await proc.exited;
+  await printStatusBoard();
 }
 
 function configureCommand() {

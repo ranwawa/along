@@ -38,7 +38,7 @@ function parseCurrentStep(todoPath: string): string {
   return items[lastCheckedIndex + 1]?.replace(/- \[[ x/]\]\s*/, "") || "执行中";
 }
 
-async function main() {
+export async function printStatusBoard() {
   const sessionsDir = config.SESSION_DIR;
   if (!fs.existsSync(sessionsDir)) {
     console.log(chalk.yellow("暂无活跃任务记录"));
@@ -68,10 +68,10 @@ async function main() {
     try {
       const filePath = path.join(sessionsDir, file);
       const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-      
+
       const id = `#${data.issueNumber}`;
       const typeStr = "Issue";
-      
+
       let statusStr = data.status || "unknown";
       if (statusStr === "running") statusStr = chalk.yellow("Running");
       else if (statusStr === "completed") statusStr = chalk.green("Done");
@@ -79,7 +79,7 @@ async function main() {
       else if (statusStr === "crashed") statusStr = chalk.red("Crashed");
 
       const runtime = calculate_runtime(data.startTime);
-      
+
       // 解析当前步骤
       const todoFile = file.replace("-status.json", "-todo.md");
       const todoPath = path.join(sessionsDir, todoFile);
@@ -95,7 +95,7 @@ async function main() {
 
   console.log(chalk.dim("------------------------------------------------------------------------------------------"));
   console.log(chalk.dim(`共 ${files.length} 个任务记录`));
-  
+
   // 显示错误详情
   const errorSessions: any[] = [];
   for (const file of files) {
@@ -109,7 +109,7 @@ async function main() {
       // 忽略
     }
   }
-  
+
   if (errorSessions.length > 0) {
     console.log("");
     console.log(chalk.bold.red("=========================================================================================="));
@@ -132,8 +132,11 @@ async function main() {
     console.log("");
     console.log(chalk.dim("  详细日志请查看: ~/.along/logs/"));
   }
-  
+
   console.log("");
 }
 
-main();
+// 仅在直接执行时运行 CLI
+if (import.meta.main) {
+  printStatusBoard();
+}
