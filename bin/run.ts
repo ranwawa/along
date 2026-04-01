@@ -21,7 +21,7 @@ import { runGc } from "./worktree-gc";
 import { Task } from "./task";
 import { Issue } from "./issue";
 import { SessionManager } from "./session-manager";
-import { setupWorktree, initSessionFiles, getBranchName } from "./worktree-init";
+import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { printStatusBoard } from "./status";
 
 /**
@@ -59,8 +59,7 @@ async function ensureWorktree(
 
   log_warn("工作目录不存在，将自动初始化...");
 
-  const branchSuffix = Math.floor(Date.now() / 1000).toString();
-  const branchName = getBranchName(num, taskData.title || "", branchSuffix);
+  const branchName = `along-tmp-${num}`;
 
   const wtResult = await setupWorktree(worktreePath, branchName);
   if (!wtResult.success) return failure(wtResult.error);
@@ -402,7 +401,7 @@ const checkIssue = async (taskNo: number) =>{
   const healthRes = issue.checkHealth();
   if (!healthRes.success) return healthRes;
 
-  return success(null, 'issue检测通过')
+  return success(issue.data, 'issue检测通过')
 }
 
 
@@ -417,6 +416,10 @@ async function handleAction(num: string, options: any) {
       sessionManager.markAsError(issueRes.error);
       return failure(issueRes.error);
     }
+
+    // 将 Issue 数据持久化，供 Agent prompt 直接读取
+    const issueJsonPath = path.join(config.SESSION_DIR, `${num}-issue.json`);
+    fs.writeFileSync(issueJsonPath, JSON.stringify(issueRes.data, null, 2));
 
     const taskRes = checkTask(taskNo)
     if (!taskRes.success) {

@@ -149,7 +149,7 @@ export async function initSessionFiles(worktreePath: string, issueNumber: string
   console.log(chalk.green("✓"), "创建状态文件完成");
 
   log_info("创建初始 todo 文件...");
-  const todoContent = `- [ ] 第一步：获取 Issue 上下文\n- [ ] 第二步：分析代码库\n- [ ] 第三步：制定实施计划\n- [ ] 第四步：实施修复\n- [ ] 第五步：质量门禁检查\n- [ ] 第六步：提交并创建 PR\n`;
+  const todoContent = `- [ ] 第一步：理解 Issue 并创建语义化分支\n- [ ] 第二步：分析代码库并制定实施计划\n- [ ] 第三步：实施修复\n- [ ] 第四步：提交并推送代码\n- [ ] 第五步：创建 PR 并更新状态\n`;
   fs.writeFileSync(todoFile, todoContent);
   console.log(chalk.green("✓"), "创建初始 todo 文件完成");
 }

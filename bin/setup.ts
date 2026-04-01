@@ -21,6 +21,8 @@ function printHelp(commands: string[], tag: string) {
     "issue-details": "获取 Issue 详情并执行安全校验",
     "issue-comment": "在 Issue 中发表评论",
     "issue-label": "给 Issue 添加标签",
+    "branch-create": "创建语义化分支并标记 WIP",
+    "pr-create": "创建 Pull Request",
     "commit-push": "将变更进行原子化 Commit 并推送到远端",
     "run": "一键启动（默认前台，支持 --tmux）",
     "worktree-gc": "批量清理已合并/已关闭的 worktree",

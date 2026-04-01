@@ -5,9 +5,11 @@ import path from "path";
 import crypto from "crypto";
 import { Command } from "commander";
 import { $ } from "bun";
-import { log_info, log_error, log_success, git } from "./common";
+import { log_info, log_error, log_success, git, iso_timestamp } from "./common";
 import { runCommand } from "./exec";
 import chalk from "chalk";
+import { config } from "./config";
+import { saveStepOutput, completeTodoStep } from "./todo-helper";
 
 /**
  * .along/bin/commit-push.ts
@@ -17,6 +19,27 @@ import chalk from "chalk";
 interface Commit {
   message: string;
   files: string[];
+}
+
+function updateStatusAfterPush(branchName: string): string | null {
+  // 通过 branchName 在 sessions 目录中找到对应的 status 文件，返回 issueNumber
+  if (!fs.existsSync(config.SESSION_DIR)) return null;
+  const files = fs.readdirSync(config.SESSION_DIR).filter(f => f.endsWith("-status.json"));
+  for (const file of files) {
+    const filePath = path.join(config.SESSION_DIR, file);
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      if (data.branchName === branchName) {
+        data.lastUpdate = iso_timestamp();
+        data.lastMessage = "代码已提交推送";
+        data.currentStep = "创建 PR";
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+        log_success("状态文件已自动更新");
+        return String(data.issueNumber);
+      }
+    } catch {}
+  }
+  return null;
 }
 
 async function main() {
@@ -120,6 +143,24 @@ async function main() {
     }
 
     log_success(`成功提交并推送到分支 ${currentBranch}`);
+
+    // 自动更新 status.json + todo
+    const issueNumber = updateStatusAfterPush(currentBranch);
+    if (issueNumber) {
+      const commitSummary = commits.map(c => `- ${c.message} (${c.files.join(", ")})`).join("\n");
+      const outputContent = [
+        `# 第四步：提交并推送代码`,
+        ``,
+        `- **分支**: ${currentBranch}`,
+        `- **提交数**: ${commits.length}`,
+        ``,
+        `## Commits`,
+        ``,
+        commitSummary,
+      ].join("\n");
+      const outputFile = saveStepOutput(issueNumber, 4, "commit-push", outputContent);
+      completeTodoStep(issueNumber, 4, `已提交并推送 ${commits.length} 个 commit`, outputFile);
+    }
   } catch (error: any) {
     log_error(`操作失败: ${error.message}`);
     process.exit(1);

@@ -1,0 +1,68 @@
+import fs from "fs";
+import path from "path";
+import { config } from "./config";
+import { iso_timestamp, log_success, log_warn } from "./common";
+
+const STEP_LABELS: Record<number, string> = {
+  1: "第一步",
+  2: "第二步",
+  3: "第三步",
+  4: "第四步",
+  5: "第五步",
+};
+
+/**
+ * 保存步骤产出到独立文件
+ * 文件命名: {issueNumber}-step{N}-{scriptName}.md
+ * @returns 产出文件的文件名（不含目录）
+ */
+export function saveStepOutput(issueNumber: string, stepNumber: number, scriptName: string, content: string): string {
+  const fileName = `${issueNumber}-step${stepNumber}-${scriptName}.md`;
+  const filePath = path.join(config.SESSION_DIR, fileName);
+  fs.writeFileSync(filePath, content, "utf-8");
+  return fileName;
+}
+
+/**
+ * 勾选 todo.md 中对应步骤，并在下方附上时间戳和产出文件引用
+ *
+ * 将 `- [ ] 第N步：xxx` 替换为:
+ * ```
+ * - [x] 第N步：xxx
+ *   > ✅ 2026-04-01T12:00:00Z | summary
+ *   > 📄 详情: {issueNumber}-step{N}-{scriptName}.md
+ * ```
+ */
+export function completeTodoStep(issueNumber: string, stepNumber: number, summary: string, outputFileName?: string): void {
+  const todoFile = path.join(config.SESSION_DIR, `${issueNumber}-todo.md`);
+  if (!fs.existsSync(todoFile)) {
+    log_warn(`todo 文件不存在: ${todoFile}`);
+    return;
+  }
+
+  const label = STEP_LABELS[stepNumber];
+  if (!label) {
+    log_warn(`未知步骤编号: ${stepNumber}`);
+    return;
+  }
+
+  let content = fs.readFileSync(todoFile, "utf-8");
+  const timestamp = iso_timestamp();
+
+  // 匹配 `- [ ] 第N步：xxx` 或 `- [ ] 第N步:xxx`
+  const pattern = new RegExp(`^(- \\[ \\] ${label}[：:].*)$`, "m");
+  const match = content.match(pattern);
+  if (!match) {
+    log_warn(`未找到待勾选的步骤: ${label}`);
+    return;
+  }
+
+  let replacement = `- [x] ${match[1].slice(6)}\n  > ✅ ${timestamp} | ${summary}`;
+  if (outputFileName) {
+    replacement += `\n  > 📄 详情: ${outputFileName}`;
+  }
+
+  content = content.replace(pattern, replacement);
+  fs.writeFileSync(todoFile, content, "utf-8");
+  log_success(`todo 已自动更新: ${label}`);
+}
