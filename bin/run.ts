@@ -87,6 +87,40 @@ async function ensureWorktree(
   return success(worktreePath);
 }
 
+/**
+ * 确保 worktree 中的编辑器配置包含 ~/.along/ 目录的访问权限
+ */
+function ensureEditorPermissions(worktreePath: string) {
+  const editorId = config.getLogTag();
+  if (editorId !== "opencode") return;
+
+  const configPath = path.join(worktreePath, "opencode.json");
+  let existing: any = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    } catch {
+      existing = {};
+    }
+  }
+
+  const alongPattern = `${config.USER_ALONG_DIR}/**`;
+  const permission = existing.permission || {};
+  const extDir = permission.external_directory || {};
+
+  if (extDir[alongPattern] === "allow") return;
+
+  extDir[alongPattern] = "allow";
+  permission.external_directory = extDir;
+  existing.permission = permission;
+  if (!existing.$schema) {
+    existing.$schema = "https://opencode.ai/config.json";
+  }
+
+  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
+  log_info(`已自动授权 opencode 访问 ${config.USER_ALONG_DIR}/`);
+}
+
 async function executeTask(
   num: string,
   workflow: string,
@@ -265,6 +299,8 @@ async function runTask(num: string, options: any, sessionManager: SessionManager
     task.taskData,
   );
   if (!wtResult.success) return failure(wtResult.error);
+
+  ensureEditorPermissions(wtResult.data);
 
   const workflow = "resolve-github-issue";
   await executeTask(num, workflow, wtResult.data, options, sessionManager);
