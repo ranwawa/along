@@ -66,6 +66,7 @@ async function dispatch(subCommand: string, args: string[], binDir: string, comm
 }
 
 async function main() {
+  config.ensureDataDirs();
   const binDir = config.BIN_DIR;
   const tag = config.getLogTag();
   const args = process.argv.slice(2);

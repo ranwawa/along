@@ -19,6 +19,7 @@ import { config } from "./config";
 import { runGc } from "./worktree-gc";
 import { Task } from "./task";
 import { Issue } from "./issue";
+import { SessionManager } from "./session-manager";
 
 /**
  * run - 极简一键启动入口
@@ -79,6 +80,7 @@ async function executeTask(
   workflow: string,
   worktreePath: string,
   options: any,
+  sessionManager: SessionManager,
 ) {
   const editor = config.EDITORS.find((e) => e.id === logTag);
 
@@ -94,22 +96,67 @@ async function executeTask(
   log_info(`准备启动 Agent (${editor?.name || logTag})...`);
   log_info(`工作目录: ${chalk.cyan(worktreePath)}`);
   log_info(`执行命令: ${chalk.cyan(cmd)}`);
+  
+  sessionManager.updateStep("启动 Agent", `执行命令: ${cmd}`);
+  sessionManager.log(`Starting agent with command: ${cmd}`);
 
-  if (options.ci) return execCi(startCmd, num, options.output);
-  return execTmux(startCmd, num, options.tmuxSession, options.detach);
+  if (options.ci) return execCi(startCmd, num, options.output, sessionManager);
+  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager);
 }
 
 async function execCi(
   cmd: string,
   num: string,
   format: string,
+  sessionManager: SessionManager,
 ): Promise<number> {
   log_info("CI 模式：直接执行...");
+  sessionManager.log("CI mode: executing directly");
+  
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  
   const proc = Bun.spawn(["bash", "-c", cmd], {
-    stdout: "inherit",
-    stderr: "inherit",
+    stdout: "pipe",
+    stderr: "pipe",
   });
+
+  if (proc.stdout) {
+    const reader = proc.stdout.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = new TextDecoder().decode(value);
+      stdout.push(text);
+      process.stdout.write(text);
+    }
+  }
+
+  if (proc.stderr) {
+    const reader = proc.stderr.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = new TextDecoder().decode(value);
+      stderr.push(text);
+      process.stderr.write(text);
+    }
+  }
+
   const exitCode = await proc.exited;
+  
+  if (exitCode !== 0) {
+    const errorOutput = stderr.join("\n") || stdout.join("\n");
+    sessionManager.markAsError(
+      `Agent exited with code ${exitCode}`,
+      exitCode
+    );
+    sessionManager.log(`Stderr: ${stderr.join("\n")}`, "error");
+    sessionManager.log(`Stdout: ${stdout.join("\n")}`, "error");
+  } else {
+    sessionManager.markAsCompleted();
+  }
+
   if (format === "json") {
     process.stdout.write(
       JSON.stringify({ type: "issue", number: Number(num), exitCode }) + "\n",
@@ -123,19 +170,48 @@ async function execTmux(
   num: string,
   sessionName?: string,
   detach?: boolean,
+  sessionManager?: SessionManager,
 ) {
   const session = sessionName || `pi-${num}`;
   log_info(`在 tmux 中创建新窗口并自动切换到会话: ${session}...`);
+  if (sessionManager) {
+    sessionManager.log(`Starting tmux session: ${session}`);
+  }
 
   // 防止 Agent 启动崩溃导致 tmux 窗口瞬间消失闪退
-  const safeCmd = `bash -c '${cmd.replace(/'/g, "'\\''")} || { echo ""; echo "⚠️ Agent 意外崩溃 (退出码: $?)"; echo "按 Enter 键关闭当前窗口..."; read; exit 1; }'`;
+  const logFile = path.join(config.LOG_DIR, `${num}-tmux.log`);
+  const safeCmd = `bash -c '
+    echo "Starting at $(date)" > ${logFile}
+    ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
+    EXIT_CODE=\${PIPESTATUS[0]}
+    if [ \${EXIT_CODE} -ne 0 ]; then
+      echo ""
+      echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
+      echo "日志已保存到: ${logFile}"
+      echo "按 Enter 键关闭当前窗口..."
+      read
+      exit \${EXIT_CODE}
+    fi
+  '`;
 
-  await $`tmux new-window -n ${session} ${safeCmd}`;
+  try {
+    await $`tmux new-window -n ${session} ${safeCmd}`;
 
-  if (!detach) {
-    await $`tmux select-window -t ${session}`;
-  } else {
-    log_success(`Tmux 窗口已创建并在后台运行: ${session}`);
+    if (!detach) {
+      await $`tmux select-window -t ${session}`;
+    } else {
+      log_success(`Tmux 窗口已创建并在后台运行: ${session}`);
+      if (sessionManager) {
+        sessionManager.log(`Tmux window created and running in background: ${session}`);
+      }
+    }
+  } catch (error: any) {
+    const errorMsg = `Failed to create tmux window: ${error.message}`;
+    log_error(errorMsg);
+    if (sessionManager) {
+      sessionManager.markAsCrashed(errorMsg, error.stack);
+    }
+    throw error;
   }
 }
 
@@ -152,8 +228,9 @@ async function execForeground(cmd: string): Promise<number> {
 async function tryGetSessionTask(num: string) {
   const sessionsDir = config.SESSION_DIR;
   const issueSessionPath = path.join(sessionsDir, `${num}-status.json`);
+  const worktreePath = path.join(config.WORKTREE_DIR, `${num}`);
 
-  if (fs.existsSync(issueSessionPath)) {
+  if (fs.existsSync(issueSessionPath) && fs.existsSync(worktreePath)) {
     logger.info(`  检测到现有状况: Issue #${num} (从 Session 快进)`);
     const session = JSON.parse(fs.readFileSync(issueSessionPath, "utf-8"));
     return {
@@ -163,7 +240,7 @@ async function tryGetSessionTask(num: string) {
   return null;
 }
 
-async function runTask(num: string, options: any): Promise<Result<null>> {
+async function runTask(num: string, options: any, sessionManager: SessionManager): Promise<Result<null>> {
   let task = await tryGetSessionTask(num);
   if (!task) {
     const idResult = await identifyTask(num);
@@ -179,7 +256,7 @@ async function runTask(num: string, options: any): Promise<Result<null>> {
   if (!wtResult.success) return failure(wtResult.error);
 
   const workflow = "resolve-github-issue";
-  await executeTask(num, workflow, wtResult.data, options);
+  await executeTask(num, workflow, wtResult.data, options, sessionManager);
   return success(null);
 }
 
@@ -291,29 +368,51 @@ const checkIssue = async (taskNo: number) =>{
 
 async function handleAction(num: string, options: any) {
   const taskNo = Number.parseInt(num, 10);
-
-  const issueRes = await checkIssue(taskNo);
-  if (!issueRes.success) return failure(issueRes.error);
-
-  const taskRes = checkTask(taskNo)
-  if (!taskRes.success) throw new Error(taskRes.error);
+  const sessionManager = new SessionManager(taskNo, config);
 
   try {
-    await runGc({ silent: true });
-  } catch {
-    /* gc 失败不影响主流程 */
-  }
+    const issueRes = await checkIssue(taskNo);
+    if (!issueRes.success) {
+      sessionManager.markAsError(issueRes.error);
+      return failure(issueRes.error);
+    }
 
-  const res = await runTask(num, options);
-  if (!res.success) {
-    log_error(res.error);
+    const taskRes = checkTask(taskNo)
+    if (!taskRes.success) {
+      sessionManager.markAsError(taskRes.error);
+      throw new Error(taskRes.error);
+    }
+
+    sessionManager.updateStep("准备环境检查", "正在检查Git仓库和Issue状态");
+
+    try {
+      await runGc({ silent: true });
+    } catch {
+      /* gc 失败不影响主流程 */
+      sessionManager.log("GC failed, but continuing anyway", "warn");
+    }
+
+    sessionManager.updateStep("启动任务处理", "开始执行任务流程");
+
+    const res = await runTask(num, options, sessionManager);
+    if (!res.success) {
+      sessionManager.markAsError(res.error);
+      log_error(res.error);
+      process.exit(1);
+    }
+
+    await showStatusBoard();
+  } catch (error: any) {
+    const errorMsg = error.message || String(error);
+    sessionManager.markAsCrashed(errorMsg, error.stack);
+    log_error(`任务执行异常: ${errorMsg}`);
+    console.error(error.stack);
     process.exit(1);
   }
-
-  await showStatusBoard();
 }
 
 async function main() {
+  config.ensureDataDirs();
   welcome();
 
   const envRes = await checkEnv();

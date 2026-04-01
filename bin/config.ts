@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import os from "os";
 
 /**
  * .along/bin/config.ts
@@ -11,6 +12,9 @@ const workingDir = process.cwd();
 // 基于当前文件的物理位置，定位到真实的 .along 目录
 const binDir = __dirname;
 const alongDir = path.dirname(binDir);
+// 用户数据目录
+const userHome = os.homedir();
+const userAlongDir = path.join(userHome, ".along");
 
 export interface EditorMapping {
   from: string;
@@ -24,19 +28,39 @@ export interface EditorConfig {
   runTemplate: string; // 启动 Agent 的指令模版，如 "{tag} run \"/{workflow} {num}\""
 }
 
+// 确保目录存在
+function ensureDir(dir: string) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
 export const config = {
   // 根目录
   ROOT_DIR: alongDir,
 
+  // 用户数据目录
+  USER_ALONG_DIR: userAlongDir,
+  
   // 数据目录
-  WORKTREE_DIR: path.join(alongDir, "worktrees"),
-  SESSION_DIR: path.join(alongDir, "sessions"),
-  TEMP_DIR: path.join(alongDir, "tmp"),
+  WORKTREE_DIR: path.join(userAlongDir, "worktrees"),
+  SESSION_DIR: path.join(userAlongDir, "sessions"),
+  TEMP_DIR: path.join(userAlongDir, "tmp"),
+  LOG_DIR: path.join(userAlongDir, "logs"),
   
   // 资源目录
   SKILLS_DIR: path.join(alongDir, "skills"),
   PROMPTS_DIR: path.join(alongDir, "prompts"),
   BIN_DIR: path.join(alongDir, "bin"),
+
+  // 确保数据目录存在
+  ensureDataDirs() {
+    ensureDir(this.USER_ALONG_DIR);
+    ensureDir(this.WORKTREE_DIR);
+    ensureDir(this.SESSION_DIR);
+    ensureDir(this.TEMP_DIR);
+    ensureDir(this.LOG_DIR);
+  },
 
   // 日志标签识别
   getLogTag(): string {

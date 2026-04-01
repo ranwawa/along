@@ -1,0 +1,141 @@
+import path from "path";
+import fs from "fs";
+import { config } from "./config";
+import { iso_timestamp } from "./common";
+
+export interface SessionStatus {
+  issueNumber: number;
+  status: "running" | "completed" | "error" | "crashed";
+  startTime: string;
+  endTime?: string;
+  branchName: string;
+  worktreePath: string;
+  title: string;
+  repo: { owner: string; name: string };
+  lastUpdate?: string;
+  lastMessage?: string;
+  currentStep?: string;
+  errorMessage?: string;
+  exitCode?: number;
+  crashLog?: string;
+}
+
+export class SessionManager {
+  private issueNumber: number;
+  private config: any;
+  private statusFile: string;
+  private logFile: string;
+
+  constructor(issueNumber: number, config: any) {
+    this.issueNumber = issueNumber;
+    this.config = config;
+    this.statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+    this.logFile = path.join(config.LOG_DIR, `${issueNumber}.log`);
+  }
+
+  /**
+   * 读取当前会话状态
+   */
+  readStatus(): SessionStatus | null {
+    if (!fs.existsSync(this.statusFile)) return null;
+    try {
+      return JSON.parse(fs.readFileSync(this.statusFile, "utf-8"));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 写入会话状态
+   */
+  writeStatus(status: Partial<SessionStatus>): void {
+    let currentStatus = this.readStatus();
+    
+    // 如果session不存在，创建一个基础的
+    if (!currentStatus) {
+      currentStatus = {
+        issueNumber: this.issueNumber,
+        status: "running",
+        startTime: iso_timestamp(),
+        branchName: "",
+        worktreePath: "",
+        title: "",
+        repo: { owner: "", name: "" },
+      } as SessionStatus;
+    }
+
+    const updatedStatus = {
+      ...currentStatus,
+      ...status,
+      lastUpdate: iso_timestamp(),
+    };
+
+    fs.mkdirSync(path.dirname(this.statusFile), { recursive: true });
+    fs.writeFileSync(this.statusFile, JSON.stringify(updatedStatus, null, 2));
+  }
+
+  /**
+   * 记录日志到文件
+   */
+  log(message: string, level: "info" | "warn" | "error" = "info"): void {
+    const timestamp = new Date().toISOString();
+    const logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
+    fs.appendFileSync(this.logFile, logLine);
+  }
+
+  /**
+   * 标记会话为错误状态
+   */
+  markAsError(errorMessage: string, exitCode?: number): void {
+    this.writeStatus({
+      status: "error",
+      endTime: iso_timestamp(),
+      errorMessage,
+      exitCode,
+    });
+    this.log(`Error: ${errorMessage}`, "error");
+  }
+
+  /**
+   * 标记会话为崩溃状态（异常退出）
+   */
+  markAsCrashed(errorMessage: string, crashLog?: string, exitCode?: number): void {
+    this.writeStatus({
+      status: "crashed",
+      endTime: iso_timestamp(),
+      errorMessage,
+      crashLog,
+      exitCode,
+    });
+    this.log(`Crashed: ${errorMessage}`, "error");
+    if (crashLog) {
+      this.log(`Crash details:\n${crashLog}`, "error");
+    }
+  }
+
+  /**
+   * 标记会话为完成状态
+   */
+  markAsCompleted(): void {
+    this.writeStatus({
+      status: "completed",
+      endTime: iso_timestamp(),
+    });
+    this.log("Completed successfully", "info");
+  }
+
+  /**
+   * 更新当前步骤
+   */
+  updateStep(step: string, message?: string): void {
+    this.writeStatus({
+      currentStep: step,
+      lastMessage: message,
+    });
+    if (message) {
+      this.log(`Step: ${step} - ${message}`, "info");
+    } else {
+      this.log(`Step: ${step}`, "info");
+    }
+  }
+}

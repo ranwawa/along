@@ -3,6 +3,9 @@
   "keywords": [],
   "main": "index.js",
   "type": "module",
+  "bin": {
+    "along": "./bin/setup.ts"
+  },
   "scripts": {
     "test:watch": "jest --watch"
   },

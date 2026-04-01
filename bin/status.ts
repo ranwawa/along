@@ -59,7 +59,7 @@ async function main() {
   console.log(chalk.bold.cyan("=========================================================================================="));
   console.log(
     chalk.bold(
-      `${"ID".padEnd(8)} ${"类别".padEnd(8)} ${"状态".padEnd(10)} ${"运行时间".padEnd(10)} ${"当前步骤".padEnd(25)} ${"标题"}`
+      `${"ID".padEnd(8)} ${"类别".padEnd(8)} ${"状态".padEnd(12)} ${"运行时间".padEnd(10)} ${"当前步骤".padEnd(25)} ${"标题"}`
     )
   );
   console.log(chalk.dim("------------------------------------------------------------------------------------------"));
@@ -76,6 +76,7 @@ async function main() {
       if (statusStr === "running") statusStr = chalk.yellow("Running");
       else if (statusStr === "completed") statusStr = chalk.green("Done");
       else if (statusStr === "error") statusStr = chalk.red("Error");
+      else if (statusStr === "crashed") statusStr = chalk.red("Crashed");
 
       const runtime = calculate_runtime(data.startTime);
       
@@ -94,6 +95,44 @@ async function main() {
 
   console.log(chalk.dim("------------------------------------------------------------------------------------------"));
   console.log(chalk.dim(`共 ${files.length} 个任务记录`));
+  
+  // 显示错误详情
+  const errorSessions: any[] = [];
+  for (const file of files) {
+    try {
+      const filePath = path.join(sessionsDir, file);
+      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      if (data.status === "error" || data.status === "crashed") {
+        errorSessions.push(data);
+      }
+    } catch (e) {
+      // 忽略
+    }
+  }
+  
+  if (errorSessions.length > 0) {
+    console.log("");
+    console.log(chalk.bold.red("=========================================================================================="));
+    console.log(chalk.bold.red("  错误/崩溃任务详情"));
+    console.log(chalk.bold.red("=========================================================================================="));
+    for (const session of errorSessions) {
+      console.log("");
+      console.log(chalk.bold(`Issue #${session.issueNumber}: ${session.title}`));
+      console.log(chalk.red(`  状态: ${session.status}`));
+      if (session.errorMessage) {
+        console.log(chalk.red(`  错误: ${session.errorMessage}`));
+      }
+      if (session.exitCode !== undefined) {
+        console.log(chalk.yellow(`  退出码: ${session.exitCode}`));
+      }
+      if (session.lastUpdate) {
+        console.log(chalk.dim(`  最后更新: ${session.lastUpdate}`));
+      }
+    }
+    console.log("");
+    console.log(chalk.dim("  详细日志请查看: ~/.along/logs/"));
+  }
+  
   console.log("");
 }
 
