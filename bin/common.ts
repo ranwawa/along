@@ -1,23 +1,14 @@
-import { consola } from "consola";
 import { simpleGit } from "simple-git";
 
-import { config } from "./config";
-
-const logger = consola.withTag(config.getLogTag());
 export const git = simpleGit();
 
 export type Result<T> = { success: true; data: T } | { success: false; error: string };
 
-export function success<T>(data: T, log?: string): Result<T> {
-  if (log) {
-    logger.success(log)
-  }
-
+export function success<T>(data: T): Result<T> {
   return { success: true, data };
 }
 
 export function failure<T>(error: string): Result<T> {
-  logger.error(error)
   return { success: false, error };
 }
 
@@ -31,7 +22,7 @@ export async function checkGitRepo(): Promise<Result<boolean>> {
     const isRepo = await git.checkIsRepo();
     if (!isRepo) return failure("当前目录不是 git 仓库");
     cachedIsRepo = true;
-    return success(true, "本地git仓库检测通过");
+    return success(true);
   } catch (e: any) {
     return failure(`检查 git 仓库失败: ${e.message}`);
   }

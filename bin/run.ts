@@ -62,7 +62,7 @@ async function ensureWorktree(
   const wtResult = await setupWorktree(worktreePath, branchName);
   if (!wtResult.success) return failure(wtResult.error);
 
-  const repoInfoRes = await readRepoInfo(true);
+  const repoInfoRes = await readRepoInfo();
   if (!repoInfoRes.success) return failure(repoInfoRes.error);
   const { owner, repo: repoName } = repoInfoRes.data;
 
@@ -313,7 +313,7 @@ const welcome = () => {
 
 const tmuxCheck = () => {
   if (process.env.TMUX) {
-    return success(null, "tmux环境检测通过");
+    return success(null);
   }
 
   const error = `错误：强制要求在 tmux 环境中运行。
@@ -334,12 +334,15 @@ async function checkEnv() {
 
   const gitResult = await checkGitRepo();
   if (!gitResult.success) return gitResult;
+  logger.success("本地git仓库检测通过");
 
   const repoResult = await readRepoInfo();
   if (!repoResult.success) return repoResult;
+  logger.success("远程git仓库检测通过");
 
   const tmuxResult = tmuxCheck();
   if (!tmuxResult.success) return tmuxResult;
+  logger.success("tmux环境检测通过");
 
   return success(null);
 }
@@ -387,7 +390,7 @@ const checkTask = (taskNo: number) => {
 
   if (!healthRes?.success) return healthRes;
 
-  return success(null, 'task检测通过');
+  return success(null);
 };
 
 const checkIssue = async (taskNo: number) =>{
@@ -399,7 +402,7 @@ const checkIssue = async (taskNo: number) =>{
   const healthRes = issue.checkHealth();
   if (!healthRes.success) return healthRes;
 
-  return success(issue.data, 'issue检测通过')
+  return success(issue.data)
 }
 
 
@@ -412,8 +415,9 @@ async function handleAction(num: string, options: any) {
     const issueRes = await checkIssue(taskNo);
     if (!issueRes.success) {
       sessionManager.markAsError(issueRes.error);
-      return failure(issueRes.error);
+      throw new Error(issueRes.error);
     }
+    logger.success("issue检测通过");
 
     // 将 Issue 数据持久化，供 Agent prompt 直接读取
     const issueJsonPath = path.join(config.SESSION_DIR, `${num}-issue.json`);
@@ -424,6 +428,7 @@ async function handleAction(num: string, options: any) {
       sessionManager.markAsError(taskRes.error);
       throw new Error(taskRes.error);
     }
+    logger.success("task检测通过");
 
     sessionManager.updateStep("准备环境检查", "正在检查Git仓库和Issue状态");
 
@@ -439,8 +444,7 @@ async function handleAction(num: string, options: any) {
     const res = await runTask(num, options, sessionManager);
     if (!res.success) {
       sessionManager.markAsError(res.error);
-      logger.error(res.error);
-      process.exit(1);
+      throw new Error(res.error);
     }
 
     await showStatusBoard();
@@ -458,7 +462,10 @@ async function main() {
   welcome();
 
   const envRes = await checkEnv();
-  if (!envRes.success) throw new Error(envRes.error);
+  if (!envRes.success) {
+    logger.error(envRes.error);
+    process.exit(1);
+  }
 
   const program = configureCommand();
   program.action(handleAction);

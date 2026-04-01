@@ -109,7 +109,7 @@ export async function readGithubToken(): Promise<Result<string>> {
 /**
  * 获取仓库所有者和名称
  */
-export async function readRepoInfo(silent = false): Promise<Result<{ owner: string; repo: string }>> {
+export async function readRepoInfo(): Promise<Result<{ owner: string; repo: string }>> {
   if (cachedRepoInfo) return success(cachedRepoInfo as { owner: string; repo: string });
 
   try {
@@ -123,7 +123,7 @@ export async function readRepoInfo(silent = false): Promise<Result<{ owner: stri
     if (!match) return failure(`无法解析远程仓库地址: ${remote}`);
 
     cachedRepoInfo = { owner: match[1], repo: match[2].trim() };
-    return success(cachedRepoInfo, silent ? undefined : "远程git仓库检测通过");
+    return success(cachedRepoInfo);
   } catch (e: any) {
     return failure(`无法获取 git 远程仓库 origin 信息: ${e.message}`);
   }
