@@ -10,6 +10,7 @@ import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment } from "./github-client";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
+import { cleanupIssue } from "./cleanup-utils";
 
 const logger = consola.withTag("pr-watch");
 
@@ -350,21 +351,59 @@ async function pollLoop(
     chalk.bold(`轮询中 (每 ${options.interval}s)... 按 Ctrl+C 退出`),
   );
 
+  let pollCount = 0;
+  const startTime = new Date();
+
   while (true) {
     await Bun.sleep(options.interval * 1000);
+    pollCount++;
 
     try {
+      // 检查 PR 状态
+      const pr = await client.getPullRequest(prNumber);
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("zh-CN", { hour12: false });
+      const elapsed = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+      const elapsedStr = `${Math.floor(elapsed / 60)}分${elapsed % 60}秒`;
+
+      if (pr.state === "closed" || pr.merged) {
+        logger.log("");
+        if (pr.merged) {
+          logger.success(chalk.green(`[${timeStr}] PR 已合并！`));
+        } else {
+          logger.info(chalk.yellow(`[${timeStr}] PR 已关闭`));
+        }
+
+        // 更新 session 状态为 completed
+        const sessionManager = new SessionManager(Number(issueNumber), config);
+        sessionManager.writeStatus({
+          status: "completed",
+          currentStep: "PR 已处理完毕",
+          lastMessage: pr.merged ? "PR 已合并" : "PR 已关闭",
+        });
+
+        // 执行 cleanup
+        logger.info("开始清理资源...");
+        await cleanupIssue(issueNumber, { reason: pr.merged ? "pr-merged" : "pr-closed" });
+        logger.success("清理完成");
+
+        // 优雅退出
+        logger.info("Bye!");
+        process.exit(0);
+      }
+
+      // 检查新评论
       const allComments = await client.getReviewComments(prNumber);
       const newComments = allComments.filter((c) => !lastSeenIds.has(c.id));
 
       if (newComments.length === 0) {
-        process.stdout.write(".");
+        logger.info(`[${timeStr}] 轮询中 (第${pollCount}次, 已运行${elapsedStr})... 无新评论`);
         continue;
       }
 
       logger.log("");
       logger.info(
-        chalk.yellow(`检测到 ${newComments.length} 条新评论！`),
+        chalk.yellow(`[${timeStr}] 检测到 ${newComments.length} 条新评论！`),
       );
 
       for (const c of newComments) {
@@ -413,7 +452,8 @@ async function pollLoop(
         ),
       );
     } catch (error: any) {
-      logger.error(`轮询出错: ${error.message}`);
+      const timeStr = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      logger.error(`[${timeStr}] 轮询出错: ${error.message}`);
       logger.info("将在下一轮继续...");
     }
   }
