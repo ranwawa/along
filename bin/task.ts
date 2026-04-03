@@ -1,23 +1,35 @@
 import path from "path";
 import fs from "fs";
-import { failure, success } from "./common";
+import { failure, success, getSessionId } from "./common";
 
 /**
  * Task 类，用于管理任务相关的 Session 文件数据和工作区
  */
 export class Task {
   public taskNumber: number;
+  public owner?: string;
+  public repo?: string;
   public config: any;
   public status: any = null;
   public todo: any = null;
   public worktree: string | null = null;
+  public sessionId: string;
 
-  constructor(taskNumber: number, config: any) {
+  constructor(taskNumber: number, config: any, owner?: string, repo?: string) {
     if (taskNumber === undefined || taskNumber === null) {
       throw new Error("实例化 Task 时必须传入 taskNumber");
     }
     this.taskNumber = taskNumber;
+    this.owner = owner;
+    this.repo = repo;
     this.config = config;
+    
+    // 确定使用的 session ID
+    if (owner && repo) {
+      this.sessionId = getSessionId(owner, repo, taskNumber);
+    } else {
+      this.sessionId = String(taskNumber);
+    }
 
     // 在构造时自动加载并解析数据
     this.status = this.readStatus();
@@ -26,13 +38,22 @@ export class Task {
   }
 
   /**
+   * 查找文件：优先新格式，降级到旧格式
+   */
+  private findFile(dir: string, suffix: string): string {
+    const newFormat = path.join(dir, `${this.sessionId}${suffix}`);
+    if (fs.existsSync(newFormat) || (this.owner && this.repo)) {
+      return newFormat;
+    }
+    // 降级到旧格式
+    return path.join(dir, `${this.taskNumber}${suffix}`);
+  }
+
+  /**
    * 读取状态文件并解析为 JSON 对象
    */
   readStatus() {
-    const file = path.join(
-      this.config.SESSION_DIR,
-      `${this.taskNumber}-status.json`,
-    );
+    const file = this.findFile(this.config.SESSION_DIR, "-status.json");
     if (!fs.existsSync(file)) return null;
     try {
       return JSON.parse(fs.readFileSync(file, "utf-8"));
@@ -45,10 +66,7 @@ export class Task {
    * 读取待办事项文件并解析为 JSON 对象
    */
   readToDo() {
-    const file = path.join(
-      this.config.SESSION_DIR,
-      `${this.taskNumber}-todo.md`,
-    );
+    const file = this.findFile(this.config.SESSION_DIR, "-todo.md");
     if (!fs.existsSync(file)) return null;
     try {
       const content = fs.readFileSync(file, "utf-8");
@@ -92,8 +110,14 @@ export class Task {
    * 读取工作区路径
    */
   readWorktree() {
-    const dir = path.join(this.config.WORKTREE_DIR, `${this.taskNumber}`);
-    return fs.existsSync(dir) ? dir : null;
+    // 优先新格式，降级到旧格式
+    const newFormatDir = path.join(this.config.WORKTREE_DIR, this.sessionId);
+    if (fs.existsSync(newFormatDir) || (this.owner && this.repo)) {
+      return fs.existsSync(newFormatDir) ? newFormatDir : null;
+    }
+    // 降级到旧格式
+    const oldFormatDir = path.join(this.config.WORKTREE_DIR, `${this.taskNumber}`);
+    return fs.existsSync(oldFormatDir) ? oldFormatDir : null;
   }
 
   notExists() {
