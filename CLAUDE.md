@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Along
 
-Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding agents (OpenCode, PI) to resolve GitHub Issues end-to-end. It manages the full lifecycle: fetching issues, creating worktrees, launching agents in tmux sessions, tracking progress, committing code, creating PRs, and cleaning up.
+Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding agents (OpenCode, PI, Claude Code) to resolve GitHub Issues end-to-end. It manages the full lifecycle: fetching issues, creating worktrees, launching agents in tmux sessions, tracking progress, committing code, creating PRs, and cleaning up.
 
 ## Runtime & Language
 
@@ -62,7 +62,7 @@ along logs list                     # View agent run logs
 
 ### Editor Support
 
-Along supports multiple AI editors via `config.EDITORS`. Each editor has directory mappings (where to copy skills/prompts) and a `runTemplate` for launching the agent. Current editors: OpenCode, PI. The active editor is auto-detected from the working directory or `AGENT_TYPE` env var.
+Along supports multiple AI editors via `config.EDITORS`. Each editor has directory mappings (where to copy skills/prompts) and a `runTemplate` for launching the agent. Current editors: OpenCode, PI, Claude Code. The active editor is auto-detected from the working directory (`.opencode`, `.pi`, `.claude`) or `AGENT_TYPE` env var.
 
 ### Session Files (under `~/.along/sessions/`)
 
