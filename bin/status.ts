@@ -8,12 +8,19 @@ import path from "path";
 import chalk from "chalk";
 import { config } from "./config";
 import { calculate_runtime } from "./common";
+import { execSync } from "child_process";
 
-function parseCurrentStep(todoPath: string): string {
-  if (!fs.existsSync(todoPath)) return "未知";
+interface StepProgress {
+  completed: number;
+  total: number;
+  stepText: string;
+}
+
+function parseTodoProgress(todoPath: string): StepProgress | null {
+  if (!fs.existsSync(todoPath)) return null;
   const content = fs.readFileSync(todoPath, "utf-8");
   const lines = content.split("\n");
-  
+
   let lastCheckedIndex = -1;
   const items: string[] = [];
 
@@ -27,15 +34,40 @@ function parseCurrentStep(todoPath: string): string {
     }
   }
 
+  const total = items.length;
+  const completed = lastCheckedIndex + 1;
+
   if (lastCheckedIndex === -1) {
-    return items[0]?.replace(/- \[[ x/]\]\s*/, "") || "准备中";
-  }
-  
-  if (lastCheckedIndex === items.length - 1) {
-    return chalk.green("已完成");
+    const text = items[0]?.replace(/- \[[ x/]\]\s*/, "") || "准备中";
+    return { completed: 0, total, stepText: text };
   }
 
-  return items[lastCheckedIndex + 1]?.replace(/- \[[ x/]\]\s*/, "") || "执行中";
+  if (lastCheckedIndex === items.length - 1) {
+    return { completed: total, total, stepText: chalk.green("已完成") };
+  }
+
+  const text = items[lastCheckedIndex + 1]?.replace(/- \[[ x/]\]\s*/, "") || "执行中";
+  return { completed, total, stepText: text };
+}
+
+function formatStepWithProgress(progress: StepProgress | null, overrideText?: string): string {
+  if (!progress) return overrideText || "未知";
+  const prefix = `${progress.completed}/${progress.total}`;
+  const text = overrideText || progress.stepText;
+  return `${prefix} ${text}`;
+}
+
+function getActiveTmuxWindows(): Set<string> {
+  try {
+    const output = execSync("tmux list-windows -a -F '#{window_name}'", {
+      encoding: "utf-8",
+      timeout: 3000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return new Set(output.trim().split("\n").filter(Boolean));
+  } catch {
+    return new Set();
+  }
 }
 
 export async function printStatusBoard() {
@@ -64,6 +96,8 @@ export async function printStatusBoard() {
   );
   console.log(chalk.dim("------------------------------------------------------------------------------------------"));
 
+  const activeWindows = getActiveTmuxWindows();
+
   for (const file of files) {
     try {
       const filePath = path.join(sessionsDir, file);
@@ -73,7 +107,14 @@ export async function printStatusBoard() {
       const typeStr = "Issue";
 
       let statusStr = data.status || "unknown";
-      if (statusStr === "running") statusStr = chalk.yellow("Running");
+      if (statusStr === "running") {
+        const tmuxWindow = `pi-${data.issueNumber}`;
+        if (activeWindows.has(tmuxWindow)) {
+          statusStr = chalk.yellow("Running");
+        } else {
+          statusStr = chalk.gray("Stopped");
+        }
+      }
       else if (statusStr === "completed") statusStr = chalk.green("Done");
       else if (statusStr === "error") statusStr = chalk.red("Error");
       else if (statusStr === "crashed") statusStr = chalk.red("Crashed");
@@ -83,7 +124,8 @@ export async function printStatusBoard() {
       // 解析当前步骤
       const todoFile = file.replace("-status.json", "-todo.md");
       const todoPath = path.join(sessionsDir, todoFile);
-      const currentStep = data.currentStep || parseCurrentStep(todoPath);
+      const progress = parseTodoProgress(todoPath);
+      const currentStep = formatStepWithProgress(progress, data.currentStep || undefined);
 
       console.log(
         `${id.padEnd(8)} ${typeStr.padEnd(8)} ${statusStr.padEnd(20)} ${runtime.padEnd(10)} ${currentStep.padEnd(25)} ${data.title.substring(0, 30)}${data.title.length > 30 ? "..." : ""}`
