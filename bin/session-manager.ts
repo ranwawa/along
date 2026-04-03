@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { config } from "./config";
-import { iso_timestamp } from "./common";
+import { iso_timestamp, getSessionId, isNewFormatSessionId } from "./common";
 
 export interface SessionStatus {
   issueNumber: number;
@@ -22,15 +22,53 @@ export interface SessionStatus {
 
 export class SessionManager {
   private issueNumber: number;
+  private owner?: string;
+  private repo?: string;
   private config: any;
   private statusFile: string;
   private logFile: string;
+  private sessionId: string;
 
-  constructor(issueNumber: number, config: any) {
+  constructor(issueNumber: number, config: any, owner?: string, repo?: string) {
     this.issueNumber = issueNumber;
+    this.owner = owner;
+    this.repo = repo;
     this.config = config;
-    this.statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
-    this.logFile = path.join(config.LOG_DIR, `${issueNumber}.log`);
+    
+    // 确定使用的 session ID
+    if (owner && repo) {
+      this.sessionId = getSessionId(owner, repo, issueNumber);
+    } else {
+      this.sessionId = String(issueNumber);
+    }
+    
+    // 尝试查找状态文件（优先新格式，降级到旧格式）
+    this.statusFile = this.findStatusFile(config, this.sessionId, issueNumber);
+    this.logFile = this.findLogFile(config, this.sessionId, issueNumber);
+  }
+
+  /**
+   * 查找状态文件：优先新格式，降级到旧格式
+   */
+  private findStatusFile(config: any, sessionId: string, issueNumber: number): string {
+    const newFormat = path.join(config.SESSION_DIR, `${sessionId}-status.json`);
+    if (fs.existsSync(newFormat) || (this.owner && this.repo)) {
+      return newFormat;
+    }
+    // 降级到旧格式
+    return path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+  }
+
+  /**
+   * 查找日志文件：优先新格式，降级到旧格式
+   */
+  private findLogFile(config: any, sessionId: string, issueNumber: number): string {
+    const newFormat = path.join(config.LOG_DIR, `${sessionId}.log`);
+    if (fs.existsSync(newFormat) || (this.owner && this.repo)) {
+      return newFormat;
+    }
+    // 降级到旧格式
+    return path.join(config.LOG_DIR, `${issueNumber}.log`);
   }
 
   /**
