@@ -3,6 +3,8 @@ import { Octokit, RestEndpointMethodTypes } from "@octokit/rest";
 import { success, failure, Result, git } from "./common";
 
 export type GitHubIssue = RestEndpointMethodTypes["issues"]["get"]["response"]["data"];
+export type GitHubPullRequest = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
+export type GitHubReviewComment = RestEndpointMethodTypes["pulls"]["listReviewComments"]["response"]["data"][number];
 
 /**
  * GitHub API 客户端 (基于官方 Octokit 实现)
@@ -65,6 +67,32 @@ export class GitHubClient {
       ...this.repoParams,
     });
     return data;
+  }
+
+  async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
+    const { data } = await this.octokit.pulls.get({
+      ...this.repoParams,
+      pull_number: prNumber,
+    });
+    return data;
+  }
+
+  async getReviewComments(prNumber: number): Promise<GitHubReviewComment[]> {
+    const { data } = await this.octokit.pulls.listReviewComments({
+      ...this.repoParams,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    return data;
+  }
+
+  async createReviewCommentReply(prNumber: number, commentId: number, body: string): Promise<void> {
+    await this.octokit.pulls.createReplyForReviewComment({
+      ...this.repoParams,
+      pull_number: prNumber,
+      comment_id: commentId,
+      body,
+    });
   }
 
 }

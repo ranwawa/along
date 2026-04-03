@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * .along/bin/sync-editor.ts
- * 将 .along 中的公共资源同步到指定编辑器的目录中（使用软链）
+ * 将 .along 中的公共资源复制到指定编辑器的目录中（当前目录 + 所有 worktree）
  */
 
 import fs from "fs";
@@ -12,49 +12,55 @@ import { consola } from "consola";
 const logger = consola.withTag("sync-editor");
 
 /**
- * 处理单个资源映射的软链创建
+ * 递归复制目录（与 worktree-init.ts 保持一致）
  */
-function syncMapping(mapping: any, selectedEditor: any, projectRoot: string) {
+function copyDirectory(src: string, dest: string) {
+  if (!fs.existsSync(src)) return;
+
+  const lstat = fs.lstatSync(dest, { throwIfNoEntry: false });
+  if (lstat && (lstat.isSymbolicLink() || !lstat.isDirectory())) {
+    fs.rmSync(dest, { force: true });
+  }
+  fs.mkdirSync(dest, { recursive: true });
+
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectory(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * 处理单个资源映射的复制
+ */
+function syncMapping(mapping: any, projectRoot: string) {
   const sourceDir = path.join(config.ROOT_DIR, mapping.from);
   const targetPath = path.join(projectRoot, mapping.to);
-  const targetDir = path.dirname(targetPath);
-  const relativeSource = path.relative(targetDir, sourceDir);
 
   if (!fs.existsSync(sourceDir)) {
     logger.warn(`源目录不存在，跳过: ${mapping.from}`);
     return;
   }
 
-  // 确保目标父目录存在
-  if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir, { recursive: true });
-  }
-
-  // 处理已存在的目标
-  if (fs.existsSync(targetPath)) {
-    const lstat = fs.lstatSync(targetPath);
-    // 如果是软链且指向正确，直接静默退出
-    if (lstat.isSymbolicLink()) {
-      const existingTarget = fs.readlinkSync(targetPath);
-      if (existingTarget === relativeSource || existingTarget === sourceDir) {
-        return; 
-      }
-    }
-    
-    // 否则，直接覆盖（删除旧的实体目录、文件或错误的软链）
-    logger.info(`目标指向不符或被占用，正在更新覆盖: ${mapping.to}`);
-    if (lstat.isDirectory() && !lstat.isSymbolicLink()) {
-      fs.rmSync(targetPath, { recursive: true, force: true });
-    } else {
-      fs.unlinkSync(targetPath);
-    }
-  }
-
   try {
-    fs.symlinkSync(relativeSource, targetPath, "dir");
-    logger.success(`已同步软链: ${mapping.to} -> ${relativeSource}`);
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+    }
+
+    const targetParentDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetParentDir)) {
+      fs.mkdirSync(targetParentDir, { recursive: true });
+    }
+
+    copyDirectory(sourceDir, targetPath);
+    logger.success(`已同步: ${mapping.to}`);
   } catch (e: any) {
-    logger.error(`创建软链失败 ${mapping.to}: ${e.message}`);
+    logger.error(`同步失败 ${mapping.to}: ${e.message}`);
   }
 }
 
@@ -75,6 +81,19 @@ async function getSelectedEditor(editors: any[]) {
   return selectedEditor;
 }
 
+/**
+ * 获取 ~/.along/worktrees/ 下所有工作空间目录
+ */
+function getWorktreeDirs(): string[] {
+  const worktreeRoot = config.WORKTREE_DIR;
+  if (!fs.existsSync(worktreeRoot)) return [];
+
+  return fs
+    .readdirSync(worktreeRoot, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => path.join(worktreeRoot, d.name));
+}
+
 async function main() {
   const editors = config.EDITORS;
   if (!editors || editors.length === 0) {
@@ -85,9 +104,21 @@ async function main() {
   const selectedEditor = await getSelectedEditor(editors);
   logger.info(`正在为 ${selectedEditor.name} 同步资源...`);
 
+  // 同步到当前目录
   const projectRoot = process.cwd();
   for (const mapping of selectedEditor.mappings) {
-    syncMapping(mapping, selectedEditor, projectRoot);
+    syncMapping(mapping, projectRoot);
+  }
+
+  // 同步到所有已存在的 worktree
+  const worktrees = getWorktreeDirs();
+  if (worktrees.length > 0) {
+    logger.info(`发现 ${worktrees.length} 个工作空间，正在同步...`);
+    for (const worktree of worktrees) {
+      for (const mapping of selectedEditor.mappings) {
+        syncMapping(mapping, worktree);
+      }
+    }
   }
 
   logger.success("同步完成！");
