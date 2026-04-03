@@ -1,4 +1,8 @@
 import { simpleGit } from "simple-git";
+import fs from "fs";
+import path from "path";
+import { consola } from "consola";
+import { config } from "./config";
 
 export const git = simpleGit();
 
