@@ -70,7 +70,8 @@ export const config = {
     // 优先检测项目目录特征
     if (fs.existsSync(path.join(workingDir, ".opencode")) || execPath.includes(".opencode")) return "opencode";
     if (fs.existsSync(path.join(workingDir, ".pi")) || execPath.includes(".pi")) return "pi";
-    
+    if (fs.existsSync(path.join(workingDir, ".claude")) || execPath.includes(".claude")) return "claude";
+
     return "along";
   },
   
@@ -92,6 +93,15 @@ export const config = {
       mappings: [
         { from: "skills", to: ".pi/skills" },
         { from: "prompts", to: ".pi/prompts" }
+      ],
+    },
+    {
+      id: "claude",
+      name: "Claude Code",
+      runTemplate: '{tag} -p "请解决 GitHub Issue #{num}，严格按照系统提示中的工作流执行" --append-system-prompt-file .claude/commands/{workflow}.md --dangerously-skip-permissions --verbose',
+      mappings: [
+        { from: "skills", to: ".claude/skills" },
+        { from: "prompts", to: ".claude/commands" },
       ],
     },
   ] as EditorConfig[],

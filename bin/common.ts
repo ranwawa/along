@@ -125,8 +125,15 @@ const commonLogger = consola.withTag("common");
  */
 export function ensureEditorPermissions(worktreePath: string) {
   const editorId = config.getLogTag();
-  if (editorId !== "opencode") return;
 
+  if (editorId === "opencode") {
+    ensureOpenCodePermissions(worktreePath);
+  } else if (editorId === "claude") {
+    ensureClaudePermissions(worktreePath);
+  }
+}
+
+function ensureOpenCodePermissions(worktreePath: string) {
   const configPath = path.join(worktreePath, "opencode.json");
   let existing: any = {};
   if (fs.existsSync(configPath)) {
@@ -152,5 +159,41 @@ export function ensureEditorPermissions(worktreePath: string) {
 
   fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
   commonLogger.info(`已自动授权 opencode 访问 ${config.USER_ALONG_DIR}/`);
+}
+
+function ensureClaudePermissions(worktreePath: string) {
+  const claudeDir = path.join(worktreePath, ".claude");
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  }
+
+  const configPath = path.join(claudeDir, "settings.local.json");
+  let existing: any = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    } catch {
+      existing = {};
+    }
+  }
+
+  const permissions = existing.permissions || {};
+  const allow: string[] = permissions.allow || [];
+
+  const alongBashPattern = `Bash(along *)`;
+  const alongReadPattern = `Read(//${config.USER_ALONG_DIR}/**)`;
+  const alongEditPattern = `Edit(//${config.USER_ALONG_DIR}/**)`;
+
+  const requiredPatterns = [alongBashPattern, alongReadPattern, alongEditPattern];
+  const missing = requiredPatterns.filter((p) => !allow.includes(p));
+
+  if (missing.length === 0) return;
+
+  allow.push(...missing);
+  permissions.allow = allow;
+  existing.permissions = permissions;
+
+  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
+  commonLogger.info(`已自动授权 claude 访问 ${config.USER_ALONG_DIR}/`);
 }
 
