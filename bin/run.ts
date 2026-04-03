@@ -8,6 +8,7 @@ import {
   failure,
   checkGitRepo,
   iso_timestamp,
+  ensureEditorPermissions,
 } from "./common";
 import type { Result } from "./common";
 
@@ -84,39 +85,6 @@ async function ensureWorktree(
   return success(worktreePath);
 }
 
-/**
- * 确保 worktree 中的编辑器配置包含 ~/.along/ 目录的访问权限
- */
-function ensureEditorPermissions(worktreePath: string) {
-  const editorId = config.getLogTag();
-  if (editorId !== "opencode") return;
-
-  const configPath = path.join(worktreePath, "opencode.json");
-  let existing: any = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    } catch {
-      existing = {};
-    }
-  }
-
-  const alongPattern = `${config.USER_ALONG_DIR}/**`;
-  const permission = existing.permission || {};
-  const extDir = permission.external_directory || {};
-
-  if (extDir[alongPattern] === "allow") return;
-
-  extDir[alongPattern] = "allow";
-  permission.external_directory = extDir;
-  existing.permission = permission;
-  if (!existing.$schema) {
-    existing.$schema = "https://opencode.ai/config.json";
-  }
-
-  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
-  logger.info(`已自动授权 opencode 访问 ${config.USER_ALONG_DIR}/`);
-}
 
 async function executeTask(
   num: string,
@@ -223,10 +191,32 @@ async function execTmux(
 
   // 防止 Agent 启动崩溃导致 tmux 窗口瞬间消失闪退
   const logFile = path.join(config.LOG_DIR, `${num}-tmux.log`);
+  const statusFile = path.join(config.SESSION_DIR, `${num}-status.json`);
+
+  // Agent 完成后更新 status.json，确保外部监控能检测到完成/崩溃
+  const updateStatusScript = `
+    bun -e "
+      const fs = require('fs');
+      const f = '${statusFile}';
+      if (fs.existsSync(f)) {
+        const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
+        if (s.status === 'running') {
+          const exitCode = Number(process.argv[1]) || 0;
+          s.status = exitCode === 0 ? 'completed' : 'crashed';
+          s.endTime = new Date().toISOString();
+          s.lastUpdate = new Date().toISOString();
+          if (exitCode !== 0) s.errorMessage = 'Agent 退出码: ' + exitCode;
+          fs.writeFileSync(f, JSON.stringify(s, null, 2));
+        }
+      }
+    "
+  `.trim();
+
   const safeCmd = `bash -c '
     echo "Starting at $(date)" > ${logFile}
     ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
     EXIT_CODE=\${PIPESTATUS[0]}
+    ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true
     if [ \${EXIT_CODE} -ne 0 ]; then
       echo ""
       echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"

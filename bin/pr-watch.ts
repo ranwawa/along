@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import { consola } from "consola";
 import chalk from "chalk";
-import { iso_timestamp } from "./common";
+import { iso_timestamp, ensureEditorPermissions } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment } from "./github-client";
 import { config } from "./config";
@@ -118,6 +118,7 @@ async function launchAgent(
 ): Promise<void> {
   // 每次启动 agent 前同步最新的 prompts/skills 到 worktree
   syncPromptsToWorktree(worktreePath);
+  ensureEditorPermissions(worktreePath);
 
   const logTag = config.getLogTag();
   const editor = config.EDITORS.find((e) => e.id === logTag);
@@ -174,11 +175,32 @@ async function execAgentCi(cmd: string): Promise<void> {
 async function execAgentTmux(cmd: string, issueNumber: string): Promise<void> {
   const session = `pr-review-${issueNumber}`;
   const logFile = path.join(config.LOG_DIR, `${issueNumber}-pr-review-tmux.log`);
+  const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+
+  // Agent 完成后通过 bun 脚本更新 status.json，确保主窗口能检测到完成/崩溃
+  const updateStatusScript = `
+    bun -e "
+      const fs = require('fs');
+      const f = '${statusFile}';
+      if (fs.existsSync(f)) {
+        const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
+        if (s.status === 'running') {
+          const exitCode = Number(process.argv[1]) || 0;
+          s.status = exitCode === 0 ? 'completed' : 'crashed';
+          s.endTime = new Date().toISOString();
+          s.lastUpdate = new Date().toISOString();
+          if (exitCode !== 0) s.errorMessage = 'Agent 退出码: ' + exitCode;
+          fs.writeFileSync(f, JSON.stringify(s, null, 2));
+        }
+      }
+    "
+  `.trim();
 
   const safeCmd = `bash -c '
     echo "Starting PR review at $(date)" > ${logFile}
     ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
     EXIT_CODE=\${PIPESTATUS[0]}
+    ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true
     if [ \${EXIT_CODE} -ne 0 ]; then
       echo ""
       echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
@@ -193,13 +215,22 @@ async function execAgentTmux(cmd: string, issueNumber: string): Promise<void> {
   logger.success(`Tmux 窗口已创建: ${session}`);
 }
 
+async function isTmuxWindowAlive(windowName: string): Promise<boolean> {
+  try {
+    const result = await $`tmux list-windows -F '#{window_name}'`.text();
+    return result.split("\n").some((line) => line.trim() === windowName);
+  } catch {
+    return false;
+  }
+}
+
 async function waitForAgentCompletion(
   issueNumber: string,
   pollInterval: number,
 ): Promise<void> {
   const sessionManager = new SessionManager(Number(issueNumber), config);
+  const tmuxWindow = `pr-review-${issueNumber}`;
 
-  // 等待 status 变为非 running 状态
   while (true) {
     await Bun.sleep(pollInterval * 1000);
 
@@ -214,6 +245,29 @@ async function waitForAgentCompletion(
         logger.success("Agent 处理完成");
       } else {
         logger.warn(`Agent 结束，状态: ${status.status}`);
+      }
+      return;
+    }
+
+    // 检查 tmux 窗口是否还存在，如果窗口已关闭但状态仍为 running，说明 agent 异常退出
+    const alive = await isTmuxWindowAlive(tmuxWindow);
+    if (!alive) {
+      // 读取日志文件获取退出信息
+      const logFile = path.join(config.LOG_DIR, `${issueNumber}-pr-review-tmux.log`);
+      let crashLog = "";
+      if (fs.existsSync(logFile)) {
+        const content = fs.readFileSync(logFile, "utf-8");
+        const lines = content.split("\n");
+        crashLog = lines.slice(-20).join("\n");
+      }
+
+      sessionManager.markAsCrashed(
+        "Agent tmux 窗口已关闭，但未更新状态",
+        crashLog,
+      );
+      logger.warn("Agent tmux 窗口已关闭，可能异常退出");
+      if (crashLog) {
+        logger.info(`最近日志:\n${crashLog}`);
       }
       return;
     }
