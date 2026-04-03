@@ -5,6 +5,7 @@ import {
   checkGitRepo,
   check_process_running,
 } from "./common";
+import { readRepoInfo } from "./github-client";
 
 const logger = consola.withTag("worktree-gc");
 import { get_gh_client, isNotFoundError } from "./github-client";
@@ -24,6 +25,7 @@ interface SessionInfo {
   statusFile: string;
   worktreePath: string;
   branchName: string;
+  repo?: { owner: string; name: string };
   data: any;
 }
 
@@ -59,6 +61,7 @@ function scanSessions(sessionsDir: string, worktreesDir: string): SessionInfo[] 
       statusFile,
       worktreePath,
       branchName,
+      repo: data.repo || undefined,
       data,
     });
   }
@@ -124,9 +127,41 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   const sessionsDir = config.SESSION_DIR;
   const worktreesDir = config.WORKTREE_DIR;
 
-  const sessions = scanSessions(sessionsDir, worktreesDir);
-  if (sessions.length === 0) {
+  const allSessions = scanSessions(sessionsDir, worktreesDir);
+  if (allSessions.length === 0) {
     if (!options.silent) logger.info("没有活跃的 session");
+    return;
+  }
+
+  // 获取当前项目的 owner/repo，用于过滤 session
+  const repoInfoRes = await readRepoInfo();
+  let currentOwner: string | undefined;
+  let currentRepo: string | undefined;
+  if (repoInfoRes.success) {
+    currentOwner = repoInfoRes.data.owner;
+    currentRepo = repoInfoRes.data.repo;
+  }
+
+  // 仅处理属于当前项目的 session，跳过其他项目的 session
+  const sessions = allSessions.filter(session => {
+    if (!session.repo?.owner || !session.repo?.name) {
+      // 旧格式 session 没有 repo 信息，保守处理：仅在无法确定当前项目时才处理
+      if (!currentOwner || !currentRepo) return true;
+      // 有当前项目信息但 session 无 repo 信息，跳过以避免误删
+      if (!options.silent) logger.info(`跳过 #${session.number}（session 缺少仓库信息，无法确认归属）`);
+      return false;
+    }
+    if (!currentOwner || !currentRepo) return true;
+    const belongs = session.repo.owner === currentOwner && session.repo.name === currentRepo;
+    if (!belongs && !options.silent) {
+      logger.info(`跳过 #${session.number}（属于 ${session.repo.owner}/${session.repo.name}，非当前项目）`);
+    }
+    return belongs;
+  });
+
+  if (sessions.length === 0) {
+    if (!options.silent) logger.info("当前项目没有需要检查的 session");
+    pruneArchive(options.silent);
     return;
   }
 
