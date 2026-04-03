@@ -118,3 +118,39 @@ export function isNewFormatSessionId(id: string): boolean {
   return /^[^-]+-[^-]+-\d+$/.test(id);
 }
 
+const commonLogger = consola.withTag("common");
+
+/**
+ * 确保 worktree 中的编辑器配置包含 ~/.along/ 目录的访问权限
+ */
+export function ensureEditorPermissions(worktreePath: string) {
+  const editorId = config.getLogTag();
+  if (editorId !== "opencode") return;
+
+  const configPath = path.join(worktreePath, "opencode.json");
+  let existing: any = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    } catch {
+      existing = {};
+    }
+  }
+
+  const alongPattern = `${config.USER_ALONG_DIR}/**`;
+  const permission = existing.permission || {};
+  const extDir = permission.external_directory || {};
+
+  if (extDir[alongPattern] === "allow") return;
+
+  extDir[alongPattern] = "allow";
+  permission.external_directory = extDir;
+  existing.permission = permission;
+  if (!existing.$schema) {
+    existing.$schema = "https://opencode.ai/config.json";
+  }
+
+  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
+  commonLogger.info(`已自动授权 opencode 访问 ${config.USER_ALONG_DIR}/`);
+}
+
