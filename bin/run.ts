@@ -132,6 +132,18 @@ async function execCi(
     stderr: "pipe",
   });
 
+  // 将 CI 进程的 PID 写入 status.json，供 GC 检测进程是否存活
+  if (proc.pid) {
+    const statusFile = path.join(config.SESSION_DIR, `${num}-status.json`);
+    if (fs.existsSync(statusFile)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+        data.pid = proc.pid;
+        fs.writeFileSync(statusFile, JSON.stringify(data, null, 2));
+      } catch {}
+    }
+  }
+
   if (proc.stdout) {
     const reader = proc.stdout.getReader();
     while (true) {
@@ -212,8 +224,22 @@ async function execTmux(
     "
   `.trim();
 
+  // 启动时将 shell PID 写入 status.json，供 GC 检测进程是否存活
+  const writePidScript = `
+    bun -e "
+      const fs = require('fs');
+      const f = '${statusFile}';
+      if (fs.existsSync(f)) {
+        const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
+        s.pid = Number(process.argv[1]);
+        fs.writeFileSync(f, JSON.stringify(s, null, 2));
+      }
+    " \$\$
+  `.trim();
+
   const safeCmd = `bash -c '
     echo "Starting at $(date)" > ${logFile}
+    ${writePidScript} 2>/dev/null || true
     ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
     EXIT_CODE=\${PIPESTATUS[0]}
     ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true
