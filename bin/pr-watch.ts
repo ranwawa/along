@@ -7,7 +7,7 @@ import { consola } from "consola";
 import chalk from "chalk";
 import { iso_timestamp, ensureEditorPermissions } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
-import type { GitHubReviewComment } from "./github-client";
+import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { cleanupIssue } from "./cleanup-utils";
@@ -15,13 +15,16 @@ import { cleanupIssue } from "./cleanup-utils";
 const logger = consola.withTag("pr-watch");
 
 /**
- * pr-watch.ts - 监听 PR 评论并自动触发 Agent 处理
+ * pr-watch.ts - 监听 PR 评论和 CI 状态并自动触发 Agent 处理
  *
  * 流程：
  * 1. 读取 status.json → 获取 prUrl/branchName, worktreePath, repo
  * 2. 解析 PR number（从 prUrl 或通过 branch 查找）
  * 3. 获取当前所有 review comments → 记录 lastSeenIds
- * 4. 轮询循环：检测新评论 → 写入 comments.json → 启动 agent → 等待完成
+ * 4. 轮询循环：
+ *    - 检测 PR 合并/关闭 → 清理退出
+ *    - 检测 CI 失败 → 写入失败信息 → 启动 agent 修复
+ *    - 检测新评论 → 写入 comments.json → 启动 agent 处理
  * 5. Ctrl+C 优雅退出
  */
 
@@ -87,6 +90,36 @@ function writeCommentsFile(
   return filePath;
 }
 
+function writeCiFailureFile(
+  issueNumber: string,
+  failedRuns: GitHubCheckRun[],
+  headSha: string,
+  repo: { owner: string; name: string },
+): string {
+  const filePath = path.join(config.SESSION_DIR, `${issueNumber}-ci-failures.json`);
+  const data = {
+    meta: {
+      owner: repo.owner,
+      repo: repo.name,
+      head_sha: headSha,
+      fetched_at: iso_timestamp(),
+    },
+    failed_checks: failedRuns.map((r) => ({
+      id: r.id,
+      name: r.name,
+      conclusion: r.conclusion,
+      html_url: r.html_url,
+      details_url: r.details_url,
+      started_at: r.started_at,
+      completed_at: r.completed_at,
+      output_title: r.output?.title,
+      output_summary: r.output?.summary,
+    })),
+  };
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  return filePath;
+}
+
 function syncPromptsToWorktree(worktreePath: string): void {
   const logTag = config.getLogTag();
   const editor = config.EDITORS.find((e) => e.id === logTag) || config.EDITORS[0];
@@ -116,6 +149,7 @@ async function launchAgent(
   issueNumber: string,
   worktreePath: string,
   options: { ci: boolean; detach: boolean },
+  workflow: string = "resolve-pr-review",
 ): Promise<void> {
   // 每次启动 agent 前同步最新的 prompts/skills 到 worktree
   syncPromptsToWorktree(worktreePath);
@@ -123,7 +157,6 @@ async function launchAgent(
 
   const logTag = config.getLogTag();
   const editor = config.EDITORS.find((e) => e.id === logTag);
-  const workflow = "resolve-pr-review";
 
   let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
   cmd = cmd
@@ -346,6 +379,63 @@ async function pollLoop(
     logger.info("没有未解决的评论，开始监听新评论...");
   }
 
+  // 初始 CI 状态检查
+  logger.info("检查当前 CI 状态...");
+  const pr = await client.getPullRequest(prNumber);
+  const headSha = pr.head.sha;
+  const checkRuns = await client.getCheckRuns(headSha);
+  let lastProcessedSha = "";
+
+  if (checkRuns.length > 0) {
+    const failedRuns = checkRuns.filter(
+      (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
+    );
+    const pendingRuns = checkRuns.filter(
+      (r) => r.status === "in_progress" || r.status === "queued",
+    );
+
+    if (failedRuns.length > 0) {
+      logger.info(
+        chalk.red(`发现 ${failedRuns.length} 个 CI 检查失败，立即修复...`),
+      );
+
+      for (const r of failedRuns) {
+        logger.info(`  - ${r.name}: ${r.conclusion} (${r.html_url})`);
+      }
+
+      const ciFile = writeCiFailureFile(
+        issueNumber,
+        failedRuns,
+        headSha,
+        statusData.repo,
+      );
+      logger.info(`CI 失败信息已写入: ${ciFile}`);
+
+      const sessionManager = new SessionManager(Number(issueNumber), config);
+      sessionManager.writeStatus({
+        status: "running",
+        currentStep: "修复 CI 失败",
+        lastMessage: `发现 ${failedRuns.length} 个 CI 检查失败`,
+      });
+
+      await launchAgent(issueNumber, statusData.worktreePath, options, "resolve-ci-failure");
+
+      if (!options.ci) {
+        logger.info("等待 Agent 完成...");
+        await waitForAgentCompletion(issueNumber, 10);
+      }
+
+      lastProcessedSha = headSha;
+      logger.info("初始 CI 失败处理完毕");
+    } else if (pendingRuns.length > 0) {
+      logger.info(`CI 检查进行中 (${pendingRuns.length} 个待完成)...`);
+    } else {
+      logger.info("CI 检查全部通过");
+    }
+  } else {
+    logger.info("暂无 CI 检查记录");
+  }
+
   logger.log("");
   logger.info(
     chalk.bold(`轮询中 (每 ${options.interval}s)... 按 Ctrl+C 退出`),
@@ -390,6 +480,69 @@ async function pollLoop(
         // 优雅退出
         logger.info("Bye!");
         process.exit(0);
+      }
+
+      // 检查 CI 状态
+      const headSha = pr.head.sha;
+      const checkRuns = await client.getCheckRuns(headSha);
+
+      if (checkRuns.length > 0) {
+        const failedRuns = checkRuns.filter(
+          (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
+        );
+        const pendingRuns = checkRuns.filter(
+          (r) => r.status === "in_progress" || r.status === "queued",
+        );
+
+        if (failedRuns.length > 0 && headSha !== lastProcessedSha) {
+          logger.log("");
+          logger.info(
+            chalk.red(`[${timeStr}] 检测到 ${failedRuns.length} 个 CI 检查失败！`),
+          );
+
+          for (const r of failedRuns) {
+            logger.info(`  - ${r.name}: ${r.conclusion} (${r.html_url})`);
+          }
+
+          // 写入 CI 失败信息供 agent 读取
+          const ciFile = writeCiFailureFile(
+            issueNumber,
+            failedRuns,
+            headSha,
+            statusData.repo,
+          );
+          logger.info(`CI 失败信息已写入: ${ciFile}`);
+
+          // 重置 session 状态为 running
+          const sessionManager = new SessionManager(Number(issueNumber), config);
+          sessionManager.writeStatus({
+            status: "running",
+            currentStep: "修复 CI 失败",
+            lastMessage: `检测到 ${failedRuns.length} 个 CI 检查失败`,
+          });
+
+          // 启动 agent 修复 CI 失败
+          await launchAgent(issueNumber, statusData.worktreePath, options, "resolve-ci-failure");
+
+          if (!options.ci) {
+            logger.info("等待 Agent 完成...");
+            await waitForAgentCompletion(issueNumber, 10);
+          }
+
+          lastProcessedSha = headSha;
+
+          logger.log("");
+          logger.info(
+            chalk.bold(
+              `Agent 处理完毕，继续监听 (每 ${options.interval}s)... 按 Ctrl+C 退出`,
+            ),
+          );
+          continue;
+        } else if (pendingRuns.length > 0 && failedRuns.length === 0) {
+          logger.info(
+            `[${timeStr}] CI 检查进行中 (${pendingRuns.length} 个待完成)...`,
+          );
+        }
       }
 
       // 检查新评论
@@ -463,7 +616,7 @@ async function main() {
   const program = new Command();
   program
     .name("pr-watch")
-    .description("监听 PR 评论并自动触发 Agent 处理")
+    .description("监听 PR 评论和 CI 状态并自动触发 Agent 处理")
     .argument("<issue-number>", "Issue 编号")
     .option("--interval <seconds>", "轮询间隔（秒）", "60")
     .option("--ci", "CI 模式：跳过 tmux，直接前台执行", false)
@@ -508,7 +661,7 @@ async function main() {
 
   logger.log("");
   logger.log(chalk.cyan("======================================"));
-  logger.log(chalk.bold.cyan("  PR Review 监听器"));
+  logger.log(chalk.bold.cyan("  PR Review & CI 监听器"));
   logger.log(chalk.cyan("======================================"));
   logger.log("");
   logger.info(`Issue: #${issueNumber} - ${statusData.title}`);
