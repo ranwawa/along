@@ -5,6 +5,7 @@ import { success, failure, Result, git } from "./common";
 export type GitHubIssue = RestEndpointMethodTypes["issues"]["get"]["response"]["data"];
 export type GitHubPullRequest = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
 export type GitHubReviewComment = RestEndpointMethodTypes["pulls"]["listReviewComments"]["response"]["data"][number];
+export type GitHubCheckRun = RestEndpointMethodTypes["checks"]["listForRef"]["response"]["data"]["check_runs"][number];
 
 /**
  * GitHub API 客户端 (基于官方 Octokit 实现)
@@ -93,6 +94,15 @@ export class GitHubClient {
       comment_id: commentId,
       body,
     });
+  }
+
+  async getCheckRuns(ref: string): Promise<GitHubCheckRun[]> {
+    const { data } = await this.octokit.checks.listForRef({
+      ...this.repoParams,
+      ref,
+      per_page: 100,
+    });
+    return data.check_runs;
   }
 
 }
