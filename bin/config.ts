@@ -41,14 +41,14 @@ export const config = {
 
   // 用户数据目录
   USER_ALONG_DIR: userAlongDir,
-  
+
   // 数据目录
   WORKTREE_DIR: path.join(userAlongDir, "worktrees"),
   SESSION_DIR: path.join(userAlongDir, "sessions"),
   ARTIFACT_DIR: path.join(userAlongDir, "artifacts"),
   TEMP_DIR: path.join(userAlongDir, "tmp"),
   LOG_DIR: path.join(userAlongDir, "logs"),
-  
+
   // 资源目录
   SKILLS_DIR: path.join(alongDir, "skills"),
   PROMPTS_DIR: path.join(alongDir, "prompts"),
@@ -75,14 +75,14 @@ export const config = {
       try {
         const alongConfig = JSON.parse(fs.readFileSync(alongConfigPath, "utf-8"));
         if (alongConfig.agent) return alongConfig.agent;
-      } catch {}
+      } catch { }
     }
     const pkgPath = path.join(workingDir, "package.json");
     if (fs.existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
         if (pkg.along?.agent) return pkg.along.agent;
-      } catch {}
+      } catch { }
     }
 
     // 3. 目录特征检测（向后兼容已有项目）
@@ -99,7 +99,7 @@ export const config = {
       `  3. 在 package.json 中添加 "along": {"agent": "opencode|pi|claude"}`
     );
   },
-  
+
   // 编辑器同步配置
   EDITORS: [
     {
@@ -123,7 +123,7 @@ export const config = {
     {
       id: "claude",
       name: "Claude Code",
-      runTemplate: '{tag} -p "请解决 GitHub Issue #{num}，严格按照系统提示中的工作流执行" --append-system-prompt-file .claude/commands/{workflow}.md --dangerously-skip-permissions --verbose',
+      runTemplate: '{tag} "请解决 GitHub Issue #{num}，严格按照系统提示中的工作流执行" --append-system-prompt-file .claude/commands/{workflow}.md --dangerously-skip-permissions --verbose --print',
       mappings: [
         { from: "skills", to: ".claude/skills" },
         { from: "prompts", to: ".claude/commands" },
