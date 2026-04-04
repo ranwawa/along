@@ -30,7 +30,10 @@ import { printStatusBoard } from "./status";
 
 import { Command } from "commander";
 
-const logTag = config.getLogTag();
+// logTag 延迟获取，避免模块加载时 worktree 未就绪导致检测失败
+function getLogTag(): string {
+  return config.getLogTag();
+}
 
 async function identifyTask(
   num: string,
@@ -93,18 +96,19 @@ async function executeTask(
   options: any,
   sessionManager: SessionManager,
 ) {
-  const editor = config.EDITORS.find((e) => e.id === logTag);
+  const tag = getLogTag();
+  const editor = config.EDITORS.find((e) => e.id === tag);
 
   // 按照配置中的模版生成启动指令
   let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
   cmd = cmd
-    .replace("{tag}", logTag)
+    .replace("{tag}", tag)
     .replace("{workflow}", workflow)
     .replace("{num}", num);
 
   const startCmd = `cd ${worktreePath} && ${cmd}`;
 
-  logger.info(`准备启动 Agent (${editor?.name || logTag})...`);
+  logger.info(`准备启动 Agent (${editor?.name || tag})...`);
   logger.info(`工作目录: ${chalk.cyan(worktreePath)}`);
   logger.info(`执行命令: ${chalk.cyan(cmd)}`);
   
@@ -322,7 +326,7 @@ async function runTask(num: string, options: any, sessionManager: SessionManager
 
 const welcome = () => {
   logger.log(chalk.cyan("======================================"));
-  logger.log(chalk.bold.cyan(`  ${logTag.toUpperCase()} 一键启动 (Bun 版)`));
+  logger.log(chalk.bold.cyan(`  ALONG 一键启动 (Bun 版)`));
   logger.log(chalk.cyan("======================================"));
   logger.log("");
 };
@@ -371,7 +375,7 @@ function configureCommand() {
   const program = new Command();
   program
     .name("./run.ts")
-    .description(`${logTag.toUpperCase()} 一键启动 (Bun 版)`)
+    .description(`ALONG 一键启动 (Bun 版)`)
     .version("1.0.0")
     .configureOutput({
       writeErr: (str) => {
