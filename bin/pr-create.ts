@@ -103,9 +103,39 @@ async function main() {
     ].join("\n");
     const outputFile = saveStepOutput(paths, 5, "pr-create", outputContent);
     completeTodoStep(paths, 5, `PR: ${prUrl}`, outputFile);
+
+    // PR 创建成功后，自动启动 pr-watch 监控 CI 状态和 PR 评论
+    await startPrWatch(issueNumber);
   } catch (error: any) {
     logger.error(`PR 创建失败: ${error.message}`);
     process.exit(1);
+  }
+}
+
+async function startPrWatch(issueNumber: string): Promise<void> {
+  const inTmux = !!process.env.TMUX;
+
+  if (!inTmux) {
+    logger.info("未检测到 tmux 环境，跳过自动启动 pr-watch");
+    logger.info(`请手动执行: along pr-watch ${issueNumber}`);
+    return;
+  }
+
+  const windowName = `pr-watch-${issueNumber}`;
+
+  try {
+    // 检查是否已有同名窗口在运行
+    const windows = await $`tmux list-windows -F '#{window_name}'`.text();
+    if (windows.split("\n").some((w) => w.trim() === windowName)) {
+      logger.info(`pr-watch 窗口已存在: ${windowName}，跳过重复启动`);
+      return;
+    }
+
+    await $`tmux new-window -d -n ${windowName} along pr-watch ${issueNumber}`;
+    logger.success(`已自动启动 CI 监控: tmux 窗口 ${windowName}`);
+  } catch (error: any) {
+    logger.warn(`自动启动 pr-watch 失败: ${error.message}`);
+    logger.info(`请手动执行: along pr-watch ${issueNumber}`);
   }
 }
 
