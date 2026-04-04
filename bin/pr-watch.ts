@@ -464,6 +464,16 @@ async function pollLoop(
           logger.info(chalk.yellow(`[${timeStr}] PR 已关闭`));
         }
 
+        // PR 合并时移除 WIP 标签
+        if (pr.merged) {
+          try {
+            await client.removeIssueLabel(Number(issueNumber), "WIP");
+            logger.success("WIP 标签已移除");
+          } catch (e: any) {
+            logger.warn(`移除 WIP 标签失败: ${e.message}`);
+          }
+        }
+
         // 更新 session 状态为 completed
         const sessionManager = new SessionManager(Number(issueNumber), config);
         sessionManager.writeStatus({
