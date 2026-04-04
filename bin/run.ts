@@ -61,9 +61,7 @@ async function ensureWorktree(
 
   logger.warn("工作目录不存在，将自动初始化...");
 
-  const branchName = `along-tmp-${num}`;
-
-  const wtResult = await setupWorktree(worktreePath, branchName);
+  const wtResult = await setupWorktree(worktreePath);
   if (!wtResult.success) return failure(wtResult.error);
 
   const repoInfoRes = await readRepoInfo();
@@ -76,7 +74,7 @@ async function ensureWorktree(
     issueNumber: Number(num),
     status: "running",
     startTime: iso_timestamp(),
-    branchName,
+    branchName: "",
     worktreePath,
     title: taskData.title,
     repo: { owner, name: repoName },

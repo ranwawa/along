@@ -29,17 +29,7 @@ export async function getDefaultBranch(): Promise<string> {
   return "master";
 }
 
-export function getBranchName(issueNumber: string, issueTitle: string, suffix: string) {
-  const titleSlug = issueTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .substring(0, 30);
-  return `feat/${issueNumber}-${titleSlug || "task"}-${suffix}`;
-}
-
-export async function setupWorktree(worktreePath: string, branchName: string): Promise<Result<null>> {
+export async function setupWorktree(worktreePath: string): Promise<Result<null>> {
   if (fs.existsSync(worktreePath)) {
     if (fs.existsSync(path.join(worktreePath, ".along/issue-mark"))) return success(null);
     return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
@@ -58,7 +48,7 @@ export async function setupWorktree(worktreePath: string, branchName: string): P
 
   logger.info("创建 worktree...");
   try {
-    await git.raw(["worktree", "add", worktreePath, "-B", branchName, `origin/${defaultBranch}`]);
+    await git.raw(["worktree", "add", "--detach", worktreePath, `origin/${defaultBranch}`]);
   } catch (e: any) {
     return failure(`创建 worktree 失败: ${e.message}`);
   }
