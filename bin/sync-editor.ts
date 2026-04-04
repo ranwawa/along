@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import { config } from "./config";
 import { consola } from "consola";
+import { findAllSessions, SessionPathManager } from "./session-paths";
 
 const logger = consola.withTag("sync-editor");
 
@@ -82,16 +83,19 @@ async function getSelectedEditor(editors: any[]) {
 }
 
 /**
- * 获取 ~/.along/worktrees/ 下所有工作空间目录
+ * 获取所有活跃 worktree 目录
  */
 function getWorktreeDirs(): string[] {
-  const worktreeRoot = config.WORKTREE_DIR;
-  if (!fs.existsSync(worktreeRoot)) return [];
-
-  return fs
-    .readdirSync(worktreeRoot, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => path.join(worktreeRoot, d.name));
+  const sessions = findAllSessions();
+  const dirs: string[] = [];
+  for (const session of sessions) {
+    const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
+    const worktreePath = paths.getWorktreeDir();
+    if (fs.existsSync(worktreePath)) {
+      dirs.push(worktreePath);
+    }
+  }
+  return dirs;
 }
 
 async function main() {

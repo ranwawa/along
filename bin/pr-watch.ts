@@ -6,11 +6,12 @@ import path from "path";
 import { consola } from "consola";
 import chalk from "chalk";
 import { iso_timestamp, ensureEditorPermissions } from "./common";
-import { GitHubClient, readGithubToken } from "./github-client";
+import { GitHubClient, readGithubToken, readRepoInfo } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { cleanupIssue } from "./cleanup-utils";
+import { SessionPathManager } from "./session-paths";
 
 const logger = consola.withTag("pr-watch");
 
@@ -61,12 +62,12 @@ async function resolvePrNumber(statusData: StatusData): Promise<number> {
 }
 
 function writeCommentsFile(
-  issueNumber: string,
+  paths: SessionPathManager,
   comments: GitHubReviewComment[],
   prNumber: number,
   repo: { owner: string; name: string },
 ): string {
-  const filePath = path.join(config.SESSION_DIR, `${issueNumber}-pr-comments.json`);
+  const filePath = paths.getPrCommentsFile();
   const data = {
     meta: {
       owner: repo.owner,
@@ -91,12 +92,12 @@ function writeCommentsFile(
 }
 
 function writeCiFailureFile(
-  issueNumber: string,
+  paths: SessionPathManager,
   failedRuns: GitHubCheckRun[],
   headSha: string,
   repo: { owner: string; name: string },
 ): string {
-  const filePath = path.join(config.SESSION_DIR, `${issueNumber}-ci-failures.json`);
+  const filePath = paths.getCiFailuresFile();
   const data = {
     meta: {
       owner: repo.owner,
@@ -149,6 +150,7 @@ async function launchAgent(
   issueNumber: string,
   worktreePath: string,
   options: { ci: boolean; detach: boolean },
+  paths: SessionPathManager,
   workflow: string = "resolve-pr-review",
 ): Promise<void> {
   // 每次启动 agent 前同步最新的 prompts/skills 到 worktree
@@ -172,7 +174,7 @@ async function launchAgent(
   if (options.ci) {
     await execAgentCi(fullCmd);
   } else {
-    await execAgentTmux(fullCmd, issueNumber);
+    await execAgentTmux(fullCmd, issueNumber, paths);
   }
 }
 
@@ -206,10 +208,10 @@ async function execAgentCi(cmd: string): Promise<void> {
   }
 }
 
-async function execAgentTmux(cmd: string, issueNumber: string): Promise<void> {
+async function execAgentTmux(cmd: string, issueNumber: string, paths: SessionPathManager): Promise<void> {
   const session = `pr-review-${issueNumber}`;
-  const logFile = path.join(config.LOG_DIR, `${issueNumber}-pr-review-tmux.log`);
-  const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+  const logFile = paths.getPrReviewTmuxLogFile();
+  const statusFile = paths.getStatusFile();
 
   // Agent 完成后通过 bun 脚本更新 status.json，确保主窗口能检测到完成/崩溃
   const updateStatusScript = `
@@ -261,8 +263,9 @@ async function isTmuxWindowAlive(windowName: string): Promise<boolean> {
 async function waitForAgentCompletion(
   issueNumber: string,
   pollInterval: number,
+  paths: SessionPathManager,
 ): Promise<void> {
-  const sessionManager = new SessionManager(Number(issueNumber), config);
+  const sessionManager = new SessionManager(paths.getOwner(), paths.getRepo(), Number(issueNumber));
   const tmuxWindow = `pr-review-${issueNumber}`;
 
   while (true) {
@@ -287,7 +290,7 @@ async function waitForAgentCompletion(
     const alive = await isTmuxWindowAlive(tmuxWindow);
     if (!alive) {
       // 读取日志文件获取退出信息
-      const logFile = path.join(config.LOG_DIR, `${issueNumber}-pr-review-tmux.log`);
+      const logFile = paths.getPrReviewTmuxLogFile();
       let crashLog = "";
       if (fs.existsSync(logFile)) {
         const content = fs.readFileSync(logFile, "utf-8");
@@ -313,6 +316,7 @@ async function pollLoop(
   prNumber: number,
   statusData: StatusData,
   options: { interval: number; ci: boolean; detach: boolean },
+  paths: SessionPathManager,
 ) {
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
@@ -347,25 +351,25 @@ async function pollLoop(
     }
 
     const commentsFile = writeCommentsFile(
-      issueNumber,
+      paths,
       unresolvedComments,
       prNumber,
       statusData.repo,
     );
     logger.info(`评论已写入: ${commentsFile}`);
 
-    const sessionManager = new SessionManager(Number(issueNumber), config);
+    const sessionManager = new SessionManager(paths.getOwner(), paths.getRepo(), Number(issueNumber));
     sessionManager.writeStatus({
       status: "running",
       currentStep: "处理 PR 评论",
       lastMessage: `发现 ${unresolvedComments.length} 条未解决的评论`,
     });
 
-    await launchAgent(issueNumber, statusData.worktreePath, options);
+    await launchAgent(issueNumber, statusData.worktreePath, options, paths);
 
     if (!options.ci) {
       logger.info("等待 Agent 完成...");
-      await waitForAgentCompletion(issueNumber, 10);
+      await waitForAgentCompletion(issueNumber, 10, paths);
     }
 
     // 更新 lastSeenIds（包含 agent 可能产生的回复）
@@ -404,25 +408,25 @@ async function pollLoop(
       }
 
       const ciFile = writeCiFailureFile(
-        issueNumber,
+        paths,
         failedRuns,
         headSha,
         statusData.repo,
       );
       logger.info(`CI 失败信息已写入: ${ciFile}`);
 
-      const sessionManager = new SessionManager(Number(issueNumber), config);
+      const sessionManager = new SessionManager(paths.getOwner(), paths.getRepo(), Number(issueNumber));
       sessionManager.writeStatus({
         status: "running",
         currentStep: "修复 CI 失败",
         lastMessage: `发现 ${failedRuns.length} 个 CI 检查失败`,
       });
 
-      await launchAgent(issueNumber, statusData.worktreePath, options, "resolve-ci-failure");
+      await launchAgent(issueNumber, statusData.worktreePath, options, paths, "resolve-ci-failure");
 
       if (!options.ci) {
         logger.info("等待 Agent 完成...");
-        await waitForAgentCompletion(issueNumber, 10);
+        await waitForAgentCompletion(issueNumber, 10, paths);
       }
 
       lastProcessedSha = headSha;
@@ -475,7 +479,7 @@ async function pollLoop(
         }
 
         // 更新 session 状态为 completed
-        const sessionManager = new SessionManager(Number(issueNumber), config);
+        const sessionManager = new SessionManager(paths.getOwner(), paths.getRepo(), Number(issueNumber));
         sessionManager.writeStatus({
           status: "completed",
           currentStep: "PR 已处理完毕",
@@ -484,7 +488,7 @@ async function pollLoop(
 
         // 执行 cleanup
         logger.info("开始清理资源...");
-        await cleanupIssue(issueNumber, { reason: pr.merged ? "pr-merged" : "pr-closed" });
+        await cleanupIssue(issueNumber, { reason: pr.merged ? "pr-merged" : "pr-closed" }, paths.getOwner(), paths.getRepo());
         logger.success("清理完成");
 
         // 优雅退出
@@ -516,7 +520,7 @@ async function pollLoop(
 
           // 写入 CI 失败信息供 agent 读取
           const ciFile = writeCiFailureFile(
-            issueNumber,
+            paths,
             failedRuns,
             headSha,
             statusData.repo,
@@ -524,7 +528,7 @@ async function pollLoop(
           logger.info(`CI 失败信息已写入: ${ciFile}`);
 
           // 重置 session 状态为 running
-          const sessionManager = new SessionManager(Number(issueNumber), config);
+          const sessionManager = new SessionManager(paths.getOwner(), paths.getRepo(), Number(issueNumber));
           sessionManager.writeStatus({
             status: "running",
             currentStep: "修复 CI 失败",
@@ -532,11 +536,11 @@ async function pollLoop(
           });
 
           // 启动 agent 修复 CI 失败
-          await launchAgent(issueNumber, statusData.worktreePath, options, "resolve-ci-failure");
+          await launchAgent(issueNumber, statusData.worktreePath, options, paths, "resolve-ci-failure");
 
           if (!options.ci) {
             logger.info("等待 Agent 完成...");
-            await waitForAgentCompletion(issueNumber, 10);
+            await waitForAgentCompletion(issueNumber, 10, paths);
           }
 
           lastProcessedSha = headSha;
@@ -577,7 +581,7 @@ async function pollLoop(
 
       // 写入评论文件供 agent 读取
       const commentsFile = writeCommentsFile(
-        issueNumber,
+        paths,
         newComments,
         prNumber,
         statusData.repo,
@@ -585,7 +589,7 @@ async function pollLoop(
       logger.info(`评论已写入: ${commentsFile}`);
 
       // 重置 session 状态为 running（agent 会更新它）
-      const sessionManager = new SessionManager(Number(issueNumber), config);
+      const sessionManager = new SessionManager(paths.getOwner(), paths.getRepo(), Number(issueNumber));
       sessionManager.writeStatus({
         status: "running",
         currentStep: "处理 PR 评论",
@@ -593,13 +597,13 @@ async function pollLoop(
       });
 
       // 启动 agent
-      await launchAgent(issueNumber, statusData.worktreePath, options);
+      await launchAgent(issueNumber, statusData.worktreePath, options, paths);
 
       // CI 模式下 agent 是同步的，已经执行完毕
       // tmux 模式下需要轮询等待 agent 完成
       if (!options.ci) {
         logger.info("等待 Agent 完成...");
-        await waitForAgentCompletion(issueNumber, 10);
+        await waitForAgentCompletion(issueNumber, 10, paths);
       }
 
       // 更新 lastSeenIds（包含 agent 可能产生的回复）
@@ -644,8 +648,17 @@ async function main() {
 
   config.ensureDataDirs();
 
+  // 获取 owner/repo
+  const repoInfoRes = await readRepoInfo();
+  if (!repoInfoRes.success) {
+    logger.error(repoInfoRes.error);
+    process.exit(1);
+  }
+  const { owner, repo } = repoInfoRes.data;
+  const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+
   // 读取 status.json
-  const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+  const statusFile = paths.getStatusFile();
   if (!fs.existsSync(statusFile)) {
     logger.error(`状态文件不存在: ${statusFile}`);
     logger.error("请先通过 along run 创建任务");
@@ -692,7 +705,7 @@ async function main() {
     interval,
     ci: opts.ci,
     detach: opts.detach,
-  });
+  }, paths);
 }
 
 main().catch((err) => {

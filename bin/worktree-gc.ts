@@ -11,73 +11,67 @@ const logger = consola.withTag("worktree-gc");
 import { get_gh_client, isNotFoundError } from "./github-client";
 import type { GitHubClient } from "./github-client";
 import chalk from "chalk";
-import { config } from "./config";
 import { cleanupIssue } from "./cleanup-utils";
-import path from "path";
 import fs from "fs";
+import { findAllSessions, SessionPathManager } from "./session-paths";
 
 import { Command } from "commander";
 
 // session 文件解析后的结构
-interface SessionInfo {
+interface GcSessionInfo {
   type: "issue";
   number: string;
+  owner: string;
+  repo: string;
   statusFile: string;
   worktreePath: string;
   branchName: string;
-  repo?: { owner: string; name: string };
   data: any;
 }
 
 // GC 判定结果
 interface GcCandidate {
-  session: SessionInfo;
+  session: GcSessionInfo;
   reason: string;
 }
 
-/** 扫描 sessions 目录，收集所有 session 信息 */
-function scanSessions(sessionsDir: string, worktreesDir: string): SessionInfo[] {
-  if (!fs.existsSync(sessionsDir)) return [];
+/** 扫描 sessions，收集所有 session 信息 */
+function scanSessions(): GcSessionInfo[] {
+  const allSessions = findAllSessions();
+  const results: GcSessionInfo[] = [];
 
-  const files = fs
-    .readdirSync(sessionsDir)
-    .filter((f) => /^\d+-status\.json$/.test(f));
-  const sessions: SessionInfo[] = [];
+  for (const session of allSessions) {
+    try {
+      const data = JSON.parse(fs.readFileSync(session.statusFile, "utf-8"));
+      const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
+      const worktreePath = paths.getWorktreeDir();
+      const branchName = data.branchName || data.headRef || "";
 
-  for (const file of files) {
-    const match = file.match(/^(\d+)-status\.json$/);
-    if (!match) continue;
-
-    const [, number] = match;
-    const type = "issue";
-    const statusFile = path.join(sessionsDir, file);
-    const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
-    const worktreePath = path.join(worktreesDir, `${number}`);
-    const branchName = data.branchName || data.headRef || "";
-
-    sessions.push({
-      type,
-      number,
-      statusFile,
-      worktreePath,
-      branchName,
-      repo: data.repo || undefined,
-      data,
-    });
+      results.push({
+        type: "issue",
+        number: String(session.issueNumber),
+        owner: session.owner,
+        repo: session.repo,
+        statusFile: session.statusFile,
+        worktreePath,
+        branchName,
+        data,
+      });
+    } catch {}
   }
 
-  return sessions;
+  return results;
 }
 
 /** 检查 session 对应的进程是否仍在运行 */
-async function isSessionRunning(session: SessionInfo): Promise<boolean> {
+async function isSessionRunning(session: GcSessionInfo): Promise<boolean> {
   const pid = session.data.pid;
   if (!pid) return false;
   return check_process_running(pid);
 }
 
 /** 判断 Issue 类型 session 是否可清理 */
-async function checkIssueSession(client: GitHubClient, session: SessionInfo): Promise<string | null> {
+async function checkIssueSession(client: GitHubClient, session: GcSessionInfo): Promise<string | null> {
   // 优先通过分支名查找关联 PR
   if (session.branchName) {
     try {
@@ -102,10 +96,7 @@ async function checkIssueSession(client: GitHubClient, session: SessionInfo): Pr
 
 /** 核心 GC 逻辑（可被 run.ts 导入调用） */
 export async function runGc(options: { dryRun?: boolean; force?: boolean; silent?: boolean } = {}) {
-  const sessionsDir = config.SESSION_DIR;
-  const worktreesDir = config.WORKTREE_DIR;
-
-  const allSessions = scanSessions(sessionsDir, worktreesDir);
+  const allSessions = scanSessions();
   if (allSessions.length === 0) {
     if (!options.silent) logger.info("没有活跃的 session");
     return;
@@ -121,21 +112,15 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   }
 
   // 仅处理属于当前项目的 session，跳过其他项目的 session
-  const sessions = allSessions.filter(session => {
-    if (!session.repo?.owner || !session.repo?.name) {
-      // 旧格式 session 没有 repo 信息，保守处理：仅在无法确定当前项目时才处理
-      if (!currentOwner || !currentRepo) return true;
-      // 有当前项目信息但 session 无 repo 信息，跳过以避免误删
-      if (!options.silent) logger.info(`跳过 #${session.number}（session 缺少仓库信息，无法确认归属）`);
-      return false;
-    }
-    if (!currentOwner || !currentRepo) return true;
-    const belongs = session.repo.owner === currentOwner && session.repo.name === currentRepo;
-    if (!belongs && !options.silent) {
-      logger.info(`跳过 #${session.number}（属于 ${session.repo.owner}/${session.repo.name}，非当前项目）`);
-    }
-    return belongs;
-  });
+  const sessions = currentOwner && currentRepo
+    ? allSessions.filter(session => {
+        const belongs = session.owner === currentOwner && session.repo === currentRepo;
+        if (!belongs && !options.silent) {
+          logger.info(`跳过 #${session.number}（属于 ${session.owner}/${session.repo}，非当前项目）`);
+        }
+        return belongs;
+      })
+    : allSessions;
 
   if (sessions.length === 0) {
     if (!options.silent) logger.info("当前项目没有需要检查的 session");
@@ -192,7 +177,7 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   // 执行清理
   for (const { session, reason } of candidates) {
     if (!options.silent) logger.info(`清理 ${session.type} #${session.number}（${reason}）`);
-    await cleanupIssue(session.number, { reason: "gc", silent: options.silent });
+    await cleanupIssue(session.number, { reason: "gc", silent: options.silent }, session.owner, session.repo);
   }
 
   // 最终 prune

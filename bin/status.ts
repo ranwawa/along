@@ -4,11 +4,11 @@
  * 扫描 sessions 目录并展示所有活跃任务的状态与当前步骤
  */
 import fs from "fs";
-import path from "path";
 import chalk from "chalk";
 import { config } from "./config";
 import { calculate_runtime } from "./common";
 import { execSync } from "child_process";
+import { findAllSessions, SessionPathManager } from "./session-paths";
 
 interface StepProgress {
   completed: number;
@@ -71,16 +71,8 @@ function getActiveTmuxWindows(): Set<string> {
 }
 
 export async function printStatusBoard() {
-  const sessionsDir = config.SESSION_DIR;
-  if (!fs.existsSync(sessionsDir)) {
-    console.log(chalk.yellow("暂无活跃任务记录"));
-    return;
-  }
-
-  const files = fs
-    .readdirSync(sessionsDir)
-    .filter((f) => /^\d+-status\.json$/.test(f));
-  if (files.length === 0) {
+  const allSessions = findAllSessions();
+  if (allSessions.length === 0) {
     console.log(chalk.yellow("暂无活跃任务记录"));
     return;
   }
@@ -98,10 +90,9 @@ export async function printStatusBoard() {
 
   const activeWindows = getActiveTmuxWindows();
 
-  for (const file of files) {
+  for (const session of allSessions) {
     try {
-      const filePath = path.join(sessionsDir, file);
-      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      const data = JSON.parse(fs.readFileSync(session.statusFile, "utf-8"));
 
       const id = `#${data.issueNumber}`;
       const typeStr = "Issue";
@@ -122,8 +113,8 @@ export async function printStatusBoard() {
       const runtime = calculate_runtime(data.startTime);
 
       // 解析当前步骤
-      const todoFile = file.replace("-status.json", "-todo.md");
-      const todoPath = path.join(sessionsDir, todoFile);
+      const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
+      const todoPath = paths.getTodoFile();
       const progress = parseTodoProgress(todoPath);
       const currentStep = formatStepWithProgress(progress, data.currentStep || undefined);
 
@@ -136,14 +127,13 @@ export async function printStatusBoard() {
   }
 
   console.log(chalk.dim("------------------------------------------------------------------------------------------"));
-  console.log(chalk.dim(`共 ${files.length} 个任务记录`));
+  console.log(chalk.dim(`共 ${allSessions.length} 个任务记录`));
 
   // 显示错误详情
   const errorSessions: any[] = [];
-  for (const file of files) {
+  for (const session of allSessions) {
     try {
-      const filePath = path.join(sessionsDir, file);
-      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      const data = JSON.parse(fs.readFileSync(session.statusFile, "utf-8"));
       if (data.status === "error" || data.status === "crashed") {
         errorSessions.push(data);
       }
@@ -172,7 +162,7 @@ export async function printStatusBoard() {
       }
     }
     console.log("");
-    console.log(chalk.dim("  详细日志请查看: ~/.along/logs/"));
+    console.log(chalk.dim("  详细日志请查看: along logs list"));
   }
 
   console.log("");

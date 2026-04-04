@@ -8,28 +8,41 @@ import fs from "fs";
 import { consola } from "consola";
 
 const logger = consola.withTag("logs");
-import { config } from "./config";
 import { Command } from "commander";
 import chalk from "chalk";
+import { findAllSessions, SessionPathManager } from "./session-paths";
 
 async function listLogs(num?: string, limit: number = 10) {
-  if (!fs.existsSync(config.LOG_DIR)) {
-    logger.error("日志目录不存在，暂无日志");
+  const allSessions = findAllSessions();
+  if (allSessions.length === 0) {
+    logger.info("暂无日志");
     return;
   }
 
-  let files = fs
-    .readdirSync(config.LOG_DIR)
-    .filter((f) => f.endsWith(".log"))
-    .map((f) => {
-      const filePath = path.join(config.LOG_DIR, f);
-      const stat = fs.statSync(filePath);
-      return { name: f, path: filePath, mtime: stat.mtime, size: stat.size };
-    })
-    .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+  let files: { name: string; path: string; mtime: Date; size: number }[] = [];
+
+  for (const session of allSessions) {
+    const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
+    const logFile = paths.getLogFile();
+    const tmuxLog = paths.getTmuxLogFile();
+
+    for (const filePath of [logFile, tmuxLog]) {
+      if (fs.existsSync(filePath)) {
+        const stat = fs.statSync(filePath);
+        files.push({
+          name: `${session.owner}/${session.repo}#${session.issueNumber} - ${path.basename(filePath)}`,
+          path: filePath,
+          mtime: stat.mtime,
+          size: stat.size,
+        });
+      }
+    }
+  }
+
+  files.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
   if (num) {
-    files = files.filter((f) => f.name.includes(`${num}-`));
+    files = files.filter((f) => f.path.includes(`/${num}/`));
   }
 
   if (files.length === 0) {

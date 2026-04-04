@@ -15,6 +15,7 @@ import {
 const logger = consola.withTag("worktree-init");
 import type { Result } from "./common";
 import { config } from "./config";
+import type { SessionPathManager } from "./session-paths";
 
 export async function getDefaultBranch(): Promise<string> {
   try {
@@ -82,7 +83,9 @@ function copyDirectory(src: string, dest: string) {
   }
 }
 
-export async function initSessionFiles(worktreePath: string, issueNumber: string, statusFile: string, statusData: any, todoFile: string) {
+export async function initSessionFiles(paths: SessionPathManager, worktreePath: string, statusData: any) {
+  const issueNumber = String(paths.getIssueNumber());
+
   // 1. 创建 .along 并标记
   logger.info("创建 worktree 标记...");
   fs.mkdirSync(path.join(worktreePath, ".along"), { recursive: true });
@@ -134,12 +137,12 @@ export async function initSessionFiles(worktreePath: string, issueNumber: string
   console.log(chalk.green("✓"), "同步编辑器环境完成");
 
   logger.info("创建状态文件...");
-  fs.mkdirSync(path.dirname(statusFile), { recursive: true });
-  fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2));
+  paths.ensureDir();
+  fs.writeFileSync(paths.getStatusFile(), JSON.stringify(statusData, null, 2));
   console.log(chalk.green("✓"), "创建状态文件完成");
 
   logger.info("创建初始 todo 文件...");
   const todoContent = `- [ ] 第一步：理解 Issue 并创建语义化分支\n- [ ] 第二步：分析代码库并制定实施计划\n- [ ] 第三步：实施修复\n- [ ] 第四步：提交并推送代码\n- [ ] 第五步：创建 PR 并更新状态\n`;
-  fs.writeFileSync(todoFile, todoContent);
+  fs.writeFileSync(paths.getTodoFile(), todoContent);
   console.log(chalk.green("✓"), "创建初始 todo 文件完成");
 }
