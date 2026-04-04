@@ -39,9 +39,9 @@ along logs list                     # View agent run logs
 
 ### Data Flow
 
-1. `along run <N>` validates environment (git repo, GitHub remote, tmux), fetches Issue #N via Octokit, creates a git worktree at `~/.along/worktrees/<N>/`, syncs skills/prompts into the worktree, then launches the configured AI agent in a tmux window.
+1. `along run <N>` validates environment (git repo, GitHub remote, tmux), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, syncs skills/prompts into the worktree, then launches the configured AI agent in a tmux window.
 2. The agent follows the SOP in `prompts/resolve-github-issue.md` — a 5-step workflow (understand issue → analyze code → implement fix → commit-push → create PR).
-3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates `~/.along/sessions/<N>-status.json` and `<N>-todo.md`.
+3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates `status.json` and `todo.md` in the issue directory.
 
 ### Directory Layout
 
@@ -55,21 +55,25 @@ along logs list                     # View agent run logs
 ### Key Abstractions
 
 - **`Result<T>`** (`common.ts`): Discriminated union `{success: true, data: T} | {success: false, error: string}` used throughout for error handling. Use `success()` / `failure()` constructors.
-- **`config`** (`config.ts`): Singleton with all path constants. Data lives under `~/.along/` (worktrees, sessions, logs, tmp). Source resources live under the repo's own directory.
+- **`config`** (`config.ts`): Singleton with path constants. Base data directory is `~/.along/`. Per-issue artifacts live under `~/.along/{owner}/{repo}/{issueNumber}/`. Source resources live under the repo's own directory.
+- **`SessionPathManager`** (`session-paths.ts`): Centralized path resolution for per-issue directories. Constructor: `(owner, repo, issueNumber)`. All artifact paths (status, todo, logs, worktree) are resolved relative to the issue directory.
 - **`GitHubClient`** (`github-client.ts`): Octokit wrapper. Token sourced from `GITHUB_TOKEN` env or `gh auth token`.
-- **`SessionManager`** (`session-manager.ts`): Manages `<N>-status.json` lifecycle (running → completed/error/crashed).
+- **`SessionManager`** (`session-manager.ts`): Manages `status.json` lifecycle (running → completed/error/crashed). Constructor: `(owner, repo, issueNumber)`.
 - **`Task`** / **`Issue`** (`task.ts`, `issue.ts`): Domain objects for session state and GitHub issue data respectively.
 
 ### Editor Support
 
 Along supports multiple AI editors via `config.EDITORS`. Each editor has directory mappings (where to copy skills/prompts) and a `runTemplate` for launching the agent. Current editors: OpenCode, PI, Claude Code. The active editor is auto-detected from the working directory (`.opencode`, `.pi`, `.claude`) or `AGENT_TYPE` env var.
 
-### Session Files (under `~/.along/sessions/`)
+### Issue Artifacts (under `~/.along/{owner}/{repo}/{issueNumber}/`)
 
-- `<N>-status.json` — Session state (status, branch, worktree path, timestamps)
-- `<N>-todo.md` — 5-step checklist, auto-updated by subcommand scripts
-- `<N>-issue.json` — Cached GitHub issue data
-- `<N>-step<M>-<script>.md` — Step output artifacts
+- `status.json` — Session state (status, branch, worktree path, timestamps)
+- `todo.md` — 5-step checklist, auto-updated by subcommand scripts
+- `issue.json` — Cached GitHub issue data
+- `step{M}-{script}.md` — Step output artifacts
+- `session.log` — Structured session log
+- `tmux.log` — Tmux output capture
+- `worktree/` — Git worktree directory
 
 ## Conventions
 

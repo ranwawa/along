@@ -4,7 +4,8 @@ import { consola } from "consola";
 const logger = consola.withTag("cleanup");
 import { config } from "./config";
 import { checkAndKillProcess, cleanupIssue } from "./cleanup-utils";
-import path from "path";
+import { readRepoInfo } from "./github-client";
+import { SessionPathManager } from "./session-paths";
 
 import { Command } from "commander";
 
@@ -20,7 +21,14 @@ async function main() {
   const [issueNumber] = program.args;
   const { force } = program.opts();
 
-  const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+  const repoInfoRes = await readRepoInfo();
+  if (!repoInfoRes.success) {
+    logger.error(repoInfoRes.error);
+    process.exit(1);
+  }
+  const { owner, repo } = repoInfoRes.data;
+  const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+  const statusFile = paths.getStatusFile();
 
   logger.info(`清理 Issue #${issueNumber}...`);
 
@@ -30,7 +38,7 @@ async function main() {
     process.exit(1);
   }
 
-  await cleanupIssue(issueNumber, { force, reason: force ? "force" : "normal" });
+  await cleanupIssue(issueNumber, { force, reason: force ? "force" : "normal" }, owner, repo);
 
   logger.success(`Issue #${issueNumber} 清理完成`);
 }

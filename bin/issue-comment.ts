@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
-import { get_gh_client } from "./github-client";
+import { get_gh_client, readRepoInfo } from "./github-client";
 import { consola } from "consola";
 
 const logger = consola.withTag("issue-comment");
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
+import { SessionPathManager } from "./session-paths";
 
 async function main() {
   const program = new Command();
@@ -31,6 +32,14 @@ async function main() {
 
     // 如果指定了 --step，自动更新 todo
     if (opts.step) {
+      const repoInfoRes = await readRepoInfo();
+      if (!repoInfoRes.success) {
+        logger.warn(`无法获取仓库信息，跳过 todo 更新: ${repoInfoRes.error}`);
+        return;
+      }
+      const { owner, repo } = repoInfoRes.data;
+      const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+
       const stepNum = parseInt(opts.step, 10);
       const outputContent = [
         `# 第${opts.step}步：Issue 评论`,
@@ -41,8 +50,8 @@ async function main() {
         ``,
         message,
       ].join("\n");
-      const outputFile = saveStepOutput(issueNumber, stepNum, "issue-comment", outputContent);
-      completeTodoStep(issueNumber, stepNum, "已同步计划到 Issue 评论", outputFile);
+      const outputFile = saveStepOutput(paths, stepNum, "issue-comment", outputContent);
+      completeTodoStep(paths, stepNum, "已同步计划到 Issue 评论", outputFile);
     }
   } catch (error: any) {
     logger.error(`发表评论失败: ${error.message}`);

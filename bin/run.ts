@@ -20,6 +20,7 @@ import { runGc } from "./worktree-gc";
 import { Task } from "./task";
 import { Issue } from "./issue";
 import { SessionManager } from "./session-manager";
+import { SessionPathManager } from "./session-paths";
 import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { printStatusBoard } from "./status";
 
@@ -55,8 +56,11 @@ async function identifyTask(
 async function ensureWorktree(
   num: string,
   taskData: any,
+  paths: SessionPathManager,
+  owner: string,
+  repoName: string,
 ): Promise<Result<string>> {
-  const worktreePath = path.join(config.WORKTREE_DIR, `${num}`);
+  const worktreePath = paths.getWorktreeDir();
   if (fs.existsSync(worktreePath)) return success(worktreePath);
 
   logger.warn("工作目录不存在，将自动初始化...");
@@ -64,12 +68,6 @@ async function ensureWorktree(
   const wtResult = await setupWorktree(worktreePath);
   if (!wtResult.success) return failure(wtResult.error);
 
-  const repoInfoRes = await readRepoInfo();
-  if (!repoInfoRes.success) return failure(repoInfoRes.error);
-  const { owner, repo: repoName } = repoInfoRes.data;
-
-  const statusFile = path.join(config.SESSION_DIR, `${num}-status.json`);
-  const todoFile = path.join(config.SESSION_DIR, `${num}-todo.md`);
   const statusData = {
     issueNumber: Number(num),
     status: "running",
@@ -80,7 +78,7 @@ async function ensureWorktree(
     repo: { owner, name: repoName },
   };
 
-  await initSessionFiles(worktreePath, num, statusFile, statusData, todoFile);
+  await initSessionFiles(paths, worktreePath, statusData);
 
   logger.success("初始化完成\n");
   return success(worktreePath);
@@ -93,6 +91,7 @@ async function executeTask(
   worktreePath: string,
   options: any,
   sessionManager: SessionManager,
+  paths: SessionPathManager,
 ) {
   const tag = getLogTag();
   const editor = config.EDITORS.find((e) => e.id === tag);
@@ -109,12 +108,12 @@ async function executeTask(
   logger.info(`准备启动 Agent (${editor?.name || tag})...`);
   logger.info(`工作目录: ${chalk.cyan(worktreePath)}`);
   logger.info(`执行命令: ${chalk.cyan(cmd)}`);
-  
+
   sessionManager.updateStep("启动 Agent", `执行命令: ${cmd}`);
   sessionManager.log(`Starting agent with command: ${cmd}`);
 
-  if (options.ci) return execCi(startCmd, num, options.output, sessionManager);
-  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager);
+  if (options.ci) return execCi(startCmd, num, options.output, sessionManager, paths);
+  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager, paths);
 }
 
 async function execCi(
@@ -122,13 +121,14 @@ async function execCi(
   num: string,
   format: string,
   sessionManager: SessionManager,
+  paths: SessionPathManager,
 ): Promise<number> {
   logger.info("CI 模式：直接执行...");
   sessionManager.log("CI mode: executing directly");
-  
+
   const stdout: string[] = [];
   const stderr: string[] = [];
-  
+
   const proc = Bun.spawn(["bash", "-c", cmd], {
     stdout: "pipe",
     stderr: "pipe",
@@ -136,7 +136,7 @@ async function execCi(
 
   // 将 CI 进程的 PID 写入 status.json，供 GC 检测进程是否存活
   if (proc.pid) {
-    const statusFile = path.join(config.SESSION_DIR, `${num}-status.json`);
+    const statusFile = paths.getStatusFile();
     if (fs.existsSync(statusFile)) {
       try {
         const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
@@ -169,9 +169,8 @@ async function execCi(
   }
 
   const exitCode = await proc.exited;
-  
+
   if (exitCode !== 0) {
-    const errorOutput = stderr.join("\n") || stdout.join("\n");
     sessionManager.markAsError(
       `Agent exited with code ${exitCode}`,
       exitCode
@@ -196,6 +195,7 @@ async function execTmux(
   sessionName?: string,
   detach?: boolean,
   sessionManager?: SessionManager,
+  paths?: SessionPathManager,
 ) {
   const session = sessionName || `pi-${num}`;
   logger.info(`在 tmux 中创建新窗口并自动切换到会话: ${session}...`);
@@ -204,8 +204,8 @@ async function execTmux(
   }
 
   // 防止 Agent 启动崩溃导致 tmux 窗口瞬间消失闪退
-  const logFile = path.join(config.LOG_DIR, `${num}-tmux.log`);
-  const statusFile = path.join(config.SESSION_DIR, `${num}-status.json`);
+  const logFile = paths ? paths.getTmuxLogFile() : "";
+  const statusFile = paths ? paths.getStatusFile() : "";
 
   // Agent 完成后更新 status.json，确保外部监控能检测到完成/崩溃
   const updateStatusScript = `
@@ -286,23 +286,22 @@ async function execForeground(cmd: string): Promise<number> {
   return await proc.exited;
 }
 
-async function tryGetSessionTask(num: string) {
-  const sessionsDir = config.SESSION_DIR;
-  const issueSessionPath = path.join(sessionsDir, `${num}-status.json`);
-  const worktreePath = path.join(config.WORKTREE_DIR, `${num}`);
+async function tryGetSessionTask(paths: SessionPathManager) {
+  const statusFile = paths.getStatusFile();
+  const worktreePath = paths.getWorktreeDir();
 
-  if (fs.existsSync(issueSessionPath) && fs.existsSync(worktreePath)) {
-    logger.info(`  检测到现有状况: Issue #${num} (从 Session 快进)`);
-    const session = JSON.parse(fs.readFileSync(issueSessionPath, "utf-8"));
+  if (fs.existsSync(statusFile) && fs.existsSync(worktreePath)) {
+    const session = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+    logger.info(`  检测到现有状况: Issue #${paths.getIssueNumber()} (从 Session 快进)`);
     return {
-      taskData: { title: session.title, number: Number(num) },
+      taskData: { title: session.title, number: paths.getIssueNumber() },
     };
   }
   return null;
 }
 
-async function runTask(num: string, options: any, sessionManager: SessionManager): Promise<Result<null>> {
-  let task = await tryGetSessionTask(num);
+async function runTask(num: string, options: any, sessionManager: SessionManager, paths: SessionPathManager, owner: string, repoName: string): Promise<Result<null>> {
+  let task = await tryGetSessionTask(paths);
   if (!task) {
     const idResult = await identifyTask(num);
     if (!idResult.success) return failure(idResult.error);
@@ -312,13 +311,16 @@ async function runTask(num: string, options: any, sessionManager: SessionManager
   const wtResult = await ensureWorktree(
     num,
     task.taskData,
+    paths,
+    owner,
+    repoName,
   );
   if (!wtResult.success) return failure(wtResult.error);
 
   ensureEditorPermissions(wtResult.data);
 
   const workflow = "resolve-github-issue";
-  await executeTask(num, workflow, wtResult.data, options, sessionManager);
+  await executeTask(num, workflow, wtResult.data, options, sessionManager, paths);
   return success(null);
 }
 
@@ -402,32 +404,18 @@ function configureCommand() {
   return program;
 }
 
-const checkTask = (taskNo: number) => {
-  const task = new Task(taskNo, config);
-  const healthRes = task.checkHealth();
-
-  if (!healthRes?.success) return healthRes;
-
-  return success(null);
-};
-
-const checkIssue = async (taskNo: number) =>{
-  const issue = new Issue(taskNo, config);
-  const loadRes = await issue.load();
-
-  if (!loadRes.success) return loadRes;
-
-  const healthRes = issue.checkHealth();
-  if (!healthRes.success) return healthRes;
-
-  return success(issue.data)
-}
-
-
-
 async function handleAction(num: string, options: any) {
+  // 提前获取 owner/repo
+  const repoInfoRes = await readRepoInfo();
+  if (!repoInfoRes.success) {
+    logger.error(repoInfoRes.error);
+    process.exit(1);
+  }
+  const { owner, repo: repoName } = repoInfoRes.data;
+
   const taskNo = Number.parseInt(num, 10);
-  const sessionManager = new SessionManager(taskNo, config);
+  const paths = new SessionPathManager(owner, repoName, taskNo);
+  const sessionManager = new SessionManager(owner, repoName, taskNo);
 
   try {
     const issueRes = await checkIssue(taskNo);
@@ -438,10 +426,10 @@ async function handleAction(num: string, options: any) {
     logger.success("issue检测通过");
 
     // 将 Issue 数据持久化，供 Agent prompt 直接读取
-    const issueJsonPath = path.join(config.SESSION_DIR, `${num}-issue.json`);
-    fs.writeFileSync(issueJsonPath, JSON.stringify(issueRes.data, null, 2));
+    paths.ensureDir();
+    fs.writeFileSync(paths.getIssueFile(), JSON.stringify(issueRes.data, null, 2));
 
-    const taskRes = checkTask(taskNo)
+    const taskRes = checkTask(owner, repoName, taskNo);
     if (!taskRes.success) {
       sessionManager.markAsError(taskRes.error);
       throw new Error(taskRes.error);
@@ -459,7 +447,7 @@ async function handleAction(num: string, options: any) {
 
     sessionManager.updateStep("启动任务处理", "开始执行任务流程");
 
-    const res = await runTask(num, options, sessionManager);
+    const res = await runTask(num, options, sessionManager, paths, owner, repoName);
     if (!res.success) {
       sessionManager.markAsError(res.error);
       throw new Error(res.error);
@@ -473,6 +461,27 @@ async function handleAction(num: string, options: any) {
     console.error(error.stack);
     process.exit(1);
   }
+}
+
+const checkTask = (owner: string, repo: string, taskNo: number) => {
+  const task = new Task(owner, repo, taskNo);
+  const healthRes = task.checkHealth();
+
+  if (!healthRes?.success) return healthRes;
+
+  return success(null);
+};
+
+const checkIssue = async (taskNo: number) =>{
+  const issue = new Issue(taskNo, config);
+  const loadRes = await issue.load();
+
+  if (!loadRes.success) return loadRes;
+
+  const healthRes = issue.checkHealth();
+  if (!healthRes.success) return healthRes;
+
+  return success(issue.data)
 }
 
 async function main() {

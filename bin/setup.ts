@@ -27,7 +27,8 @@ function printHelp(commands: string[], tag: string) {
     "pr-watch": "监听 PR 评论并自动触发 Agent 处理",
     "run": "一键启动（默认前台，支持 --tmux）",
     "worktree-gc": "批量清理已合并/已关闭的 worktree",
-    "sync-editor": "同步公共资源到编辑器目录"
+    "sync-editor": "同步公共资源到编辑器目录",
+    "migrate": "迁移旧目录结构到 owner/repo/issueNumber 层级"
   };
 
   for (const name of commands) {

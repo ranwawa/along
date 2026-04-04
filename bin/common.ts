@@ -71,53 +71,6 @@ export function iso_timestamp(): string {
   return new Date().toISOString();
 }
 
-// Session ID 相关工具函数
-export interface RepoInfo {
-  owner: string;
-  repo: string;
-}
-
-export interface SessionIdentifier extends RepoInfo {
-  issueNumber: number;
-}
-
-// 生成唯一的 session ID
-export function getSessionId(owner: string, repo: string, issueNumber: number): string {
-  return `${owner}-${repo}-${issueNumber}`;
-}
-
-// 从 session ID 解析出仓库信息和 issue 编号
-export function parseSessionId(sessionId: string): Result<SessionIdentifier> {
-  const parts = sessionId.split("-");
-  if (parts.length < 3) {
-    return failure(`Invalid session ID format: ${sessionId}`);
-  }
-  
-  // 尝试找到 issueNumber 的位置（它是最后一个数字部分）
-  let issueNumberIndex = -1;
-  for (let i = parts.length - 1; i >= 0; i--) {
-    if (/^\d+$/.test(parts[i])) {
-      issueNumberIndex = i;
-      break;
-    }
-  }
-  
-  if (issueNumberIndex === -1) {
-    return failure(`Could not find issue number in session ID: ${sessionId}`);
-  }
-  
-  const issueNumber = Number(parts[issueNumberIndex]);
-  const owner = parts.slice(0, issueNumberIndex - 1).join("-");
-  const repo = parts.slice(issueNumberIndex - 1, issueNumberIndex).join("-");
-  
-  return success({ owner, repo, issueNumber });
-}
-
-// 判断字符串是否是新格式的 session ID（包含 owner-repo-）
-export function isNewFormatSessionId(id: string): boolean {
-  return /^[^-]+-[^-]+-\d+$/.test(id);
-}
-
 const commonLogger = consola.withTag("common");
 
 /**

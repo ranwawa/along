@@ -2,14 +2,14 @@
 import { $ } from "bun";
 import { Command } from "commander";
 import fs from "fs";
-import path from "path";
 import { consola } from "consola";
 import { iso_timestamp } from "./common";
 
 const logger = consola.withTag("pr-create");
-import { config } from "./config";
+import { readRepoInfo } from "./github-client";
 import { getDefaultBranch } from "./worktree-init";
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
+import { SessionPathManager } from "./session-paths";
 
 /**
  * pr-create.ts - 创建 Pull Request
@@ -35,7 +35,15 @@ async function main() {
     process.exit(1);
   }
 
-  const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+  const repoInfoRes = await readRepoInfo();
+  if (!repoInfoRes.success) {
+    logger.error(repoInfoRes.error);
+    process.exit(1);
+  }
+  const { owner, repo: repoName } = repoInfoRes.data;
+  const paths = new SessionPathManager(owner, repoName, Number(issueNumber));
+
+  const statusFile = paths.getStatusFile();
   if (!fs.existsSync(statusFile)) {
     logger.error(`状态文件不存在: ${statusFile}`);
     process.exit(1);
@@ -55,7 +63,7 @@ async function main() {
     process.exit(1);
   }
 
-  const worktreePath = path.join(config.WORKTREE_DIR, `${issueNumber}`);
+  const worktreePath = paths.getWorktreeDir();
 
   try {
     const defaultBranch = await getDefaultBranch();
@@ -93,8 +101,8 @@ async function main() {
       ``,
       body,
     ].join("\n");
-    const outputFile = saveStepOutput(issueNumber, 5, "pr-create", outputContent);
-    completeTodoStep(issueNumber, 5, `PR: ${prUrl}`, outputFile);
+    const outputFile = saveStepOutput(paths, 5, "pr-create", outputContent);
+    completeTodoStep(paths, 5, `PR: ${prUrl}`, outputFile);
   } catch (error: any) {
     logger.error(`PR 创建失败: ${error.message}`);
     process.exit(1);

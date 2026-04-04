@@ -6,9 +6,9 @@ description: 修复 CI 检查失败，分析日志并修复代码
 
 ## 前置信息
 
-**工作目录**：你当前已在 Issue 的 worktree 中（`~/.along/worktrees/$1/`）。
+**工作目录**：你当前已在 Issue 的 worktree 中。
 
-**CI 失败信息**：`~/.along/sessions/$1-ci-failures.json` 包含本轮失败的 CI check 详情。
+**CI 失败信息**：`../ci-failures.json` 包含本轮失败的 CI check 详情。
 
 请先读取该文件，了解所有失败的 check runs。
 
@@ -16,7 +16,7 @@ description: 修复 CI 检查失败，分析日志并修复代码
 
 ### 第一步：分析 CI 失败原因
 
-1. **读取失败信息文件**：`~/.along/sessions/$1-ci-failures.json`
+1. **读取失败信息文件**：`../ci-failures.json`
 2. **获取详细日志**：对每个失败的 check run，通过以下方式获取日志：
    ```bash
    gh run view <run_id> --repo {owner}/{repo} --log-failed

@@ -42,26 +42,21 @@ export const config = {
   // 用户数据目录
   USER_ALONG_DIR: userAlongDir,
 
-  // 数据目录
-  WORKTREE_DIR: path.join(userAlongDir, "worktrees"),
-  SESSION_DIR: path.join(userAlongDir, "sessions"),
-  ARTIFACT_DIR: path.join(userAlongDir, "artifacts"),
-  TEMP_DIR: path.join(userAlongDir, "tmp"),
-  LOG_DIR: path.join(userAlongDir, "logs"),
+  /**
+   * 获取 issue 级别的数据目录: ~/.along/{owner}/{repo}/{issueNumber}/
+   */
+  getIssueDir(owner: string, repo: string, issueNumber: number): string {
+    return path.join(userAlongDir, owner, repo, String(issueNumber));
+  },
 
   // 资源目录
   SKILLS_DIR: path.join(alongDir, "skills"),
   PROMPTS_DIR: path.join(alongDir, "prompts"),
   BIN_DIR: path.join(alongDir, "bin"),
 
-  // 确保数据目录存在
+  // 确保用户数据根目录存在
   ensureDataDirs() {
     ensureDir(this.USER_ALONG_DIR);
-    ensureDir(this.WORKTREE_DIR);
-    ensureDir(this.SESSION_DIR);
-    ensureDir(this.ARTIFACT_DIR);
-    ensureDir(this.TEMP_DIR);
-    ensureDir(this.LOG_DIR);
   },
 
   // 日志标签识别

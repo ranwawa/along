@@ -8,10 +8,9 @@ import {
 } from "./common";
 
 const logger = consola.withTag("issue-list");
-import { config } from "./config";
 import chalk from "chalk";
-import path from "path";
 import fs from "fs";
+import { findAllSessions, SessionPathManager } from "./session-paths";
 
 import { Command } from "commander";
 
@@ -30,11 +29,10 @@ function getStatusInfo(status: string) {
   return { icon: "?", color: chalk.dim, label: "unknown" };
 }
 
-function printIssueRow(issueNumber: string, data: any, worktreesDir: string) {
+function printIssueRow(issueNumber: string, data: any, worktreePath: string) {
   const { icon, color, label } = getStatusInfo(data.status || "unknown");
   const runtime = data.startTime ? calculate_runtime(data.startTime) : "未知";
   const title = (data.title || "").substring(0, 40);
-  const worktreePath = path.join(worktreesDir, `${issueNumber}`);
   const worktreeExists = fs.existsSync(worktreePath) ? chalk.green("✓") : chalk.red("✗");
 
   logger.log(`  [${icon}] #${issueNumber.padStart(3)}  ${color(label.padEnd(9))}  ${chalk.dim(runtime.padEnd(6))}  ${title}`);
@@ -66,11 +64,9 @@ async function main() {
     process.exit(1);
   }
 
-  const repoRoot = await get_repo_root();
-  const sessionsDir = config.SESSION_DIR;
-  const worktreesDir = config.WORKTREE_DIR;
+  const allSessions = findAllSessions();
 
-  if (!fs.existsSync(sessionsDir)) {
+  if (allSessions.length === 0) {
     logger.info("暂无 Issue 工作空间");
     process.exit(0);
   }
@@ -78,14 +74,14 @@ async function main() {
   printHeader();
 
   let stats = { total: 0, running: 0, completed: 0, error: 0 };
-  const files = fs.readdirSync(sessionsDir).filter(f => /^\d+-status\.json$/.test(f));
 
-  for (const file of files) {
-    const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, file), "utf-8"));
+  for (const session of allSessions) {
+    const data = JSON.parse(fs.readFileSync(session.statusFile, "utf-8"));
     if (!shouldShow(data.status, options)) continue;
 
-    const issueNumber = file.match(/(\d+)-status\.json/)![1];
-    printIssueRow(issueNumber, data, worktreesDir);
+    const issueNumber = String(session.issueNumber);
+    const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
+    printIssueRow(issueNumber, data, paths.getWorktreeDir());
 
     stats.total++;
     if (data.status === "running") stats.running++;

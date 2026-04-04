@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
-import { config } from "./config";
-import { iso_timestamp, getSessionId, isNewFormatSessionId } from "./common";
+import { iso_timestamp } from "./common";
+import { SessionPathManager } from "./session-paths";
 
 export interface SessionStatus {
   issueNumber: number;
@@ -21,54 +21,18 @@ export interface SessionStatus {
 }
 
 export class SessionManager {
-  private issueNumber: number;
-  private owner?: string;
-  private repo?: string;
-  private config: any;
-  private statusFile: string;
-  private logFile: string;
-  private sessionId: string;
+  private paths: SessionPathManager;
 
-  constructor(issueNumber: number, config: any, owner?: string, repo?: string) {
-    this.issueNumber = issueNumber;
-    this.owner = owner;
-    this.repo = repo;
-    this.config = config;
-    
-    // 确定使用的 session ID
-    if (owner && repo) {
-      this.sessionId = getSessionId(owner, repo, issueNumber);
-    } else {
-      this.sessionId = String(issueNumber);
-    }
-    
-    // 尝试查找状态文件（优先新格式，降级到旧格式）
-    this.statusFile = this.findStatusFile(config, this.sessionId, issueNumber);
-    this.logFile = this.findLogFile(config, this.sessionId, issueNumber);
+  constructor(owner: string, repo: string, issueNumber: number) {
+    this.paths = new SessionPathManager(owner, repo, issueNumber);
   }
 
-  /**
-   * 查找状态文件：优先新格式，降级到旧格式
-   */
-  private findStatusFile(config: any, sessionId: string, issueNumber: number): string {
-    const newFormat = path.join(config.SESSION_DIR, `${sessionId}-status.json`);
-    if (fs.existsSync(newFormat) || (this.owner && this.repo)) {
-      return newFormat;
-    }
-    // 降级到旧格式
-    return path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+  private get statusFile(): string {
+    return this.paths.getStatusFile();
   }
 
-  /**
-   * 查找日志文件：优先新格式，降级到旧格式
-   */
-  private findLogFile(config: any, sessionId: string, issueNumber: number): string {
-    const newFormat = path.join(config.LOG_DIR, `${sessionId}.log`);
-    if (fs.existsSync(newFormat) || (this.owner && this.repo)) {
-      return newFormat;
-    }
-    // 降级到旧格式
-    return path.join(config.LOG_DIR, `${issueNumber}.log`);
+  private get logFile(): string {
+    return this.paths.getLogFile();
   }
 
   /**
@@ -88,17 +52,16 @@ export class SessionManager {
    */
   writeStatus(status: Partial<SessionStatus>): void {
     let currentStatus = this.readStatus();
-    
-    // 如果session不存在，创建一个基础的
+
     if (!currentStatus) {
       currentStatus = {
-        issueNumber: this.issueNumber,
+        issueNumber: this.paths.getIssueNumber(),
         status: "running",
         startTime: iso_timestamp(),
         branchName: "",
         worktreePath: "",
         title: "",
-        repo: { owner: "", name: "" },
+        repo: { owner: this.paths.getOwner(), name: this.paths.getRepo() },
       } as SessionStatus;
     }
 
@@ -108,7 +71,7 @@ export class SessionManager {
       lastUpdate: iso_timestamp(),
     };
 
-    fs.mkdirSync(path.dirname(this.statusFile), { recursive: true });
+    this.paths.ensureDir();
     fs.writeFileSync(this.statusFile, JSON.stringify(updatedStatus, null, 2));
   }
 
@@ -118,6 +81,7 @@ export class SessionManager {
   log(message: string, level: "info" | "warn" | "error" = "info"): void {
     const timestamp = new Date().toISOString();
     const logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
+    this.paths.ensureDir();
     fs.appendFileSync(this.logFile, logLine);
   }
 
@@ -175,5 +139,10 @@ export class SessionManager {
     } else {
       this.log(`Step: ${step}`, "info");
     }
+  }
+
+  /** 获取内部路径管理器 */
+  getPathManager(): SessionPathManager {
+    return this.paths;
   }
 }

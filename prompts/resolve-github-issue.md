@@ -8,10 +8,10 @@ description: 接收外部脚本传入的 Issue 编号并启动自动化修复 SO
 
 ## 工作空间说明
 
-- **你的工作目录**：`~/.along/worktrees/$1/`
-- **Issue 数据文件**：`~/.along/sessions/$1-issue.json`
-- **追踪文件位置**：`~/.along/sessions/$1-todo.md`（由脚本自动维护，第三步除外）
-- **状态文件位置**：`~/.along/sessions/$1-status.json`（由脚本自动维护，你不需要手动更新）
+- **你的工作目录**：当前 worktree 目录
+- **Issue 数据文件**：`../issue.json`（相对于工作目录）
+- **追踪文件位置**：`../todo.md`（由脚本自动维护，第三步除外）
+- **状态文件位置**：`../status.json`（由脚本自动维护，你不需要手动更新）
 
 **重要纪律**：
 
@@ -22,7 +22,7 @@ description: 接收外部脚本传入的 Issue 编号并启动自动化修复 SO
 
 - **`status.json`**：由各脚本（`branch-create`、`commit-push`、`pr-create`）在成功执行后**自动更新**
 - **`todo.md`**：由各脚本在成功执行后**自动勾选**对应步骤，并附上时间戳和产出文件引用（第三步除外，需你手动更新）
-- **产出文件**：每个脚本执行成功后会将详细产出保存到 `~/.along/sessions/$1-step{N}-{脚本名}.md`
+- **产出文件**：每个脚本执行成功后会将详细产出保存到 `../step{N}-{脚本名}.md`
 
 你无需手动更新 `status.json` 或 `todo.md`（第三步除外），专注于分析和写代码。
 
@@ -33,7 +33,7 @@ description: 接收外部脚本传入的 Issue 编号并启动自动化修复 SO
 1. **读取 Issue 数据**：
 
    ```bash
-   cat ~/.along/sessions/$1-issue.json
+   cat ../issue.json
    ```
 
    从 JSON 中提取标题、正文、标签等关键信息，理解需求本质（bug / feature / refactor / docs / ...）。
@@ -88,7 +88,7 @@ description: 接收外部脚本传入的 Issue 编号并启动自动化修复 SO
    - 局部运行相关测试验证通过
 
 3. **实时记录**：
-   - 每完成一个修改单元，更新 `$1-todo.md` 第三步的进度
+   - 每完成一个修改单元，更新 `../todo.md` 第三步的进度
 
 ### 第四步：提交并推送代码
 
@@ -167,7 +167,7 @@ along cleanup $1 --force
 2. **状态文件维护**：不直接读写 `status.json`，由脚本自动更新
 3. **进度追踪**：不手动更新 `todo.md`（第三步除外），由脚本自动勾选
 4. **Git 底层操作**：不直接执行 `git worktree add/remove`
-5. **目录管理**：不创建/删除 `~/.along/worktrees/` 目录结构
+5. **目录管理**：不创建/删除 worktree 目录结构
 6. **质量门禁**：不手动执行 prettier/eslint/tsc，由 git hooks 自动处理
 
 遵循以上边界，专注于你擅长的分析与实现工作，将确定性操作交给工具处理。

@@ -4,12 +4,12 @@ import {
   check_process_running,
   iso_timestamp,
 } from "./common";
-import { get_gh_client } from "./github-client";
+import { get_gh_client, readRepoInfo } from "./github-client";
 
 const logger = consola.withTag("cleanup-utils");
 import { config } from "./config";
-import path from "path";
 import fs from "fs";
+import { SessionPathManager } from "./session-paths";
 
 export interface CleanupOptions {
   force?: boolean;
@@ -85,51 +85,17 @@ export async function cleanupBranch(branchName: string, silent?: boolean) {
   }
 }
 
-/** 归档 session 文件和 log 文件到统一产物目录 */
-export async function archiveFiles(issueNumber: string, reason: string, silent?: boolean) {
-  const artifactDir = path.join(config.ARTIFACT_DIR, issueNumber);
-  fs.mkdirSync(artifactDir, { recursive: true });
-
-  // 归档 sessions 目录下所有 {issueNumber}-* 文件
-  const sessionFiles = fs.existsSync(config.SESSION_DIR)
-    ? fs.readdirSync(config.SESSION_DIR).filter(
-        (f) => f.startsWith(`${issueNumber}-`) && !fs.statSync(path.join(config.SESSION_DIR, f)).isDirectory(),
-      )
-    : [];
-
-  for (const file of sessionFiles) {
-    const srcPath = path.join(config.SESSION_DIR, file);
-
-    // status.json 特殊处理：注入 cleanupTime 和 cleanupReason
-    if (file.endsWith("-status.json")) {
-      const data = JSON.parse(fs.readFileSync(srcPath, "utf-8"));
+/** 归档 session 文件：在 status.json 中注入 cleanupTime/cleanupReason */
+export async function archiveFiles(paths: SessionPathManager, reason: string, silent?: boolean) {
+  const statusFile = paths.getStatusFile();
+  if (fs.existsSync(statusFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
       data.cleanupTime = iso_timestamp();
       data.cleanupReason = reason;
-      const archiveFile = path.join(artifactDir, `${issueNumber}-status.json`);
-      await Bun.write(archiveFile, JSON.stringify(data, null, 2));
-      fs.unlinkSync(srcPath);
-      info(`状态文件已归档: ${archiveFile}`, silent);
-      continue;
-    }
-
-    // 其他文件直接移动到产物目录
-    const archiveFile = path.join(artifactDir, file);
-    fs.renameSync(srcPath, archiveFile);
-    info(`文件已归档: ${archiveFile}`, silent);
-  }
-
-  // 归档 logs 目录下的 {issueNumber}.log 和 {issueNumber}-*.log
-  const logFiles = fs.existsSync(config.LOG_DIR)
-    ? fs.readdirSync(config.LOG_DIR).filter(
-        (f) => (f === `${issueNumber}.log` || f.startsWith(`${issueNumber}-`)) && f.endsWith(".log"),
-      )
-    : [];
-
-  for (const file of logFiles) {
-    const srcPath = path.join(config.LOG_DIR, file);
-    const archiveFile = path.join(artifactDir, file);
-    fs.renameSync(srcPath, archiveFile);
-    info(`日志已归档: ${archiveFile}`, silent);
+      fs.writeFileSync(statusFile, JSON.stringify(data, null, 2));
+      info(`状态文件已标记清理: ${statusFile}`, silent);
+    } catch {}
   }
 }
 
@@ -148,10 +114,28 @@ export function readBranchName(statusFile: string): string {
 
 /**
  * 完整清理一个 Issue 的所有资源
+ * 接受 owner/repo/issueNumber 或从 status.json 中读取
  */
-export async function cleanupIssue(issueNumber: string, options: CleanupOptions = {}) {
-  const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
-  const worktreePath = path.join(config.WORKTREE_DIR, `${issueNumber}`);
+export async function cleanupIssue(
+  issueNumber: string,
+  options: CleanupOptions = {},
+  owner?: string,
+  repo?: string,
+) {
+  // 如果没有传入 owner/repo，尝试从 git remote 获取
+  if (!owner || !repo) {
+    const repoInfoRes = await readRepoInfo();
+    if (!repoInfoRes.success) {
+      logger.error(`无法获取仓库信息: ${repoInfoRes.error}`);
+      return;
+    }
+    owner = repoInfoRes.data.owner;
+    repo = repoInfoRes.data.repo;
+  }
+
+  const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+  const statusFile = paths.getStatusFile();
+  const worktreePath = paths.getWorktreeDir();
   const reason = options.reason || (options.force ? "force" : "normal");
 
   // PR 合并时兜底移除 WIP 标签
@@ -176,6 +160,6 @@ export async function cleanupIssue(issueNumber: string, options: CleanupOptions 
   // 删除本地分支
   await cleanupBranch(branchName, options.silent);
 
-  // 归档所有相关文件
-  await archiveFiles(issueNumber, reason, options.silent);
+  // 归档（在 status.json 中标记清理信息）
+  await archiveFiles(paths, reason, options.silent);
 }

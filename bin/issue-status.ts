@@ -1,9 +1,7 @@
 #!/usr/bin/env bun
-import { $ } from "bun";
 import { consola } from "consola";
 import {
   checkGitRepo,
-  get_repo_root,
   iso_timestamp,
   Result,
   success,
@@ -11,8 +9,8 @@ import {
 } from "./common";
 
 const logger = consola.withTag("issue-status");
-import { config } from "./config";
-import path from "path";
+import { readRepoInfo } from "./github-client";
+import { SessionPathManager } from "./session-paths";
 import fs from "fs";
 
 import { Command } from "commander";
@@ -52,8 +50,14 @@ async function main() {
     process.exit(1);
   }
 
-  const repoRoot = await get_repo_root();
-  const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
+  const repoInfoRes = await readRepoInfo();
+  if (!repoInfoRes.success) {
+    logger.error(repoInfoRes.error);
+    process.exit(1);
+  }
+  const { owner, repo } = repoInfoRes.data;
+  const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+  const statusFile = paths.getStatusFile();
 
   logger.info(`更新 Issue #${issueNumber} 状态为: ${status}`);
   const result = await updateStatus(statusFile, status, message, step);
