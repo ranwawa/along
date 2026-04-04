@@ -99,28 +99,6 @@ async function checkIssueSession(client: GitHubClient, session: SessionInfo): Pr
   }
 }
 
-/** 清理过期的归档文件（超过 30 天） */
-function pruneArchive(silent?: boolean) {
-  const archiveDir = path.join(config.SESSION_DIR, "archive");
-  if (!fs.existsSync(archiveDir)) return;
-
-  const now = Date.now();
-  const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 天
-  let pruned = 0;
-
-  for (const file of fs.readdirSync(archiveDir)) {
-    const filePath = path.join(archiveDir, file);
-    const stat = fs.statSync(filePath);
-    if (now - stat.mtimeMs > maxAge) {
-      fs.unlinkSync(filePath);
-      pruned++;
-    }
-  }
-
-  if (pruned > 0 && !silent) {
-    logger.info(`已清理 ${pruned} 个过期归档文件（>30天）`);
-  }
-}
 
 /** 核心 GC 逻辑（可被 run.ts 导入调用） */
 export async function runGc(options: { dryRun?: boolean; force?: boolean; silent?: boolean } = {}) {
@@ -161,7 +139,6 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
 
   if (sessions.length === 0) {
     if (!options.silent) logger.info("当前项目没有需要检查的 session");
-    pruneArchive(options.silent);
     return;
   }
 
@@ -191,8 +168,6 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
 
   if (candidates.length === 0) {
     if (!options.silent) logger.info("没有需要清理的 worktree");
-    // 即使没有候选，也清理过期归档
-    pruneArchive(options.silent);
     return;
   }
 
@@ -222,9 +197,6 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
 
   // 最终 prune
   await $`git worktree prune`.quiet().nothrow();
-
-  // 清理过期归档
-  pruneArchive(options.silent);
 
   if (!options.silent) logger.success(`清理完成，共清理 ${candidates.length} 个 worktree`);
 }

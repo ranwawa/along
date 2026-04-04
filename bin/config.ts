@@ -45,6 +45,7 @@ export const config = {
   // 数据目录
   WORKTREE_DIR: path.join(userAlongDir, "worktrees"),
   SESSION_DIR: path.join(userAlongDir, "sessions"),
+  ARTIFACT_DIR: path.join(userAlongDir, "artifacts"),
   TEMP_DIR: path.join(userAlongDir, "tmp"),
   LOG_DIR: path.join(userAlongDir, "logs"),
   
@@ -58,6 +59,7 @@ export const config = {
     ensureDir(this.USER_ALONG_DIR);
     ensureDir(this.WORKTREE_DIR);
     ensureDir(this.SESSION_DIR);
+    ensureDir(this.ARTIFACT_DIR);
     ensureDir(this.TEMP_DIR);
     ensureDir(this.LOG_DIR);
   },

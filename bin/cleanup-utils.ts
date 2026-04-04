@@ -84,11 +84,10 @@ export async function cleanupBranch(branchName: string, silent?: boolean) {
   }
 }
 
-/** 归档 session 文件和 log 文件 */
+/** 归档 session 文件和 log 文件到统一产物目录 */
 export async function archiveFiles(issueNumber: string, reason: string, silent?: boolean) {
-  const archiveDir = path.join(config.SESSION_DIR, "archive");
-  fs.mkdirSync(archiveDir, { recursive: true });
-  const timestamp = Math.floor(Date.now() / 1000);
+  const artifactDir = path.join(config.ARTIFACT_DIR, issueNumber);
+  fs.mkdirSync(artifactDir, { recursive: true });
 
   // 归档 sessions 目录下所有 {issueNumber}-* 文件
   const sessionFiles = fs.existsSync(config.SESSION_DIR)
@@ -105,17 +104,15 @@ export async function archiveFiles(issueNumber: string, reason: string, silent?:
       const data = JSON.parse(fs.readFileSync(srcPath, "utf-8"));
       data.cleanupTime = iso_timestamp();
       data.cleanupReason = reason;
-      const archiveFile = path.join(archiveDir, `${issueNumber}-${timestamp}.json`);
+      const archiveFile = path.join(artifactDir, `${issueNumber}-status.json`);
       await Bun.write(archiveFile, JSON.stringify(data, null, 2));
       fs.unlinkSync(srcPath);
       info(`状态文件已归档: ${archiveFile}`, silent);
       continue;
     }
 
-    // 其他文件直接移动，加上时间戳避免冲突
-    const ext = path.extname(file);
-    const base = path.basename(file, ext);
-    const archiveFile = path.join(archiveDir, `${base}-${timestamp}${ext}`);
+    // 其他文件直接移动到产物目录
+    const archiveFile = path.join(artifactDir, file);
     fs.renameSync(srcPath, archiveFile);
     info(`文件已归档: ${archiveFile}`, silent);
   }
@@ -129,9 +126,7 @@ export async function archiveFiles(issueNumber: string, reason: string, silent?:
 
   for (const file of logFiles) {
     const srcPath = path.join(config.LOG_DIR, file);
-    const ext = path.extname(file);
-    const base = path.basename(file, ext);
-    const archiveFile = path.join(archiveDir, `${base}-${timestamp}${ext}`);
+    const archiveFile = path.join(artifactDir, file);
     fs.renameSync(srcPath, archiveFile);
     info(`日志已归档: ${archiveFile}`, silent);
   }
