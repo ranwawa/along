@@ -4,6 +4,7 @@ import {
   check_process_running,
   iso_timestamp,
 } from "./common";
+import { get_gh_client } from "./github-client";
 
 const logger = consola.withTag("cleanup-utils");
 import { config } from "./config";
@@ -152,6 +153,19 @@ export async function cleanupIssue(issueNumber: string, options: CleanupOptions 
   const statusFile = path.join(config.SESSION_DIR, `${issueNumber}-status.json`);
   const worktreePath = path.join(config.WORKTREE_DIR, `${issueNumber}`);
   const reason = options.reason || (options.force ? "force" : "normal");
+
+  // PR 合并时兜底移除 WIP 标签
+  if (reason === "pr-merged") {
+    try {
+      const clientRes = await get_gh_client();
+      if (clientRes.success) {
+        await clientRes.data.removeIssueLabel(issueNumber, "WIP");
+        info("WIP 标签已移除", options.silent);
+      }
+    } catch {
+      // 标签可能已被移除，忽略错误
+    }
+  }
 
   // 读取分支名（必须在归档前读取）
   const branchName = readBranchName(statusFile);
