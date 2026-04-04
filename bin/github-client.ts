@@ -62,6 +62,13 @@ export class GitHubClient {
     });
   }
 
+  async removeIssueLabel(number: string | number, label: string): Promise<void> {
+    await this.octokit.issues.removeLabel({
+      ...this.repoParams,
+      issue_number: Number(number),
+      name: label,
+    });
+  }
 
   async getRepositoryDetails(): Promise<RestEndpointMethodTypes["repos"]["get"]["response"]["data"]> {
     const { data } = await this.octokit.repos.get({
