@@ -119,9 +119,9 @@ export function completeTodoStep(
     return;
   }
 
-  let replacement = `- [x] ${match[1].slice(6)}\n  > ✅ ${timestamp} | ${summary}`;
-  if (outputFileName) {
-    replacement += `\n  > 📄 详情: ${outputFileName}`;
+  let replacement = `- [x] ${match[1].slice(6)}\n  > ✅ ${timestamp} | ${actualSummary}`;
+  if (actualOutputFileName) {
+    replacement += `\n  > 📄 详情: ${actualOutputFileName}`;
   }
 
   content = content.replace(pattern, replacement);
