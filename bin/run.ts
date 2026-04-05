@@ -2,6 +2,7 @@
 import { $ } from "bun";
 import path from "path";
 import fs from "fs";
+import { execSync } from "child_process";
 import { consola } from "consola";
 import {
   success,
@@ -9,11 +10,12 @@ import {
   checkGitRepo,
   iso_timestamp,
   ensureEditorPermissions,
+  check_process_running,
 } from "./common";
 import type { Result } from "./common";
 
 const logger = consola.withTag("run");
-import { readRepoInfo } from "./github-client";
+import { readRepoInfo, get_gh_client } from "./github-client";
 import chalk from "chalk";
 import { config } from "./config";
 import { runGc } from "./worktree-gc";
@@ -208,10 +210,12 @@ async function execTmux(
   const statusFile = paths ? paths.getStatusFile() : "";
 
   // Agent 完成后更新 status.json，确保外部监控能检测到完成/崩溃
+  // 当 exitCode 非零时，额外读取日志文件最后 20 行作为 crashLog
   const updateStatusScript = `
     bun -e "
       const fs = require('fs');
       const f = '${statusFile}';
+      const logPath = '${logFile}';
       if (fs.existsSync(f)) {
         const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
         if (s.status === 'running') {
@@ -219,7 +223,16 @@ async function execTmux(
           s.status = exitCode === 0 ? 'completed' : 'crashed';
           s.endTime = new Date().toISOString();
           s.lastUpdate = new Date().toISOString();
-          if (exitCode !== 0) s.errorMessage = 'Agent 退出码: ' + exitCode;
+          if (exitCode !== 0) {
+            s.errorMessage = 'Agent 退出码: ' + exitCode;
+            s.exitCode = exitCode;
+            try {
+              if (fs.existsSync(logPath)) {
+                const lines = fs.readFileSync(logPath, 'utf-8').split('\\n');
+                s.crashLog = lines.slice(-20).join('\\n');
+              }
+            } catch {}
+          }
           fs.writeFileSync(f, JSON.stringify(s, null, 2));
         }
       }
@@ -249,6 +262,9 @@ async function execTmux(
       echo ""
       echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
       echo "日志已保存到: ${logFile}"
+      # 发送系统通知和终端 bell，让用户即使不在 tmux 窗口也能感知
+      osascript -e "display notification \\"Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${num}\\"" 2>/dev/null || true
+      printf "\\a" 2>/dev/null || true
       echo "按 Enter 键关闭当前窗口..."
       read
       exit \${EXIT_CODE}
@@ -404,6 +420,57 @@ function configureCommand() {
   return program;
 }
 
+/**
+ * WIP 标签智能恢复：当 Issue 带有 WIP 标签但对应的 tmux 窗口已不存在且进程已退出时，
+ * 自动清理 WIP 标签，允许用户重新启动任务
+ */
+async function tryRecoverFromWip(taskNo: number, paths: SessionPathManager): Promise<boolean> {
+  // 检查 tmux 窗口是否存在
+  const tmuxWindow = `pi-${taskNo}`;
+  let windowAlive = false;
+  try {
+    const output = execSync("tmux list-windows -a -F '#{window_name}'", {
+      encoding: "utf-8",
+      timeout: 3000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    windowAlive = output.includes(tmuxWindow);
+  } catch {
+    // tmux 不可用，视为窗口不存在
+  }
+
+  if (windowAlive) {
+    logger.warn(`Issue #${taskNo} 的 tmux 窗口仍在运行，无法自动恢复`);
+    return false;
+  }
+
+  // 检查 status.json 中的 PID 是否存活
+  const statusFile = paths.getStatusFile();
+  if (fs.existsSync(statusFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+      if (data.pid && await check_process_running(data.pid)) {
+        logger.warn(`Issue #${taskNo} 的进程 (PID: ${data.pid}) 仍在运行，无法自动恢复`);
+        return false;
+      }
+    } catch {}
+  }
+
+  // tmux 窗口不存在且进程已退出，自动清理 WIP 标签
+  logger.warn(`Issue #${taskNo} 的 WIP 标签残留（tmux 窗口已关闭、进程已退出），正在自动清理...`);
+  try {
+    const clientRes = await get_gh_client();
+    if (clientRes.success) {
+      await clientRes.data.removeIssueLabel(taskNo, "WIP");
+      logger.success(`Issue #${taskNo} 的 WIP 标签已自动清理，任务将重新启动`);
+      return true;
+    }
+  } catch (e: any) {
+    logger.warn(`自动清理 WIP 标签失败: ${e.message}`);
+  }
+  return false;
+}
+
 async function handleAction(num: string, options: any) {
   // 提前获取 owner/repo
   const repoInfoRes = await readRepoInfo();
@@ -418,10 +485,20 @@ async function handleAction(num: string, options: any) {
   const sessionManager = new SessionManager(owner, repoName, taskNo);
 
   try {
-    const issueRes = await checkIssue(taskNo);
+    let issueRes = await checkIssue(taskNo);
     if (!issueRes.success) {
-      sessionManager.markAsError(issueRes.error);
-      throw new Error(issueRes.error);
+      // WIP 标签智能恢复：检查是否为 WIP 阻断且任务实际已停止
+      if (issueRes.error.includes("WIP")) {
+        const recovered = await tryRecoverFromWip(taskNo, paths);
+        if (recovered) {
+          // WIP 已清理，重新检查 Issue
+          issueRes = await checkIssue(taskNo);
+        }
+      }
+      if (!issueRes.success) {
+        sessionManager.markAsError(issueRes.error);
+        throw new Error(issueRes.error);
+      }
     }
     logger.success("issue检测通过");
 

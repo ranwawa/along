@@ -160,6 +160,17 @@ export async function printStatusBoard() {
       if (session.lastUpdate) {
         console.log(chalk.dim(`  最后更新: ${session.lastUpdate}`));
       }
+      if (session.crashLog) {
+        console.log(chalk.dim(`  崩溃日志 (最后几行):`));
+        const lines = session.crashLog.split("\n").filter(Boolean);
+        const displayLines = lines.slice(-5);
+        for (const line of displayLines) {
+          console.log(chalk.dim(`    ${line}`));
+        }
+        if (lines.length > 5) {
+          console.log(chalk.dim(`    ... (共 ${lines.length} 行，完整日志请查看 along logs list)`));
+        }
+      }
     }
     console.log("");
     console.log(chalk.dim("  详细日志请查看: along logs list"));
