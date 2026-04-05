@@ -30,7 +30,9 @@ function printHelp(commands: string[], tag: string) {
     "run": "一键启动（默认前台，支持 --tmux）",
     "worktree-gc": "批量清理已合并/已关闭的 worktree",
     "sync-editor": "同步公共资源到编辑器目录",
-    "migrate": "迁移旧目录结构到 owner/repo/issueNumber 层级"
+    "migrate": "迁移旧目录结构到 owner/repo/issueNumber 层级",
+    "webhook-server": "启动本地 webhook 服务器，接收 GitHub Actions 事件",
+    "actions-init": "部署 Along GitHub Actions workflow 到目标仓库"
   };
 
   for (const name of commands) {
