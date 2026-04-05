@@ -682,6 +682,43 @@ async function main() {
     process.exit(1);
   }
 
+  // 启动前检查 PR 是否已合并或关闭
+  const tokenRes = await readGithubToken();
+  if (!tokenRes.success) {
+    logger.error(`GitHub 认证失败: ${tokenRes.error}`);
+    process.exit(1);
+  }
+  const preCheckClient = new GitHubClient(tokenRes.data, owner, repo);
+  const prInfo = await preCheckClient.getPullRequest(prNumber);
+
+  if (prInfo.merged) {
+    logger.success(`PR #${prNumber} 已合并，无需监听`);
+
+    const sessionManager = new SessionManager(owner, repo, Number(issueNumber));
+    sessionManager.writeStatus({
+      status: "completed",
+      currentStep: "PR 已处理完毕",
+      lastMessage: "PR 已合并",
+    });
+
+    try {
+      await preCheckClient.removeIssueLabel(Number(issueNumber), "WIP");
+      logger.success("WIP 标签已移除");
+    } catch (e: any) {
+      logger.warn(`移除 WIP 标签失败: ${e.message}`);
+    }
+
+    logger.info("开始清理资源...");
+    await cleanupIssue(issueNumber, { reason: "pr-merged" }, owner, repo);
+    logger.success("清理完成");
+    process.exit(0);
+  }
+
+  if (prInfo.state === "closed") {
+    logger.info(`PR #${prNumber} 已关闭（未合并），无需监听`);
+    process.exit(0);
+  }
+
   logger.log("");
   logger.log(chalk.cyan("======================================"));
   logger.log(chalk.bold.cyan("  PR Review & CI 监听器"));
