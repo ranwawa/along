@@ -35,6 +35,8 @@ along issue-label 42 WIP            # Add labels to issue
 along issue-details 42              # Fetch issue with safety checks (closed/WIP guard)
 along plan-watch 42                 # 监听 Issue approved 标签并自动启动实施阶段
 along logs list                     # View agent run logs
+along webhook-server --port 9876    # 启动本地 webhook 服务器，接收 GitHub Actions 事件
+along actions-init                  # 部署 GitHub Actions workflow 到目标仓库
 ```
 
 ## Architecture
@@ -44,6 +46,7 @@ along logs list                     # View agent run logs
 1. `along run <N>` validates environment (git repo, GitHub remote, tmux), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, syncs skills/prompts into the worktree, then launches the configured AI agent in a tmux window.
 2. The agent follows the SOP in `prompts/resolve-github-issue.md` — a 5-step workflow (understand issue → analyze code → implement fix → commit-push → create PR). With `--review` flag, execution splits into two phases: Phase 1 (Steps 1-2, plan) → human adds `approved` label on Issue → Phase 2 (Steps 3-5, implementation). The SOP reads `.along-mode` file (`full`/`phase1`/`phase2`) to determine execution scope.
 3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates `status.json` and `todo.md` in the issue directory.
+4. **Event-driven mode**: GitHub Actions workflows (in `workflows/`) listen for events (issue opened, PR created, label added) and forward them via webhook to the local `along webhook-server`. The server then dispatches the appropriate `along` subcommand with `--ci` flag. This replaces the polling-based `*-watch` commands for environments with webhook connectivity.
 
 ### Directory Layout
 
@@ -52,6 +55,7 @@ along logs list                     # View agent run logs
   - **CLI subcommands** (dispatched by `setup.ts`): everything else in `bin/`
 - `prompts/` — SOP templates consumed by AI agents. `$1` is replaced with the issue/PR number.
 - `skills/` — Reusable skill definitions (branch naming, conventional commits, PR summary, unit testing) synced into worktrees.
+- `workflows/` — GitHub Actions workflow templates deployed to target repos via `along actions-init`.
 - `types/` — Type declarations for external agent SDKs.
 
 ### Key Abstractions
