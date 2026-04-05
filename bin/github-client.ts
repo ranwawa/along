@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { Octokit, RestEndpointMethodTypes } from "@octokit/rest";
 import { success, failure, Result, git } from "./common";
+import { resolveAgentToken } from "./agent-config";
 
 export type GitHubIssue = RestEndpointMethodTypes["issues"]["get"]["response"]["data"];
 export type GitHubPullRequest = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
@@ -133,24 +134,52 @@ export function isNotFoundError(e: any): boolean {
   return message.includes("404") || message.includes("not found");
 }
 
-let cachedToken: string | null = null;
+// 默认 token 缓存
+let cachedDefaultToken: string | null = null;
 let cachedRepoInfo: { owner: string; repo: string } | null = null;
 let cachedClient: GitHubClient | null = null;
 
 /**
  * 获取 GitHub 认证 Token
+ *
+ * 优先级:
+ *   1. Agent 角色 token（ALONG_AGENT_ROLE 或 config.json defaultAgent → 对应角色的 githubToken）
+ *   2. GH_TOKEN 环境变量（由 run.ts/pr-watch.ts 在 tmux 启动时注入）
+ *   3. ALONG_GITHUB_TOKEN 环境变量
+ *   4. GITHUB_TOKEN 环境变量
+ *   5. gh auth token
  */
 export async function readGithubToken(): Promise<Result<string>> {
-  if (cachedToken) return success(cachedToken as string);
-  if (process.env.GITHUB_TOKEN) {
-    cachedToken = process.env.GITHUB_TOKEN;
-    return success(cachedToken as string);
+  // 1. Agent 角色 token
+  const agentToken = resolveAgentToken();
+  if (agentToken) return success(agentToken);
+
+  // 以下为默认 token，可缓存
+  if (cachedDefaultToken) return success(cachedDefaultToken);
+
+  // 2. GH_TOKEN（由 run.ts/pr-watch.ts 在 tmux 启动时注入）
+  if (process.env.GH_TOKEN) {
+    cachedDefaultToken = process.env.GH_TOKEN;
+    return success(cachedDefaultToken);
   }
 
+  // 3. 通用 bot token 环境变量
+  if (process.env.ALONG_GITHUB_TOKEN) {
+    cachedDefaultToken = process.env.ALONG_GITHUB_TOKEN;
+    return success(cachedDefaultToken);
+  }
+
+  // 4. 标准 GitHub token 环境变量
+  if (process.env.GITHUB_TOKEN) {
+    cachedDefaultToken = process.env.GITHUB_TOKEN;
+    return success(cachedDefaultToken);
+  }
+
+  // 5. gh CLI 认证
   try {
     const token = await $`gh auth token`.text();
-    cachedToken = token.trim();
-    return success(cachedToken as string);
+    cachedDefaultToken = token.trim();
+    return success(cachedDefaultToken);
   } catch {
     return failure("未找到 GITHUB_TOKEN 且 gh auth token 失败，请先运行 gh auth login");
   }

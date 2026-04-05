@@ -15,7 +15,7 @@ import {
 import type { Result } from "./common";
 
 const logger = consola.withTag("run");
-import { readRepoInfo, get_gh_client } from "./github-client";
+import { readRepoInfo, readGithubToken, get_gh_client } from "./github-client";
 import chalk from "chalk";
 import { config } from "./config";
 import { runGc } from "./worktree-gc";
@@ -25,6 +25,7 @@ import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { printStatusBoard } from "./status";
+import { getAgentRole } from "./agent-config";
 
 /**
  * run - 极简一键启动入口
@@ -70,7 +71,7 @@ async function ensureWorktree(
   const wtResult = await setupWorktree(worktreePath);
   if (!wtResult.success) return failure(wtResult.error);
 
-  const statusData = {
+  const statusData: Record<string, any> = {
     issueNumber: Number(num),
     status: "running",
     startTime: iso_timestamp(),
@@ -79,6 +80,11 @@ async function ensureWorktree(
     title: taskData.title,
     repo: { owner, name: repoName },
   };
+
+  const agentRole = getAgentRole();
+  if (agentRole) {
+    statusData.agentRole = agentRole;
+  }
 
   await initSessionFiles(paths, worktreePath, statusData);
 
@@ -199,11 +205,24 @@ async function execTmux(
   sessionManager?: SessionManager,
   paths?: SessionPathManager,
 ) {
-  const session = sessionName || `pi-${num}`;
+  const tag = getLogTag();
+  const session = sessionName || `${tag}-${num}`;
   logger.info(`在 tmux 中创建新窗口并自动切换到会话: ${session}...`);
   if (sessionManager) {
     sessionManager.log(`Starting tmux session: ${session}`);
   }
+
+  // 构建需要注入到 tmux 环境中的变量（确保 agent 进程内的 gh 命令使用正确的 token）
+  const envExports: string[] = [];
+  const agentRole = getAgentRole();
+  if (agentRole) {
+    envExports.push(`export ALONG_AGENT_ROLE='${agentRole}'`);
+  }
+  const tokenRes = await readGithubToken();
+  if (tokenRes.success) {
+    envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
+  }
+  const envSetup = envExports.length > 0 ? envExports.join("; ") + "; " : "";
 
   // 防止 Agent 启动崩溃导致 tmux 窗口瞬间消失闪退
   const logFile = paths ? paths.getTmuxLogFile() : "";
@@ -253,7 +272,7 @@ async function execTmux(
   `.trim();
 
   const safeCmd = `bash -c '
-    echo "Starting at $(date)" > ${logFile}
+    ${envSetup}echo "Starting at $(date)" > ${logFile}
     ${writePidScript} 2>/dev/null || true
     ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
     EXIT_CODE=\${PIPESTATUS[0]}
@@ -425,8 +444,8 @@ function configureCommand() {
  * 自动清理 WIP 标签，允许用户重新启动任务
  */
 async function tryRecoverFromWip(taskNo: number, paths: SessionPathManager): Promise<boolean> {
-  // 检查 tmux 窗口是否存在
-  const tmuxWindow = `pi-${taskNo}`;
+  // 检查 tmux 窗口是否存在（匹配任意 agent 类型的窗口名）
+  const tmuxWindowSuffix = `-${taskNo}`;
   let windowAlive = false;
   try {
     const output = execSync("tmux list-windows -a -F '#{window_name}'", {
@@ -434,7 +453,7 @@ async function tryRecoverFromWip(taskNo: number, paths: SessionPathManager): Pro
       timeout: 3000,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    windowAlive = output.includes(tmuxWindow);
+    windowAlive = output.split("\n").some((w) => w.trim().endsWith(tmuxWindowSuffix));
   } catch {
     // tmux 不可用，视为窗口不存在
   }
