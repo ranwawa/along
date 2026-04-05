@@ -1,0 +1,50 @@
+# Along 自动化：Issue 创建时触发 Agent
+# 当新 Issue 被创建时，通过 webhook 通知本机启动 along run
+name: Along - Issue Opened
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  notify-along:
+    runs-on: ubuntu-latest
+    # 仅处理非 bot 创建的 Issue
+    if: github.event.issue.user.type != 'Bot'
+    steps:
+      - name: 通知 Along 服务器
+        env:
+          ALONG_WEBHOOK_URL: ${{ secrets.ALONG_WEBHOOK_URL }}
+          ALONG_WEBHOOK_SECRET: ${{ secrets.ALONG_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$ALONG_WEBHOOK_URL" ]; then
+            echo "::warning::ALONG_WEBHOOK_URL 未配置，跳过通知"
+            exit 0
+          fi
+
+          PAYLOAD=$(cat <<'PAYLOAD_EOF'
+          {
+            "event": "issue.opened",
+            "issue_number": ${{ github.event.issue.number }},
+            "repository": "${{ github.repository }}",
+            "title": ${{ toJSON(github.event.issue.title) }},
+            "labels": ${{ toJSON(github.event.issue.labels.*.name) }}
+          }
+          PAYLOAD_EOF
+          )
+
+          # 计算 HMAC 签名
+          if [ -n "$ALONG_WEBHOOK_SECRET" ]; then
+            SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$ALONG_WEBHOOK_SECRET" | awk '{print $2}')
+            SIGNATURE_HEADER="X-Along-Signature: sha256=$SIGNATURE"
+          else
+            SIGNATURE_HEADER="X-Along-Signature: none"
+          fi
+
+          curl -s -X POST "$ALONG_WEBHOOK_URL/webhook" \
+            -H "Content-Type: application/json" \
+            -H "$SIGNATURE_HEADER" \
+            -d "$PAYLOAD" \
+            --max-time 10 \
+            --retry 3 \
+            --retry-delay 5 || echo "::warning::Webhook 通知失败，请检查 ALONG_WEBHOOK_URL 配置"
