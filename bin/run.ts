@@ -125,6 +125,11 @@ async function executeTask(
   const tag = getLogTag();
   const editor = config.EDITORS.find((e) => e.id === tag);
 
+  // 写入执行模式文件，供 SOP prompt 读取
+  const mode = options.review ? "phase1" : "full";
+  const modeFile = path.join(path.dirname(paths.getStatusFile()), ".along-mode");
+  fs.writeFileSync(modeFile, mode);
+
   // 按照配置中的模版生成启动指令
   let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
   cmd = cmd
@@ -141,8 +146,8 @@ async function executeTask(
   sessionManager.updateStep("启动 Agent", `执行命令: ${cmd}`);
   sessionManager.log(`Starting agent with command: ${cmd}`);
 
-  if (options.ci) return execCi(startCmd, num, options.output, sessionManager, paths);
-  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager, paths);
+  if (options.ci) return execCi(startCmd, num, options.output, sessionManager, paths, options.review);
+  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager, paths, options.review);
 }
 
 async function execCi(
@@ -151,6 +156,7 @@ async function execCi(
   format: string,
   sessionManager: SessionManager,
   paths: SessionPathManager,
+  review?: boolean,
 ): Promise<number> {
   logger.info("CI 模式：直接执行...");
   sessionManager.log("CI mode: executing directly");
@@ -211,6 +217,8 @@ async function execCi(
     );
     sessionManager.log(`Stderr: ${stderr.join("\n")}`, "error");
     sessionManager.log(`Stdout: ${stdout.join("\n")}`, "error");
+  } else if (review) {
+    sessionManager.markAsAwaitingApproval();
   } else {
     sessionManager.markAsCompleted();
   }
@@ -230,6 +238,7 @@ async function execTmux(
   detach?: boolean,
   sessionManager?: SessionManager,
   paths?: SessionPathManager,
+  review?: boolean,
 ) {
   const tag = getLogTag();
   const session = sessionName || `${tag}-${num}`;
@@ -247,6 +256,9 @@ async function execTmux(
   const tokenRes = await readGithubToken();
   if (tokenRes.success) {
     envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
+  }
+  if (review) {
+    envExports.push(`export ALONG_REVIEW_MODE='1'`);
   }
   const envSetup = envExports.length > 0 ? envExports.join("; ") + "; " : "";
 
@@ -279,7 +291,13 @@ async function execTmux(
         const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
         if (s.status === 'running') {
           const exitCode = Number(process.argv[1]) || 0;
-          s.status = exitCode === 0 ? 'completed' : 'crashed';
+          if (exitCode === 0 && process.env.ALONG_REVIEW_MODE === '1') {
+            s.status = 'awaiting_approval';
+            s.currentStep = '等待计划审批';
+            s.lastMessage = '计划已发布到 Issue 评论，等待 approved 标签';
+          } else {
+            s.status = exitCode === 0 ? 'completed' : 'crashed';
+          }
           s.endTime = new Date().toISOString();
           s.lastUpdate = new Date().toISOString();
           if (exitCode !== 0) {
@@ -476,7 +494,8 @@ function configureCommand() {
       false,
     )
     .option("--output <format>", "输出格式 (text 或 json)", "text")
-    .option("-d, --detach", "创建 tmux 窗口后，不自动进入该窗口");
+    .option("-d, --detach", "创建 tmux 窗口后，不自动进入该窗口")
+    .option("--review", "两阶段模式：先出方案等审批后再实施", false);
 
   return program;
 }
@@ -589,6 +608,29 @@ async function handleAction(num: string, options: any) {
     if (!res.success) {
       sessionManager.markAsError(res.error);
       throw new Error(res.error);
+    }
+
+    // --review 模式：Phase 1 完成后自动启动 plan-watch 监听审批
+    if (options.review && !options.ci) {
+      logger.info("两阶段模式：自动启动 plan-watch 监听 approved 标签...");
+      const planWatchScript = path.join(config.BIN_DIR, "plan-watch.ts");
+      Bun.spawn(["bun", planWatchScript, num], {
+        stdout: "inherit",
+        stderr: "inherit",
+        stdin: "ignore",
+      });
+    } else if (options.review && options.ci) {
+      logger.info("两阶段 CI 模式：在当前进程中启动 plan-watch...");
+      const planWatchScript = path.join(config.BIN_DIR, "plan-watch.ts");
+      const planWatchProc = Bun.spawn(["bun", planWatchScript, num, "--ci"], {
+        stdout: "inherit",
+        stderr: "inherit",
+        stdin: "ignore",
+      });
+      const planWatchExit = await planWatchProc.exited;
+      if (planWatchExit !== 0) {
+        throw new Error(`plan-watch 退出码: ${planWatchExit}`);
+      }
     }
 
     await showStatusBoard();
