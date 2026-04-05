@@ -754,13 +754,6 @@ async function main() {
       lastMessage: "PR 已合并",
     });
 
-    try {
-      await preCheckClient.removeIssueLabel(Number(issueNumber), "WIP");
-      logger.success("WIP 标签已移除");
-    } catch (e: any) {
-      logger.warn(`移除 WIP 标签失败: ${e.message}`);
-    }
-
     logger.info("开始清理资源...");
     await cleanupIssue(issueNumber, { reason: "pr-merged" }, owner, repo);
     logger.success("清理完成");
