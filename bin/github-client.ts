@@ -63,11 +63,16 @@ export class GitHubClient {
   }
 
   async removeIssueLabel(number: string | number, label: string): Promise<void> {
-    await this.octokit.issues.removeLabel({
-      ...this.repoParams,
-      issue_number: Number(number),
-      name: label,
-    });
+    try {
+      await this.octokit.issues.removeLabel({
+        ...this.repoParams,
+        issue_number: Number(number),
+        name: label,
+      });
+    } catch (e: any) {
+      // 标签不存在时忽略 404
+      if (e.status !== 404) throw e;
+    }
   }
 
   async getRepositoryDetails(): Promise<RestEndpointMethodTypes["repos"]["get"]["response"]["data"]> {
