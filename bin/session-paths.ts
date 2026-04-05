@@ -67,6 +67,14 @@ export class SessionPathManager {
     return path.join(this.getIssueDir(), "worktree");
   }
 
+  getAgentSessionExport(): string {
+    return path.join(this.getIssueDir(), "agent-session.jsonl");
+  }
+
+  getEventLogFile(): string {
+    return path.join(this.getIssueDir(), "events.jsonl");
+  }
+
   getOwner(): string {
     return this.owner;
   }

@@ -3,6 +3,13 @@ import fs from "fs";
 import { iso_timestamp } from "./common";
 import { SessionPathManager } from "./session-paths";
 
+export interface StepRecord {
+  step: string;
+  message?: string;
+  startTime: string;
+  endTime?: string;
+}
+
 export interface SessionStatus {
   issueNumber: number;
   status: "running" | "completed" | "error" | "crashed";
@@ -13,12 +20,31 @@ export interface SessionStatus {
   title: string;
   repo: { owner: string; name: string };
   agentRole?: string;
+  agentType?: string;
+  agentCommand?: string;
+  pid?: number;
+  prUrl?: string;
+  prNumber?: number;
+  commitShas?: string[];
   lastUpdate?: string;
   lastMessage?: string;
   currentStep?: string;
+  stepHistory?: StepRecord[];
   errorMessage?: string;
   exitCode?: number;
   crashLog?: string;
+  cleanupTime?: string;
+  cleanupReason?: string;
+  retryCount?: number;
+  ciResults?: { passed: number; failed: number; lastSha?: string };
+  reviewCommentCount?: number;
+  environment?: {
+    agentType: string;
+    gitHeadSha: string;
+    alongVersion: string;
+    nodeVersion: string;
+    platform: string;
+  };
 }
 
 export class SessionManager {
@@ -128,18 +154,70 @@ export class SessionManager {
   }
 
   /**
-   * 更新当前步骤
+   * 更新当前步骤（同时记录步骤历史）
    */
   updateStep(step: string, message?: string): void {
+    const current = this.readStatus();
+    const now = iso_timestamp();
+
+    // 关闭上一个步骤的 endTime
+    const history = current?.stepHistory || [];
+    if (history.length > 0) {
+      const last = history[history.length - 1];
+      if (!last.endTime) {
+        last.endTime = now;
+      }
+    }
+
+    // 添加新步骤
+    history.push({ step, message, startTime: now });
+
     this.writeStatus({
       currentStep: step,
       lastMessage: message,
+      stepHistory: history,
     });
     if (message) {
       this.log(`Step: ${step} - ${message}`, "info");
     } else {
       this.log(`Step: ${step}`, "info");
     }
+  }
+
+  /**
+   * 记录结构化事件到 session.log（供各子脚本调用）
+   */
+  logEvent(event: string, details?: Record<string, any>): void {
+    const detailStr = details ? " " + JSON.stringify(details) : "";
+    this.log(`[EVENT] ${event}${detailStr}`, "info");
+  }
+
+  /**
+   * 追加 commit SHA 到 commitShas 列表
+   */
+  addCommitSha(sha: string): void {
+    const current = this.readStatus();
+    const shas = current?.commitShas || [];
+    shas.push(sha);
+    this.writeStatus({ commitShas: shas });
+  }
+
+  /**
+   * 递增 retryCount
+   */
+  incrementRetry(): void {
+    const current = this.readStatus();
+    const count = (current?.retryCount || 0) + 1;
+    this.writeStatus({ retryCount: count });
+  }
+
+  /**
+   * 更新 CI 结果
+   */
+  updateCiResults(passed: number, failed: number, sha?: string): void {
+    this.writeStatus({
+      ciResults: { passed, failed, lastSha: sha },
+    });
   }
 
   /** 获取内部路径管理器 */

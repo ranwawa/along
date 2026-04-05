@@ -11,6 +11,7 @@ import {
   iso_timestamp,
   ensureEditorPermissions,
   check_process_running,
+  git,
 } from "./common";
 import type { Result } from "./common";
 
@@ -24,6 +25,7 @@ import { Issue } from "./issue";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { setupWorktree, initSessionFiles } from "./worktree-init";
+import { exportAgentSession } from "./agent-session-export";
 import { printStatusBoard } from "./status";
 import { getAgentRole } from "./agent-config";
 
@@ -62,13 +64,14 @@ async function ensureWorktree(
   paths: SessionPathManager,
   owner: string,
   repoName: string,
+  sessionManager?: SessionManager,
 ): Promise<Result<string>> {
   const worktreePath = paths.getWorktreeDir();
   if (fs.existsSync(worktreePath)) return success(worktreePath);
 
   logger.warn("工作目录不存在，将自动初始化...");
 
-  const wtResult = await setupWorktree(worktreePath);
+  const wtResult = await setupWorktree(worktreePath, sessionManager);
   if (!wtResult.success) return failure(wtResult.error);
 
   const statusData: Record<string, any> = {
@@ -86,7 +89,25 @@ async function ensureWorktree(
     statusData.agentRole = agentRole;
   }
 
-  await initSessionFiles(paths, worktreePath, statusData);
+  // 记录完整环境信息
+  try {
+    const tag = getLogTag();
+    const gitHeadSha = (await git.raw(["rev-parse", "HEAD"])).trim();
+    const pkg = JSON.parse(fs.readFileSync(path.join(config.ROOT_DIR, "package.json"), "utf-8"));
+    statusData.agentType = tag;
+    statusData.environment = {
+      agentType: tag,
+      gitHeadSha,
+      alongVersion: pkg.version || "unknown",
+      nodeVersion: process.version,
+      platform: process.platform,
+    };
+    sessionManager?.logEvent("environment-captured", statusData.environment);
+  } catch (e: any) {
+    logger.warn(`记录环境信息失败: ${e.message}`);
+  }
+
+  await initSessionFiles(paths, worktreePath, statusData, sessionManager);
 
   logger.success("初始化完成\n");
   return success(worktreePath);
@@ -178,6 +199,11 @@ async function execCi(
 
   const exitCode = await proc.exited;
 
+  // 导出 agent 会话数据
+  try {
+    await exportAgentSession(paths, paths.getWorktreeDir(), sessionManager);
+  } catch {}
+
   if (exitCode !== 0) {
     sessionManager.markAsError(
       `Agent exited with code ${exitCode}`,
@@ -228,6 +254,20 @@ async function execTmux(
   const logFile = paths ? paths.getTmuxLogFile() : "";
   const statusFile = paths ? paths.getStatusFile() : "";
 
+  // Agent 完成后导出会话数据（在 worktree 被清理前保存 agent 的对话历史）
+  const worktreePath = paths ? paths.getWorktreeDir() : "";
+  const exportBinPath = path.join(config.BIN_DIR, "agent-session-export.ts");
+  const exportOwner = paths ? paths.getOwner() : "";
+  const exportRepo = paths ? paths.getRepo() : "";
+  const exportSessionScript = paths ? `
+    bun -e "
+      const { exportAgentSession } = require('${exportBinPath}');
+      const { SessionPathManager } = require('${path.join(config.BIN_DIR, "session-paths.ts")}');
+      const paths = new SessionPathManager('${exportOwner}', '${exportRepo}', ${num});
+      exportAgentSession(paths, '${worktreePath}').catch(() => {});
+    " 2>/dev/null || true
+  `.trim() : "";
+
   // Agent 完成后更新 status.json，确保外部监控能检测到完成/崩溃
   // 当 exitCode 非零时，额外读取日志文件最后 20 行作为 crashLog
   const updateStatusScript = `
@@ -276,6 +316,7 @@ async function execTmux(
     ${writePidScript} 2>/dev/null || true
     ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
     EXIT_CODE=\${PIPESTATUS[0]}
+    ${exportSessionScript}
     ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true
     if [ \${EXIT_CODE} -ne 0 ]; then
       echo ""
@@ -349,6 +390,7 @@ async function runTask(num: string, options: any, sessionManager: SessionManager
     paths,
     owner,
     repoName,
+    sessionManager,
   );
   if (!wtResult.success) return failure(wtResult.error);
 

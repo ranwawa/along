@@ -8,6 +8,7 @@ import { get_gh_client, readRepoInfo } from "./github-client";
 const logger = consola.withTag("branch-create");
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
 import { SessionPathManager } from "./session-paths";
+import { SessionManager } from "./session-manager";
 
 /**
  * branch-create.ts - 创建语义化分支并标记 WIP
@@ -42,6 +43,7 @@ async function main() {
   }
   const { owner, repo } = repoInfoRes.data;
   const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+  const session = new SessionManager(owner, repo, Number(issueNumber));
 
   const worktreePath = paths.getWorktreeDir();
   if (!fs.existsSync(worktreePath)) {
@@ -57,11 +59,13 @@ async function main() {
     const wtGit = git.cwd(worktreePath);
     await wtGit.checkout(["-B", branchName]);
     logger.success(`分支已创建: ${branchName}`);
+    session.logEvent("branch-created", { branchName });
 
     // 2. 推送并关联远程分支
     logger.info("推送分支到远端...");
     await wtGit.push(["--set-upstream", "origin", branchName]);
     logger.success("分支已推送到远端");
+    session.logEvent("branch-pushed", { branchName });
 
     // 3. 给 Issue 打 WIP 标签
     logger.info("标记 Issue 为 WIP...");
@@ -72,6 +76,7 @@ async function main() {
     }
     await clientRes.data.addIssueLabels(issueNumber, ["WIP"]);
     logger.success(`Issue #${issueNumber} 已标记 WIP`);
+    session.logEvent("label-added", { issueNumber, label: "WIP" });
 
     // 4. 更新 status.json：写入 branchName + 自动推进 step
     if (fs.existsSync(statusFile)) {
@@ -98,6 +103,7 @@ async function main() {
 
     logger.success(`分支 ${branchName} 创建完成，Issue #${issueNumber} 已标记 WIP`);
   } catch (error: any) {
+    session.log(`branch-create 失败: ${error.message}\n${error.stack || ""}`, "error");
     logger.error(`分支创建失败: ${error.message}`);
     process.exit(1);
   }

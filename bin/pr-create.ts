@@ -10,6 +10,7 @@ import { readRepoInfo, readGithubToken } from "./github-client";
 import { getDefaultBranch } from "./worktree-init";
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
 import { SessionPathManager } from "./session-paths";
+import { SessionManager } from "./session-manager";
 
 /**
  * pr-create.ts - 创建 Pull Request
@@ -42,6 +43,7 @@ async function main() {
   }
   const { owner, repo: repoName } = repoInfoRes.data;
   const paths = new SessionPathManager(owner, repoName, Number(issueNumber));
+  const session = new SessionManager(owner, repoName, Number(issueNumber));
 
   const statusFile = paths.getStatusFile();
   if (!fs.existsSync(statusFile)) {
@@ -85,12 +87,25 @@ async function main() {
     const prUrl = result.trim();
     logger.success(`PR 创建成功: ${prUrl}`);
 
+    // 提取 PR number
+    const prNumberMatch = prUrl.match(/\/pull\/(\d+)/);
+    const prNum = prNumberMatch ? Number(prNumberMatch[1]) : undefined;
+
     // 自动更新 status.json：记录 PR URL，保持 running 状态
     statusData.prUrl = prUrl;
     statusData.lastUpdate = iso_timestamp();
     statusData.lastMessage = "PR 已创建";
     statusData.currentStep = "等待 PR 审核与合并";
+    if (prNum) statusData.prNumber = prNum;
     fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2));
+
+    // 记录到 session.log
+    session.logEvent("pr-created", {
+      prUrl,
+      prNumber: prNum,
+      title,
+      branchName,
+    });
 
     // 输出 PR URL 供模型使用
     console.log(prUrl);
@@ -113,6 +128,7 @@ async function main() {
     // PR 创建成功后，自动启动 pr-watch 监控 CI 状态和 PR 评论
     await startPrWatch(issueNumber);
   } catch (error: any) {
+    session.log(`pr-create 失败: ${error.message}\n${error.stack || ""}`, "error");
     logger.error(`PR 创建失败: ${error.message}`);
     process.exit(1);
   }
