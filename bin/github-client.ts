@@ -168,6 +168,66 @@ export class GitHubClient {
     return data.check_runs;
   }
 
+  /**
+   * 提交 PR Review（APPROVE / REQUEST_CHANGES / COMMENT）
+   * 支持 inline comments（针对具体文件和行号的评论）
+   */
+  async createReview(
+    prNumber: number,
+    body: string,
+    event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
+    comments?: Array<{ path: string; line: number; body: string; side?: "LEFT" | "RIGHT" }>,
+  ): Promise<void> {
+    await this.octokit.pulls.createReview({
+      ...this.repoParams,
+      pull_number: prNumber,
+      body,
+      event,
+      comments: comments?.map(c => ({
+        path: c.path,
+        line: c.line,
+        body: c.body,
+        side: c.side || "RIGHT",
+      })),
+    });
+  }
+
+  /**
+   * 列出 PR 上的所有 Reviews
+   */
+  async listReviews(prNumber: number): Promise<RestEndpointMethodTypes["pulls"]["listReviews"]["response"]["data"]> {
+    const { data } = await this.octokit.pulls.listReviews({
+      ...this.repoParams,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    return data;
+  }
+
+  /**
+   * 获取 PR 变更文件列表（含 patch/diff）
+   */
+  async getPullRequestFiles(prNumber: number): Promise<RestEndpointMethodTypes["pulls"]["listFiles"]["response"]["data"]> {
+    const { data } = await this.octokit.pulls.listFiles({
+      ...this.repoParams,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    return data;
+  }
+
+  /**
+   * 获取 PR 的完整 diff 文本
+   */
+  async getPullRequestDiff(prNumber: number): Promise<string> {
+    const { data } = await this.octokit.pulls.get({
+      ...this.repoParams,
+      pull_number: prNumber,
+      mediaType: { format: "diff" },
+    });
+    return data as unknown as string;
+  }
+
 }
 
 /**

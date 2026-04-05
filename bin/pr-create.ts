@@ -127,6 +127,9 @@ async function main() {
 
     // PR 创建成功后，自动启动 pr-watch 监控 CI 状态和 PR 评论
     await startPrWatch(issueNumber);
+
+    // 自动启动 review-watch 触发 Reviewer Agent 审查
+    await startReviewWatch(issueNumber);
   } catch (error: any) {
     session.log(`pr-create 失败: ${error.message}\n${error.stack || ""}`, "error");
     logger.error(`PR 创建失败: ${error.message}`);
@@ -158,6 +161,32 @@ async function startPrWatch(issueNumber: string): Promise<void> {
   } catch (error: any) {
     logger.warn(`自动启动 pr-watch 失败: ${error.message}`);
     logger.info(`请手动执行: along pr-watch ${issueNumber}`);
+  }
+}
+
+async function startReviewWatch(issueNumber: string): Promise<void> {
+  const inTmux = !!process.env.TMUX;
+
+  if (!inTmux) {
+    logger.info("未检测到 tmux 环境，跳过自动启动 review-watch");
+    logger.info(`请手动执行: along review-watch ${issueNumber}`);
+    return;
+  }
+
+  const windowName = `review-watch-${issueNumber}`;
+
+  try {
+    const windows = await $`tmux list-windows -F '#{window_name}'`.text();
+    if (windows.split("\n").some((w) => w.trim() === windowName)) {
+      logger.info(`review-watch 窗口已存在: ${windowName}，跳过重复启动`);
+      return;
+    }
+
+    await $`tmux new-window -d -n ${windowName} along review-watch ${issueNumber}`;
+    logger.success(`已自动启动代码审查监控: tmux 窗口 ${windowName}`);
+  } catch (error: any) {
+    logger.warn(`自动启动 review-watch 失败: ${error.message}`);
+    logger.info(`请手动执行: along review-watch ${issueNumber}`);
   }
 }
 
