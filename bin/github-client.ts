@@ -2,6 +2,9 @@ import { $ } from "bun";
 import { Octokit, RestEndpointMethodTypes } from "@octokit/rest";
 import { success, failure, Result, git } from "./common";
 import { resolveAgentToken } from "./agent-config";
+import { consola } from "consola";
+
+const apiLogger = consola.withTag("github-api");
 
 export type GitHubIssue = RestEndpointMethodTypes["issues"]["get"]["response"]["data"];
 export type GitHubPullRequest = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
@@ -10,16 +13,63 @@ export type GitHubCheckRun = RestEndpointMethodTypes["checks"]["listForRef"]["re
 
 /**
  * GitHub API 客户端 (基于官方 Octokit 实现)
+ * 内置请求日志：记录每次 API 调用的方法、耗时、状态码和 rate limit
  */
 export class GitHubClient {
   private octokit: Octokit;
   private owner: string;
   private repo: string;
 
+  /** API 调用统计 */
+  private stats = { total: 0, success: 0, failed: 0, totalMs: 0 };
+
   constructor(token: string, owner: string, repo: string) {
     this.octokit = new Octokit({ auth: token });
     this.owner = owner;
     this.repo = repo;
+
+    // 注册请求钩子，记录每次 API 调用
+    this.octokit.hook.wrap("request", async (request, options) => {
+      const method = options.method || "GET";
+      const url = options.url || "";
+      const start = Date.now();
+      this.stats.total++;
+
+      try {
+        const response = await request(options);
+        const duration = Date.now() - start;
+        this.stats.success++;
+        this.stats.totalMs += duration;
+
+        const rateRemaining = response.headers["x-ratelimit-remaining"];
+        const rateLimit = response.headers["x-ratelimit-limit"];
+        apiLogger.debug(
+          `${method} ${url} → ${response.status} (${duration}ms)` +
+          (rateRemaining ? ` [rate: ${rateRemaining}/${rateLimit}]` : "")
+        );
+
+        // rate limit 低于 100 时发出警告
+        if (rateRemaining && Number(rateRemaining) < 100) {
+          apiLogger.warn(`GitHub API rate limit 即将耗尽: ${rateRemaining}/${rateLimit}`);
+        }
+
+        return response;
+      } catch (error: any) {
+        const duration = Date.now() - start;
+        this.stats.failed++;
+        this.stats.totalMs += duration;
+
+        apiLogger.warn(
+          `${method} ${url} → ${error.status || "ERR"} (${duration}ms): ${error.message}`
+        );
+        throw error;
+      }
+    });
+  }
+
+  /** 获取 API 调用统计 */
+  getStats() {
+    return { ...this.stats, avgMs: this.stats.total > 0 ? Math.round(this.stats.totalMs / this.stats.total) : 0 };
   }
 
   private get repoParams() {

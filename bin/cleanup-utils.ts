@@ -10,6 +10,8 @@ const logger = consola.withTag("cleanup-utils");
 import { config } from "./config";
 import fs from "fs";
 import { SessionPathManager } from "./session-paths";
+import { SessionManager } from "./session-manager";
+import { exportAgentSession } from "./agent-session-export";
 
 export interface CleanupOptions {
   force?: boolean;
@@ -58,7 +60,7 @@ export async function checkAndKillProcess(
 }
 
 /** 删除 worktree 目录 */
-export async function cleanupWorktree(worktreePath: string, silent?: boolean) {
+export async function cleanupWorktree(worktreePath: string, silent?: boolean, session?: SessionManager) {
   const worktreeList = await $`git worktree list`.text();
   if (!fs.existsSync(worktreePath) && !worktreeList.includes(worktreePath)) {
     info(`worktree 目录不存在: ${worktreePath}`, silent);
@@ -68,25 +70,28 @@ export async function cleanupWorktree(worktreePath: string, silent?: boolean) {
   info(`删除 worktree: ${worktreePath}`, silent);
   try {
     await $`git worktree remove ${worktreePath} --force`.quiet();
+    session?.logEvent("worktree-removed", { worktreePath, method: "git-worktree-remove" });
   } catch {
     warn("git worktree remove 失败，尝试手动删除...", silent);
     await $`rm -rf ${worktreePath}`;
+    session?.logEvent("worktree-removed", { worktreePath, method: "rm-rf-fallback" });
   }
 }
 
 /** 删除本地 git 分支 */
-export async function cleanupBranch(branchName: string, silent?: boolean) {
+export async function cleanupBranch(branchName: string, silent?: boolean, session?: SessionManager) {
   if (!branchName) return;
 
   const branches = await $`git branch --list ${branchName}`.text();
   if (branches.includes(branchName)) {
     info(`删除本地分支: ${branchName}`, silent);
     await $`git branch -D ${branchName}`.quiet().nothrow();
+    session?.logEvent("branch-deleted", { branchName });
   }
 }
 
 /** 归档 session 文件：在 status.json 中注入 cleanupTime/cleanupReason */
-export async function archiveFiles(paths: SessionPathManager, reason: string, silent?: boolean) {
+export async function archiveFiles(paths: SessionPathManager, reason: string, silent?: boolean, session?: SessionManager) {
   const statusFile = paths.getStatusFile();
   if (fs.existsSync(statusFile)) {
     try {
@@ -95,6 +100,7 @@ export async function archiveFiles(paths: SessionPathManager, reason: string, si
       data.cleanupReason = reason;
       fs.writeFileSync(statusFile, JSON.stringify(data, null, 2));
       info(`状态文件已标记清理: ${statusFile}`, silent);
+      session?.logEvent("session-archived", { reason, statusFile });
     } catch {}
   }
 }
@@ -134,9 +140,12 @@ export async function cleanupIssue(
   }
 
   const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+  const session = new SessionManager(owner, repo, Number(issueNumber));
   const statusFile = paths.getStatusFile();
   const worktreePath = paths.getWorktreeDir();
   const reason = options.reason || (options.force ? "force" : "normal");
+
+  session.logEvent("cleanup-started", { issueNumber, reason, force: !!options.force });
 
   // PR 合并时兜底移除 WIP 标签
   if (reason === "pr-merged") {
@@ -145,6 +154,7 @@ export async function cleanupIssue(
       if (clientRes.success) {
         await clientRes.data.removeIssueLabel(issueNumber, "WIP");
         info("WIP 标签已移除", options.silent);
+        session.logEvent("label-removed", { issueNumber, label: "WIP" });
       }
     } catch {
       // 标签可能已被移除，忽略错误
@@ -154,12 +164,21 @@ export async function cleanupIssue(
   // 读取分支名（必须在归档前读取）
   const branchName = readBranchName(statusFile);
 
+  // 导出 agent 会话数据（必须在 worktree 删除前执行）
+  try {
+    await exportAgentSession(paths, worktreePath, session);
+  } catch (e: any) {
+    warn(`导出 agent 会话数据失败: ${e.message}`, options.silent);
+  }
+
   // 清理 worktree
-  await cleanupWorktree(worktreePath, options.silent);
+  await cleanupWorktree(worktreePath, options.silent, session);
 
   // 删除本地分支
-  await cleanupBranch(branchName, options.silent);
+  await cleanupBranch(branchName, options.silent, session);
 
   // 归档（在 status.json 中标记清理信息）
-  await archiveFiles(paths, reason, options.silent);
+  await archiveFiles(paths, reason, options.silent, session);
+
+  session.logEvent("cleanup-completed", { issueNumber, reason, branchName });
 }

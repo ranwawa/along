@@ -14,6 +14,7 @@ import chalk from "chalk";
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
 import { findAllSessions, SessionPathManager } from "./session-paths";
 import { readRepoInfo } from "./github-client";
+import { SessionManager } from "./session-manager";
 
 /**
  * .along/bin/commit-push.ts
@@ -25,7 +26,7 @@ interface Commit {
   files: string[];
 }
 
-function updateStatusAfterPush(branchName: string): string | null {
+function updateStatusAfterPush(branchName: string): { issueNumber: string; owner: string; repo: string } | null {
   // 通过 branchName 在所有 session 中找到对应的 status 文件，返回 issueNumber
   const sessions = findAllSessions();
   for (const session of sessions) {
@@ -37,7 +38,7 @@ function updateStatusAfterPush(branchName: string): string | null {
         data.currentStep = "创建 PR";
         fs.writeFileSync(session.statusFile, JSON.stringify(data, null, 2));
         logger.success("状态文件已自动更新");
-        return String(session.issueNumber);
+        return { issueNumber: String(session.issueNumber), owner: session.owner, repo: session.repo };
       }
     } catch {}
   }
@@ -75,6 +76,7 @@ async function main() {
   try {
     const currentBranch = runCommand("git branch --show-current");
     const status = runCommand("git status --porcelain");
+    const commitShas: string[] = [];
 
     // 清理当前暂存区
     runCommand("git reset");
@@ -97,7 +99,11 @@ async function main() {
         const tempMsgFile = path.join(os.tmpdir(), `along-commit-msg-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.txt`);
         fs.writeFileSync(tempMsgFile, commit.message, "utf-8");
         try {
-          await git.raw(["commit", "-F", tempMsgFile]);
+          const commitResult = await git.raw(["commit", "-F", tempMsgFile]);
+          // 获取刚创建的 commit SHA
+          const sha = (await git.raw(["rev-parse", "HEAD"])).trim();
+          commitShas.push(sha);
+          logger.info(`Commit SHA: ${sha}`);
         } finally {
           if (fs.existsSync(tempMsgFile)) {
             fs.unlinkSync(tempMsgFile);
@@ -146,29 +152,52 @@ async function main() {
 
     logger.success(`成功提交并推送到分支 ${currentBranch}`);
 
-    // 自动更新 status.json + todo
-    const issueNumber = updateStatusAfterPush(currentBranch);
-    if (issueNumber) {
-      const repoInfoRes = await readRepoInfo();
-      if (repoInfoRes.success) {
-        const { owner, repo } = repoInfoRes.data;
-        const paths = new SessionPathManager(owner, repo, Number(issueNumber));
-        const commitSummary = commits.map(c => `- ${c.message} (${c.files.join(", ")})`).join("\n");
-        const outputContent = [
-          `# 第四步：提交并推送代码`,
-          ``,
-          `- **分支**: ${currentBranch}`,
-          `- **提交数**: ${commits.length}`,
-          ``,
-          `## Commits`,
-          ``,
-          commitSummary,
-        ].join("\n");
-        const outputFile = saveStepOutput(paths, 4, "commit-push", outputContent);
-        completeTodoStep(paths, 4, `已提交并推送 ${commits.length} 个 commit`, outputFile);
+    // 自动更新 status.json + todo + session.log
+    const sessionInfo = updateStatusAfterPush(currentBranch);
+    if (sessionInfo) {
+      const { owner, repo } = sessionInfo;
+      const paths = new SessionPathManager(owner, repo, Number(sessionInfo.issueNumber));
+      const session = new SessionManager(owner, repo, Number(sessionInfo.issueNumber));
+
+      // 记录 commit SHAs 到 session
+      for (const sha of commitShas) {
+        session.addCommitSha(sha);
       }
+      session.logEvent("commits-pushed", {
+        branch: currentBranch,
+        commitCount: commits.length,
+        commitShas,
+      });
+
+      const commitSummary = commits.map(c => `- ${c.message} (${c.files.join(", ")})`).join("\n");
+      const outputContent = [
+        `# 第四步：提交并推送代码`,
+        ``,
+        `- **分支**: ${currentBranch}`,
+        `- **提交数**: ${commits.length}`,
+        `- **Commit SHAs**: ${commitShas.join(", ")}`,
+        ``,
+        `## Commits`,
+        ``,
+        commitSummary,
+      ].join("\n");
+      const outputFile = saveStepOutput(paths, 4, "commit-push", outputContent);
+      completeTodoStep(paths, 4, `已提交并推送 ${commits.length} 个 commit`, outputFile);
     }
   } catch (error: any) {
+    // 尝试写入 session.log
+    try {
+      const currentBranch = runCommand("git branch --show-current");
+      const sessions = findAllSessions();
+      for (const s of sessions) {
+        const data = JSON.parse(fs.readFileSync(s.statusFile, "utf-8"));
+        if (data.branchName === currentBranch) {
+          const session = new SessionManager(s.owner, s.repo, s.issueNumber);
+          session.log(`commit-push 失败: ${error.message}\n${error.stack || ""}`, "error");
+          break;
+        }
+      }
+    } catch {}
     logger.error(`操作失败: ${error.message}`);
     process.exit(1);
   }

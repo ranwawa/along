@@ -73,15 +73,33 @@ function writeCommentsFile(
   comments: GitHubReviewComment[],
   prNumber: number,
   repo: { owner: string; name: string },
+  session: SessionManager,
 ): string {
   const filePath = paths.getPrCommentsFile();
-  const data = {
-    meta: {
-      owner: repo.owner,
-      repo: repo.name,
-      pr_number: prNumber,
-      fetched_at: iso_timestamp(),
-    },
+
+  // 追加模式：读取已有记录，合并新评论（按 id 去重）
+  let existingComments: any[] = [];
+  try {
+    if (fs.existsSync(filePath)) {
+      const existing = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      existingComments = existing.records?.flatMap((r: any) => r.comments) || existing.comments || [];
+    }
+  } catch {}
+
+  const existingIds = new Set(existingComments.map((c: any) => c.id));
+  const newComments = comments.filter(c => !existingIds.has(c.id));
+
+  // 读取已有 records 数组（追加式结构）
+  let records: any[] = [];
+  try {
+    if (fs.existsSync(filePath)) {
+      const existing = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      records = existing.records || [];
+    }
+  } catch {}
+
+  records.push({
+    fetched_at: iso_timestamp(),
     comments: comments.map((c) => ({
       id: c.id,
       user: c.user?.login,
@@ -93,8 +111,24 @@ function writeCommentsFile(
       created_at: c.created_at,
       in_reply_to_id: c.in_reply_to_id,
     })),
+  });
+
+  const data = {
+    meta: {
+      owner: repo.owner,
+      repo: repo.name,
+      pr_number: prNumber,
+      last_updated: iso_timestamp(),
+    },
+    records,
   };
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  session.logEvent("pr-comments-written", {
+    prNumber,
+    commentCount: comments.length,
+    newCommentCount: newComments.length,
+    commentIds: comments.map(c => c.id),
+  });
   return filePath;
 }
 
@@ -103,15 +137,22 @@ function writeCiFailureFile(
   failedRuns: GitHubCheckRun[],
   headSha: string,
   repo: { owner: string; name: string },
+  session: SessionManager,
 ): string {
   const filePath = paths.getCiFailuresFile();
-  const data = {
-    meta: {
-      owner: repo.owner,
-      repo: repo.name,
-      head_sha: headSha,
-      fetched_at: iso_timestamp(),
-    },
+
+  // 追加模式：读取已有记录，追加新的失败快照
+  let records: any[] = [];
+  try {
+    if (fs.existsSync(filePath)) {
+      const existing = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      records = existing.records || [];
+    }
+  } catch {}
+
+  records.push({
+    head_sha: headSha,
+    fetched_at: iso_timestamp(),
     failed_checks: failedRuns.map((r) => ({
       id: r.id,
       name: r.name,
@@ -123,8 +164,23 @@ function writeCiFailureFile(
       output_title: r.output?.title,
       output_summary: r.output?.summary,
     })),
+  });
+
+  const data = {
+    meta: {
+      owner: repo.owner,
+      repo: repo.name,
+      last_updated: iso_timestamp(),
+    },
+    records,
   };
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  session.logEvent("ci-failures-written", {
+    headSha,
+    failedCount: failedRuns.length,
+    failedChecks: failedRuns.map(r => r.name),
+    totalRecords: records.length,
+  });
   return filePath;
 }
 
@@ -357,6 +413,12 @@ async function pollLoop(
     statusData.repo.name,
   );
 
+  const session = new SessionManager(
+    paths.getOwner(),
+    paths.getRepo(),
+    Number(issueNumber),
+  );
+
   // 获取当前所有评论，建立 baseline
   logger.info("获取当前 PR 评论...");
   const existingComments = await client.getReviewComments(prNumber);
@@ -391,25 +453,23 @@ async function pollLoop(
       unresolvedComments,
       prNumber,
       statusData.repo,
+      session,
     );
     logger.info(`评论已写入: ${commentsFile}`);
 
-    const sessionManager = new SessionManager(
-      paths.getOwner(),
-      paths.getRepo(),
-      Number(issueNumber),
-    );
-    sessionManager.writeStatus({
+    session.writeStatus({
       status: "running",
       currentStep: "处理 PR 评论",
       lastMessage: `发现 ${unresolvedComments.length} 条未解决的评论`,
     });
 
+    session.logEvent("agent-launched", { trigger: "unresolved-comments", commentCount: unresolvedComments.length });
     await launchAgent(issueNumber, statusData.worktreePath, options, paths);
 
     if (!options.ci) {
       logger.info("等待 Agent 完成...");
       await waitForAgentCompletion(issueNumber, 10, paths);
+      session.logEvent("agent-completed", { trigger: "unresolved-comments" });
     }
 
     // 更新 lastSeenIds（包含 agent 可能产生的回复）
@@ -452,20 +512,18 @@ async function pollLoop(
         failedRuns,
         headSha,
         statusData.repo,
+        session,
       );
       logger.info(`CI 失败信息已写入: ${ciFile}`);
 
-      const sessionManager = new SessionManager(
-        paths.getOwner(),
-        paths.getRepo(),
-        Number(issueNumber),
-      );
-      sessionManager.writeStatus({
+      session.writeStatus({
         status: "running",
         currentStep: "修复 CI 失败",
         lastMessage: `发现 ${failedRuns.length} 个 CI 检查失败`,
       });
+      session.updateCiResults(0, failedRuns.length, headSha);
 
+      session.logEvent("agent-launched", { trigger: "ci-failure", failedCount: failedRuns.length, headSha });
       await launchAgent(
         issueNumber,
         statusData.worktreePath,
@@ -477,6 +535,7 @@ async function pollLoop(
       if (!options.ci) {
         logger.info("等待 Agent 完成...");
         await waitForAgentCompletion(issueNumber, 10, paths);
+        session.logEvent("agent-completed", { trigger: "ci-failure" });
       }
 
       lastProcessedSha = headSha;
@@ -485,6 +544,7 @@ async function pollLoop(
       logger.info(`CI 检查进行中 (${pendingRuns.length} 个待完成)...`);
     } else {
       logger.info("CI 检查全部通过");
+      session.logEvent("ci-all-passed", { headSha, checkCount: checkRuns.length });
     }
   } else {
     logger.info("暂无 CI 检查记录");
@@ -512,8 +572,10 @@ async function pollLoop(
         logger.log("");
         if (pr.merged) {
           logger.success(chalk.green(`[${timeStr}] PR 已合并！`));
+          session.logEvent("pr-merged", { prNumber, elapsedStr });
         } else {
           logger.info(chalk.yellow(`[${timeStr}] PR 已关闭`));
+          session.logEvent("pr-closed", { prNumber, elapsedStr });
         }
 
         // PR 合并时移除 WIP 标签
@@ -521,6 +583,7 @@ async function pollLoop(
           try {
             await client.removeIssueLabel(Number(issueNumber), "WIP");
             logger.success("WIP 标签已移除");
+            session.logEvent("label-removed", { issueNumber, label: "WIP" });
           } catch (e: any) {
             logger.warn(`移除 WIP 标签失败: ${e.message}`);
           }
@@ -528,12 +591,7 @@ async function pollLoop(
 
         // 更新 session 状态为 completed
         try {
-          const sessionManager = new SessionManager(
-            paths.getOwner(),
-            paths.getRepo(),
-            Number(issueNumber),
-          );
-          sessionManager.writeStatus({
+          session.writeStatus({
             status: "completed",
             currentStep: "PR 已处理完毕",
             lastMessage: pr.merged ? "PR 已合并" : "PR 已关闭",
@@ -545,6 +603,7 @@ async function pollLoop(
         // 执行 cleanup
         try {
           logger.info("开始清理资源...");
+          session.logEvent("cleanup-started", { reason: pr.merged ? "pr-merged" : "pr-closed" });
           await cleanupIssue(
             issueNumber,
             { reason: pr.merged ? "pr-merged" : "pr-closed" },
@@ -552,8 +611,10 @@ async function pollLoop(
             paths.getRepo(),
           );
           logger.success("清理完成");
+          session.logEvent("cleanup-completed");
         } catch (e: any) {
           logger.warn(`清理资源失败: ${e.message}`);
+          session.log(`cleanup 失败: ${e.message}\n${e.stack || ""}`, "error");
         }
 
         // 优雅退出 - 无论清理是否成功都必须退出
@@ -591,22 +652,21 @@ async function pollLoop(
             failedRuns,
             headSha,
             statusData.repo,
+            session,
           );
           logger.info(`CI 失败信息已写入: ${ciFile}`);
 
           // 重置 session 状态为 running
-          const sessionManager = new SessionManager(
-            paths.getOwner(),
-            paths.getRepo(),
-            Number(issueNumber),
-          );
-          sessionManager.writeStatus({
+          session.writeStatus({
             status: "running",
             currentStep: "修复 CI 失败",
             lastMessage: `检测到 ${failedRuns.length} 个 CI 检查失败`,
           });
+          session.updateCiResults(0, failedRuns.length, headSha);
+          session.incrementRetry();
 
           // 启动 agent 修复 CI 失败
+          session.logEvent("agent-launched", { trigger: "ci-failure", failedCount: failedRuns.length, headSha });
           await launchAgent(
             issueNumber,
             statusData.worktreePath,
@@ -618,6 +678,7 @@ async function pollLoop(
           if (!options.ci) {
             logger.info("等待 Agent 完成...");
             await waitForAgentCompletion(issueNumber, 10, paths);
+            session.logEvent("agent-completed", { trigger: "ci-failure" });
           }
 
           lastProcessedSha = headSha;
@@ -633,6 +694,14 @@ async function pollLoop(
           logger.info(
             `[${timeStr}] CI 检查进行中 (${pendingRuns.length} 个待完成)...`,
           );
+        } else if (failedRuns.length === 0 && pendingRuns.length === 0) {
+          // 所有 CI 通过
+          const passedRuns = checkRuns.filter((r) => r.conclusion === "success");
+          if (passedRuns.length > 0 && headSha !== lastProcessedSha) {
+            session.logEvent("ci-all-passed", { headSha, checkCount: checkRuns.length });
+            session.updateCiResults(passedRuns.length, 0, headSha);
+            lastProcessedSha = headSha;
+          }
         }
       }
 
@@ -664,22 +733,21 @@ async function pollLoop(
         newComments,
         prNumber,
         statusData.repo,
+        session,
       );
       logger.info(`评论已写入: ${commentsFile}`);
 
       // 重置 session 状态为 running（agent 会更新它）
-      const sessionManager = new SessionManager(
-        paths.getOwner(),
-        paths.getRepo(),
-        Number(issueNumber),
-      );
-      sessionManager.writeStatus({
+      session.writeStatus({
         status: "running",
         currentStep: "处理 PR 评论",
         lastMessage: `检测到 ${newComments.length} 条新评论`,
+        reviewCommentCount: (session.readStatus()?.reviewCommentCount || 0) + newComments.length,
       });
 
       // 启动 agent
+      session.logEvent("agent-launched", { trigger: "new-comments", commentCount: newComments.length });
+      session.incrementRetry();
       await launchAgent(issueNumber, statusData.worktreePath, options, paths);
 
       // CI 模式下 agent 是同步的，已经执行完毕
@@ -687,6 +755,7 @@ async function pollLoop(
       if (!options.ci) {
         logger.info("等待 Agent 完成...");
         await waitForAgentCompletion(issueNumber, 10, paths);
+        session.logEvent("agent-completed", { trigger: "new-comments" });
       }
 
       // 更新 lastSeenIds（包含 agent 可能产生的回复）
@@ -704,6 +773,7 @@ async function pollLoop(
     } catch (error: any) {
       const timeStr = new Date().toLocaleTimeString("zh-CN", { hour12: false });
       logger.error(`[${timeStr}] 轮询出错: ${error.message}`);
+      session.log(`轮询出错: ${error.message}\n${error.stack || ""}`, "error");
       logger.info("将在下一轮继续...");
     }
   }
@@ -774,6 +844,7 @@ async function main() {
     logger.success(`PR #${prNumber} 已合并，无需监听`);
 
     const sessionManager = new SessionManager(owner, repo, Number(issueNumber));
+    sessionManager.logEvent("pr-already-merged", { prNumber });
     sessionManager.writeStatus({
       status: "completed",
       currentStep: "PR 已处理完毕",
@@ -830,6 +901,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  logger.error(`pr-watch 异常: ${err.message}`);
+  logger.error(`pr-watch 异常: ${err.message}\n${err.stack || ""}`);
   process.exit(1);
 });

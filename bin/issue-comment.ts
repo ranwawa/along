@@ -6,6 +6,7 @@ import { consola } from "consola";
 const logger = consola.withTag("issue-comment");
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
 import { SessionPathManager } from "./session-paths";
+import { SessionManager } from "./session-manager";
 
 async function main() {
   const program = new Command();
@@ -39,6 +40,9 @@ async function main() {
       }
       const { owner, repo } = repoInfoRes.data;
       const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+      const session = new SessionManager(owner, repo, Number(issueNumber));
+
+      session.logEvent("issue-comment-posted", { issueNumber, messageLength: message.length });
 
       const stepNum = parseInt(opts.step, 10);
       const outputContent = [
@@ -54,6 +58,15 @@ async function main() {
       completeTodoStep(paths, stepNum, "已同步计划到 Issue 评论", outputFile);
     }
   } catch (error: any) {
+    // 尝试写入 session.log
+    try {
+      const repoInfoRes = await readRepoInfo();
+      if (repoInfoRes.success) {
+        const { owner, repo } = repoInfoRes.data;
+        const session = new SessionManager(owner, repo, Number(issueNumber));
+        session.log(`issue-comment 失败: ${error.message}\n${error.stack || ""}`, "error");
+      }
+    } catch {}
     logger.error(`发表评论失败: ${error.message}`);
     process.exit(1);
   }

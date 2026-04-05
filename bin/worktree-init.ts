@@ -16,6 +16,7 @@ const logger = consola.withTag("worktree-init");
 import type { Result } from "./common";
 import { config } from "./config";
 import type { SessionPathManager } from "./session-paths";
+import type { SessionManager } from "./session-manager";
 
 export async function getDefaultBranch(): Promise<string> {
   try {
@@ -30,7 +31,7 @@ export async function getDefaultBranch(): Promise<string> {
   return "master";
 }
 
-export async function setupWorktree(worktreePath: string): Promise<Result<null>> {
+export async function setupWorktree(worktreePath: string, session?: SessionManager): Promise<Result<null>> {
   if (fs.existsSync(worktreePath)) {
     if (fs.existsSync(path.join(worktreePath, ".along/issue-mark"))) return success(null);
     return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
@@ -43,6 +44,7 @@ export async function setupWorktree(worktreePath: string): Promise<Result<null>>
   try {
     await git.fetch("origin", defaultBranch);
   } catch (e: any) {
+    session?.log(`fetch 远程分支失败: ${e.message}\n${e.stack || ""}`, "error");
     return failure(`fetch 远程分支失败: ${e.message}`);
   }
   console.log(chalk.green("✓"), "获取远程最新代码完成");
@@ -51,9 +53,11 @@ export async function setupWorktree(worktreePath: string): Promise<Result<null>>
   try {
     await git.raw(["worktree", "add", "--detach", worktreePath, `origin/${defaultBranch}`]);
   } catch (e: any) {
+    session?.log(`创建 worktree 失败: ${e.message}\n${e.stack || ""}`, "error");
     return failure(`创建 worktree 失败: ${e.message}`);
   }
   console.log(chalk.green("✓"), "创建 worktree 完成");
+  session?.logEvent("worktree-created", { worktreePath, defaultBranch });
 
   return success(null);
 }
@@ -83,7 +87,7 @@ function copyDirectory(src: string, dest: string) {
   }
 }
 
-export async function initSessionFiles(paths: SessionPathManager, worktreePath: string, statusData: any) {
+export async function initSessionFiles(paths: SessionPathManager, worktreePath: string, statusData: any, session?: SessionManager) {
   const issueNumber = String(paths.getIssueNumber());
 
   // 1. 创建 .along 并标记
@@ -145,4 +149,11 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
   const todoContent = `- [ ] 第一步：理解 Issue 并创建语义化分支\n- [ ] 第二步：分析代码库并制定实施计划\n- [ ] 第三步：实施修复\n- [ ] 第四步：提交并推送代码\n- [ ] 第五步：创建 PR 并更新状态\n`;
   fs.writeFileSync(paths.getTodoFile(), todoContent);
   console.log(chalk.green("✓"), "创建初始 todo 文件完成");
+
+  session?.logEvent("session-initialized", {
+    issueNumber,
+    worktreePath,
+    editor: currentEditor.name,
+    mappingCount: currentEditor.mappings.length,
+  });
 }
