@@ -25,6 +25,7 @@ function printHelp(commands: string[], tag: string) {
     "pr-create": "创建 Pull Request",
     "commit-push": "将变更进行原子化 Commit 并推送到远端",
     "pr-watch": "监听 PR 评论和 CI 状态并自动触发 Agent 处理",
+    "plan-watch": "监听 Issue 审批标签并自动启动实施阶段",
     "run": "一键启动（默认前台，支持 --tmux）",
     "worktree-gc": "批量清理已合并/已关闭的 worktree",
     "sync-editor": "同步公共资源到编辑器目录",

@@ -109,6 +109,7 @@ export async function printStatusBoard() {
       else if (statusStr === "completed") statusStr = chalk.green("Done");
       else if (statusStr === "error") statusStr = chalk.red("Error");
       else if (statusStr === "crashed") statusStr = chalk.red("Crashed");
+      else if (statusStr === "awaiting_approval") statusStr = chalk.magenta("Awaiting");
 
       const runtime = calculate_runtime(data.startTime);
 
