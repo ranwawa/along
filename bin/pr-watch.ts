@@ -283,21 +283,21 @@ async function execAgentTmux(
 
   // Agent 完成后通过 bun 脚本更新 status.json，确保主窗口能检测到完成/崩溃
   const updateStatusScript = `
-    bun -e "
-      const fs = require('fs');
-      const f = '${statusFile}';
-      if (fs.existsSync(f)) {
-        const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
-        if (s.status === 'running') {
-          const exitCode = Number(process.argv[1]) || 0;
-          s.status = exitCode === 0 ? 'completed' : 'crashed';
-          s.endTime = new Date().toISOString();
-          s.lastUpdate = new Date().toISOString();
-          if (exitCode !== 0) s.errorMessage = 'Agent 退出码: ' + exitCode;
-          fs.writeFileSync(f, JSON.stringify(s, null, 2));
-        }
-      }
-    "
+bun -e "
+  const fs = require('fs');
+  const f = '${statusFile}';
+  if (fs.existsSync(f)) {
+    const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
+    if (s.status === 'running') {
+      const exitCode = Number(process.argv[1]) || 0;
+      s.status = exitCode === 0 ? 'completed' : 'crashed';
+      s.endTime = new Date().toISOString();
+      s.lastUpdate = new Date().toISOString();
+      if (exitCode !== 0) s.errorMessage = 'Agent 退出码: ' + exitCode;
+      fs.writeFileSync(f, JSON.stringify(s, null, 2));
+    }
+  }
+" \${EXIT_CODE} 2>/dev/null || true
   `.trim();
 
   // 注入 agent 角色和 GitHub token，确保子 agent 也使用 bot 身份
@@ -310,24 +310,29 @@ async function execAgentTmux(
   if (tokenRes.success) {
     envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
   }
-  const envSetup = envExports.length > 0 ? envExports.join("; ") + "; " : "";
 
-  const safeCmd = `bash -c '
-    ${envSetup}echo "Starting PR review at $(date)" > ${logFile}
-    ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
-    EXIT_CODE=\${PIPESTATUS[0]}
-    ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true
-    if [ \${EXIT_CODE} -ne 0 ]; then
-      echo ""
-      echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
-      echo "日志已保存到: ${logFile}"
-      echo "按 Enter 键关闭当前窗口..."
-      read
-      exit \${EXIT_CODE}
-    fi
-  '`;
+  // 将 tmux 脚本写入临时文件，避免 bash -c '...' 的引号嵌套问题
+  const scriptContent = `#!/bin/bash
+${envExports.join("\n")}
+echo "Starting PR review at $(date)" > ${logFile}
+${cmd} 2>&1 | tee -a ${logFile}
+EXIT_CODE=\${PIPESTATUS[0]}
+${updateStatusScript}
+if [ \${EXIT_CODE} -ne 0 ]; then
+  echo ""
+  echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
+  echo "日志已保存到: ${logFile}"
+  echo "按 Enter 键关闭当前窗口..."
+  read
+  exit \${EXIT_CODE}
+fi
+`;
 
-  await $`tmux new-window -n ${session} ${safeCmd}`;
+  const scriptDir = path.dirname(paths.getStatusFile());
+  const scriptFile = path.join(scriptDir, `tmux-pr-review-${issueNumber}.sh`);
+  fs.writeFileSync(scriptFile, scriptContent, { mode: 0o755 });
+
+  await $`tmux new-window -n ${session} ${scriptFile}`;
   logger.success(`Tmux 窗口已创建: ${session}`);
 }
 

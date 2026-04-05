@@ -121,31 +121,31 @@ async function execAgentTmux(
   const statusFile = paths.getStatusFile();
 
   const updateStatusScript = `
-    bun -e "
-      const fs = require('fs');
-      const f = '${statusFile}';
-      const logPath = '${logFile}';
-      if (fs.existsSync(f)) {
-        const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
-        if (s.status === 'running') {
-          const exitCode = Number(process.argv[1]) || 0;
-          s.status = exitCode === 0 ? 'completed' : 'crashed';
-          s.endTime = new Date().toISOString();
-          s.lastUpdate = new Date().toISOString();
-          if (exitCode !== 0) {
-            s.errorMessage = 'Agent 退出码: ' + exitCode;
-            s.exitCode = exitCode;
-            try {
-              if (fs.existsSync(logPath)) {
-                const lines = fs.readFileSync(logPath, 'utf-8').split('\\n');
-                s.crashLog = lines.slice(-20).join('\\n');
-              }
-            } catch {}
+bun -e "
+  const fs = require('fs');
+  const f = '${statusFile}';
+  const logPath = '${logFile}';
+  if (fs.existsSync(f)) {
+    const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
+    if (s.status === 'running') {
+      const exitCode = Number(process.argv[1]) || 0;
+      s.status = exitCode === 0 ? 'completed' : 'crashed';
+      s.endTime = new Date().toISOString();
+      s.lastUpdate = new Date().toISOString();
+      if (exitCode !== 0) {
+        s.errorMessage = 'Agent 退出码: ' + exitCode;
+        s.exitCode = exitCode;
+        try {
+          if (fs.existsSync(logPath)) {
+            const lines = fs.readFileSync(logPath, 'utf-8').split('\\n');
+            s.crashLog = lines.slice(-20).join('\\n');
           }
-          fs.writeFileSync(f, JSON.stringify(s, null, 2));
-        }
+        } catch {}
       }
-    "
+      fs.writeFileSync(f, JSON.stringify(s, null, 2));
+    }
+  }
+" \${EXIT_CODE} 2>/dev/null || true
   `.trim();
 
   // 注入 agent 角色和 GitHub token
@@ -158,26 +158,31 @@ async function execAgentTmux(
   if (tokenRes.success) {
     envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
   }
-  const envSetup = envExports.length > 0 ? envExports.join("; ") + "; " : "";
 
-  const safeCmd = `bash -c '
-    ${envSetup}echo "Starting Phase 2 at $(date)" > ${logFile}
-    ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
-    EXIT_CODE=\${PIPESTATUS[0]}
-    ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true
-    if [ \${EXIT_CODE} -ne 0 ]; then
-      echo ""
-      echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
-      echo "日志已保存到: ${logFile}"
-      osascript -e "display notification \\"Phase 2 Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${issueNumber}\\"" 2>/dev/null || true
-      printf "\\a" 2>/dev/null || true
-      echo "按 Enter 键关闭当前窗口..."
-      read
-      exit \${EXIT_CODE}
-    fi
-  '`;
+  // 将 tmux 脚本写入临时文件，避免 bash -c '...' 的引号嵌套问题
+  const scriptContent = `#!/bin/bash
+${envExports.join("\n")}
+echo "Starting Phase 2 at $(date)" > ${logFile}
+${cmd} 2>&1 | tee -a ${logFile}
+EXIT_CODE=\${PIPESTATUS[0]}
+${updateStatusScript}
+if [ \${EXIT_CODE} -ne 0 ]; then
+  echo ""
+  echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
+  echo "日志已保存到: ${logFile}"
+  osascript -e "display notification \\"Phase 2 Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${issueNumber}\\"" 2>/dev/null || true
+  printf "\\a" 2>/dev/null || true
+  echo "按 Enter 键关闭当前窗口..."
+  read
+  exit \${EXIT_CODE}
+fi
+`;
 
-  await $`tmux new-window -n ${session} ${safeCmd}`;
+  const scriptDir = path.dirname(paths.getStatusFile());
+  const scriptFile = path.join(scriptDir, `tmux-phase2-${issueNumber}.sh`);
+  fs.writeFileSync(scriptFile, scriptContent, { mode: 0o755 });
+
+  await $`tmux new-window -n ${session} ${scriptFile}`;
   logger.success(`Tmux 窗口已创建: ${session}`);
 }
 
@@ -369,10 +374,29 @@ async function main() {
 
   const statusData = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
 
-  // 校验状态
-  if (statusData.status !== "awaiting_approval") {
-    logger.error(`当前状态为 "${statusData.status}"，期望 "awaiting_approval"`);
-    logger.error("plan-watch 仅在 Phase 1 完成后（awaiting_approval 状态）启动");
+  // 校验状态：允许 awaiting_approval 或 running（agent 可能还在执行 Phase 1）
+  if (statusData.status === "running") {
+    logger.info("当前状态为 running，等待 Phase 1 完成...");
+    const session = new SessionManager(owner, repo, Number(issueNumber));
+    while (true) {
+      await Bun.sleep(5000);
+      const current = session.readStatus();
+      if (!current) {
+        logger.error("无法读取 session 状态");
+        process.exit(1);
+      }
+      if (current.status === "awaiting_approval") {
+        logger.success("Phase 1 已完成，状态已变为 awaiting_approval");
+        break;
+      }
+      if (current.status !== "running") {
+        logger.error(`Phase 1 异常退出，状态: ${current.status}`);
+        process.exit(1);
+      }
+    }
+  } else if (statusData.status !== "awaiting_approval") {
+    logger.error(`当前状态为 "${statusData.status}"，期望 "awaiting_approval" 或 "running"`);
+    logger.error("plan-watch 仅在 Phase 1 执行中或完成后启动");
     process.exit(1);
   }
 

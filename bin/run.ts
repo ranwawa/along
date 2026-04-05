@@ -260,7 +260,6 @@ async function execTmux(
   if (review) {
     envExports.push(`export ALONG_REVIEW_MODE='1'`);
   }
-  const envSetup = envExports.length > 0 ? envExports.join("; ") + "; " : "";
 
   // 防止 Agent 启动崩溃导致 tmux 窗口瞬间消失闪退
   const logFile = paths ? paths.getTmuxLogFile() : "";
@@ -272,85 +271,101 @@ async function execTmux(
   const exportOwner = paths ? paths.getOwner() : "";
   const exportRepo = paths ? paths.getRepo() : "";
   const exportSessionScript = paths ? `
-    bun -e "
-      const { exportAgentSession } = require('${exportBinPath}');
-      const { SessionPathManager } = require('${path.join(config.BIN_DIR, "session-paths.ts")}');
-      const paths = new SessionPathManager('${exportOwner}', '${exportRepo}', ${num});
-      exportAgentSession(paths, '${worktreePath}').catch(() => {});
-    " 2>/dev/null || true
+bun -e "
+  const { exportAgentSession } = require('${exportBinPath}');
+  const { SessionPathManager } = require('${path.join(config.BIN_DIR, "session-paths.ts")}');
+  const paths = new SessionPathManager('${exportOwner}', '${exportRepo}', ${num});
+  exportAgentSession(paths, '${worktreePath}').catch(() => {});
+" 2>/dev/null || true
   `.trim() : "";
 
   // Agent 完成后更新 status.json，确保外部监控能检测到完成/崩溃
   // 当 exitCode 非零时，额外读取日志文件最后 20 行作为 crashLog
   const updateStatusScript = `
-    bun -e "
-      const fs = require('fs');
-      const f = '${statusFile}';
-      const logPath = '${logFile}';
-      if (fs.existsSync(f)) {
-        const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
-        if (s.status === 'running') {
-          const exitCode = Number(process.argv[1]) || 0;
-          if (exitCode === 0 && process.env.ALONG_REVIEW_MODE === '1') {
-            s.status = 'awaiting_approval';
-            s.currentStep = '等待计划审批';
-            s.lastMessage = '计划已发布到 Issue 评论，等待 approved 标签';
-          } else {
-            s.status = exitCode === 0 ? 'completed' : 'crashed';
-          }
-          s.endTime = new Date().toISOString();
-          s.lastUpdate = new Date().toISOString();
-          if (exitCode !== 0) {
-            s.errorMessage = 'Agent 退出码: ' + exitCode;
-            s.exitCode = exitCode;
-            try {
-              if (fs.existsSync(logPath)) {
-                const lines = fs.readFileSync(logPath, 'utf-8').split('\\n');
-                s.crashLog = lines.slice(-20).join('\\n');
-              }
-            } catch {}
-          }
-          fs.writeFileSync(f, JSON.stringify(s, null, 2));
-        }
+bun -e "
+  const fs = require('fs');
+  const f = '${statusFile}';
+  const logPath = '${logFile}';
+  if (fs.existsSync(f)) {
+    const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
+    if (s.status === 'running') {
+      const exitCode = Number(process.argv[1]) || 0;
+      if (exitCode === 0 && process.env.ALONG_REVIEW_MODE === '1') {
+        s.status = 'awaiting_approval';
+        s.currentStep = '等待计划审批';
+        s.lastMessage = '计划已发布到 Issue 评论，等待 approved 标签';
+      } else {
+        s.status = exitCode === 0 ? 'completed' : 'crashed';
       }
-    "
+      s.endTime = new Date().toISOString();
+      s.lastUpdate = new Date().toISOString();
+      if (exitCode !== 0) {
+        s.errorMessage = 'Agent 退出码: ' + exitCode;
+        s.exitCode = exitCode;
+        try {
+          if (fs.existsSync(logPath)) {
+            const lines = fs.readFileSync(logPath, 'utf-8').split('\\n');
+            s.crashLog = lines.slice(-20).join('\\n');
+          }
+        } catch {}
+      }
+      fs.writeFileSync(f, JSON.stringify(s, null, 2));
+    }
+  }
+" \${EXIT_CODE} 2>/dev/null || true
   `.trim();
 
   // 启动时将 shell PID 写入 status.json，供 GC 检测进程是否存活
   const writePidScript = `
-    bun -e "
-      const fs = require('fs');
-      const f = '${statusFile}';
-      if (fs.existsSync(f)) {
-        const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
-        s.pid = Number(process.argv[1]);
-        fs.writeFileSync(f, JSON.stringify(s, null, 2));
-      }
-    " \$\$
+bun -e "
+  const fs = require('fs');
+  const f = '${statusFile}';
+  if (fs.existsSync(f)) {
+    const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
+    s.pid = Number(process.argv[1]);
+    fs.writeFileSync(f, JSON.stringify(s, null, 2));
+  }
+" \$\$ 2>/dev/null || true
   `.trim();
 
-  const safeCmd = `bash -c '
-    ${envSetup}echo "Starting at $(date)" > ${logFile}
-    ${writePidScript} 2>/dev/null || true
-    ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
-    EXIT_CODE=\${PIPESTATUS[0]}
-    ${exportSessionScript}
-    ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true
-    if [ \${EXIT_CODE} -ne 0 ]; then
-      echo ""
-      echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
-      echo "日志已保存到: ${logFile}"
-      # 发送系统通知和终端 bell，让用户即使不在 tmux 窗口也能感知
-      osascript -e "display notification \\"Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${num}\\"" 2>/dev/null || true
-      printf "\\a" 2>/dev/null || true
-      echo "按 Enter 键关闭当前窗口..."
-      read
-      exit \${EXIT_CODE}
-    fi
-  '`;
+  // --review 模式：agent 成功退出后自动启动 plan-watch（在 tmux 脚本内部启动，确保时序正确）
+  const planWatchScript = review
+    ? `
+if [ \${EXIT_CODE} -eq 0 ] && [ "\${ALONG_REVIEW_MODE}" = "1" ]; then
+  echo "两阶段模式：自动启动 plan-watch 监听 approved 标签..."
+  nohup bun ${path.join(config.BIN_DIR, "plan-watch.ts")} ${num} > /dev/null 2>&1 &
+fi
+    `.trim()
+    : "";
+
+  // 将 tmux 脚本写入临时文件，避免 bash -c '...' 的引号嵌套问题
+  const scriptContent = `#!/bin/bash
+${envExports.join("\n")}
+echo "Starting at $(date)" > ${logFile}
+${writePidScript}
+${cmd} 2>&1 | tee -a ${logFile}
+EXIT_CODE=\${PIPESTATUS[0]}
+${exportSessionScript}
+${updateStatusScript}
+if [ \${EXIT_CODE} -ne 0 ]; then
+  echo ""
+  echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
+  echo "日志已保存到: ${logFile}"
+  osascript -e "display notification \\"Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${num}\\"" 2>/dev/null || true
+  printf "\\a" 2>/dev/null || true
+  echo "按 Enter 键关闭当前窗口..."
+  read
+  exit \${EXIT_CODE}
+fi
+${planWatchScript}
+`;
+
+  const scriptDir = paths ? path.dirname(paths.getStatusFile()) : "/tmp";
+  const scriptFile = path.join(scriptDir, `tmux-run-${num}.sh`);
+  fs.writeFileSync(scriptFile, scriptContent, { mode: 0o755 });
 
   try {
-    await $`tmux new-window -n ${session} ${safeCmd}`;
+    await $`tmux new-window -n ${session} ${scriptFile}`;
 
     if (!detach) {
       await $`tmux select-window -t ${session}`;
@@ -610,16 +625,9 @@ async function handleAction(num: string, options: any) {
       throw new Error(res.error);
     }
 
-    // --review 模式：Phase 1 完成后自动启动 plan-watch 监听审批
-    if (options.review && !options.ci) {
-      logger.info("两阶段模式：自动启动 plan-watch 监听 approved 标签...");
-      const planWatchScript = path.join(config.BIN_DIR, "plan-watch.ts");
-      Bun.spawn(["bun", planWatchScript, num], {
-        stdout: "inherit",
-        stderr: "inherit",
-        stdin: "ignore",
-      });
-    } else if (options.review && options.ci) {
+    // --review CI 模式：Phase 1 同步完成后，在当前进程中启动 plan-watch
+    // tmux 模式下 plan-watch 由 tmux bash 脚本在 agent 退出后自动启动（见 execTmux）
+    if (options.review && options.ci) {
       logger.info("两阶段 CI 模式：在当前进程中启动 plan-watch...");
       const planWatchScript = path.join(config.BIN_DIR, "plan-watch.ts");
       const planWatchProc = Bun.spawn(["bun", planWatchScript, num, "--ci"], {
