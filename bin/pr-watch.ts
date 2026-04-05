@@ -509,28 +509,36 @@ async function pollLoop(
         }
 
         // 更新 session 状态为 completed
-        const sessionManager = new SessionManager(
-          paths.getOwner(),
-          paths.getRepo(),
-          Number(issueNumber),
-        );
-        sessionManager.writeStatus({
-          status: "completed",
-          currentStep: "PR 已处理完毕",
-          lastMessage: pr.merged ? "PR 已合并" : "PR 已关闭",
-        });
+        try {
+          const sessionManager = new SessionManager(
+            paths.getOwner(),
+            paths.getRepo(),
+            Number(issueNumber),
+          );
+          sessionManager.writeStatus({
+            status: "completed",
+            currentStep: "PR 已处理完毕",
+            lastMessage: pr.merged ? "PR 已合并" : "PR 已关闭",
+          });
+        } catch (e: any) {
+          logger.warn(`更新 session 状态失败: ${e.message}`);
+        }
 
         // 执行 cleanup
-        logger.info("开始清理资源...");
-        await cleanupIssue(
-          issueNumber,
-          { reason: pr.merged ? "pr-merged" : "pr-closed" },
-          paths.getOwner(),
-          paths.getRepo(),
-        );
-        logger.success("清理完成");
+        try {
+          logger.info("开始清理资源...");
+          await cleanupIssue(
+            issueNumber,
+            { reason: pr.merged ? "pr-merged" : "pr-closed" },
+            paths.getOwner(),
+            paths.getRepo(),
+          );
+          logger.success("清理完成");
+        } catch (e: any) {
+          logger.warn(`清理资源失败: ${e.message}`);
+        }
 
-        // 优雅退出
+        // 优雅退出 - 无论清理是否成功都必须退出
         logger.info("Bye!");
         process.exit(0);
       }
