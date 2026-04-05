@@ -12,6 +12,7 @@ export interface SessionStatus {
   worktreePath: string;
   title: string;
   repo: { owner: string; name: string };
+  agentRole?: string;
   lastUpdate?: string;
   lastMessage?: string;
   currentStep?: string;

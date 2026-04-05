@@ -42,6 +42,9 @@ export const config = {
   // 用户数据目录
   USER_ALONG_DIR: userAlongDir,
 
+  // 全局配置文件路径
+  CONFIG_FILE: path.join(userAlongDir, "config.json"),
+
   /**
    * 获取 issue 级别的数据目录: ~/.along/{owner}/{repo}/{issueNumber}/
    */

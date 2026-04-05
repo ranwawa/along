@@ -9,6 +9,7 @@ import { iso_timestamp, ensureEditorPermissions } from "./common";
 import { GitHubClient, readGithubToken, readRepoInfo } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { config } from "./config";
+import { getAgentRole } from "./agent-config";
 import { SessionManager } from "./session-manager";
 import { cleanupIssue } from "./cleanup-utils";
 import { SessionPathManager } from "./session-paths";
@@ -47,12 +48,17 @@ async function resolvePrNumber(statusData: StatusData): Promise<number> {
     if (match) return Number(match[1]);
   }
 
-  // fallback: 通过 branch name 查找 PR
+  // fallback: 通过 branch name 查找 PR（使用当前认证 token）
   const { owner, name } = statusData.repo;
   logger.info(`prUrl 不存在，通过分支 ${statusData.branchName} 查找 PR...`);
 
+  const tokenRes = await readGithubToken();
+  const ghEnv = tokenRes.success
+    ? { ...process.env, GH_TOKEN: tokenRes.data }
+    : { ...process.env };
+
   const result =
-    await $`gh pr list --repo ${owner}/${name} --head ${statusData.branchName} --json number --jq '.[0].number'`.text();
+    await $`gh pr list --repo ${owner}/${name} --head ${statusData.branchName} --json number --jq '.[0].number'`.env(ghEnv).text();
   const prNumber = Number(result.trim());
 
   if (!prNumber || isNaN(prNumber)) {
@@ -238,8 +244,20 @@ async function execAgentTmux(
     "
   `.trim();
 
+  // 注入 agent 角色和 GitHub token，确保子 agent 也使用 bot 身份
+  const envExports: string[] = [];
+  const agentRole = getAgentRole();
+  if (agentRole) {
+    envExports.push(`export ALONG_AGENT_ROLE='${agentRole}'`);
+  }
+  const tokenRes = await readGithubToken();
+  if (tokenRes.success) {
+    envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
+  }
+  const envSetup = envExports.length > 0 ? envExports.join("; ") + "; " : "";
+
   const safeCmd = `bash -c '
-    echo "Starting PR review at $(date)" > ${logFile}
+    ${envSetup}echo "Starting PR review at $(date)" > ${logFile}
     ${cmd.replace(/'/g, "'\\''")} 2>&1 | tee -a ${logFile}
     EXIT_CODE=\${PIPESTATUS[0]}
     ${updateStatusScript} \${EXIT_CODE} 2>/dev/null || true

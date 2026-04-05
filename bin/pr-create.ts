@@ -6,7 +6,7 @@ import { consola } from "consola";
 import { iso_timestamp } from "./common";
 
 const logger = consola.withTag("pr-create");
-import { readRepoInfo } from "./github-client";
+import { readRepoInfo, readGithubToken } from "./github-client";
 import { getDefaultBranch } from "./worktree-init";
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
 import { SessionPathManager } from "./session-paths";
@@ -69,12 +69,18 @@ async function main() {
     const defaultBranch = await getDefaultBranch();
     logger.info(`创建 PR: ${branchName} -> ${defaultBranch}`);
 
+    // 使用当前认证 token（可能是 agent 角色 token）确保 gh CLI 使用正确身份
+    const tokenRes = await readGithubToken();
+    const ghEnv = tokenRes.success
+      ? { ...process.env, GH_TOKEN: tokenRes.data }
+      : { ...process.env };
+
     const result = await $`gh pr create \
       --repo ${repo.owner}/${repo.name} \
       --head ${branchName} \
       --base ${defaultBranch} \
       --title ${title} \
-      --body ${body}`.cwd(worktreePath).text();
+      --body ${body}`.cwd(worktreePath).env(ghEnv).text();
 
     const prUrl = result.trim();
     logger.success(`PR 创建成功: ${prUrl}`);
