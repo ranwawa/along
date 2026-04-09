@@ -2,7 +2,7 @@
 /**
  * webhook-server.ts - 本地 webhook 接收服务器
  *
- * 监听 GitHub Actions 转发的事件，自动调用对应的 along 子命令。
+ * 监听 GitHub App 直接推送的 webhook 事件，自动调用对应的处理函数。
  * 支持 HMAC-SHA256 签名验证确保请求来源可信。
  *
  * 用法：
@@ -12,133 +12,151 @@
 import { Command } from "commander";
 import { consola } from "consola";
 import crypto from "crypto";
+import { reviewPr, resolveReview, resolveCi } from "./webhook-handlers";
 
 const logger = consola.withTag("webhook-server");
 
-interface WebhookPayload {
-  event: string;
-  issue_number?: number;
-  pr_number?: number;
-  repository: string;
-  title?: string;
-  labels?: string[];
-  action?: string;
-  event_name?: string;
-  conclusion?: string;
-}
-
 /**
- * 验证 HMAC-SHA256 签名
+ * 验证 GitHub webhook HMAC-SHA256 签名
  */
 function verifySignature(payload: string, signature: string, secret: string): boolean {
   if (!secret) return true;
   if (!signature || signature === "none") return false;
 
   const expected = `sha256=${crypto.createHmac("sha256", secret).update(payload).digest("hex")}`;
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
+  }
 }
 
 /**
  * 解析仓库信息
  */
-function parseRepository(repository: string): { owner: string; repo: string } | null {
-  const parts = repository.split("/");
+function parseRepository(fullName: string): { owner: string; repo: string } | null {
+  const parts = fullName.split("/");
   if (parts.length !== 2) return null;
   return { owner: parts[0], repo: parts[1] };
 }
 
 /**
- * 处理 webhook 事件
+ * 异步执行处理函数（fire-and-forget，不阻塞 HTTP 响应）
  */
-async function handleEvent(payload: WebhookPayload): Promise<{ status: number; message: string }> {
-  const repoInfo = parseRepository(payload.repository);
-  if (!repoInfo) {
-    return { status: 400, message: `无效的仓库格式: ${payload.repository}` };
+function fireAndForget(fn: () => Promise<void>) {
+  fn().catch((err) => {
+    logger.error(`处理函数执行失败: ${err.message}`);
+  });
+}
+
+/**
+ * 处理 GitHub webhook 事件
+ */
+async function handleEvent(
+  eventType: string,
+  payload: any,
+  deliveryId: string,
+): Promise<{ status: number; message: string }> {
+  const repoFullName = payload.repository?.full_name;
+  if (!repoFullName) {
+    return { status: 400, message: "缺少 repository 信息" };
   }
 
-  logger.info(`收到事件: ${payload.event} | 仓库: ${payload.repository}`);
+  const repoInfo = parseRepository(repoFullName);
+  if (!repoInfo) {
+    return { status: 400, message: `无效的仓库格式: ${repoFullName}` };
+  }
 
-  switch (payload.event) {
-    case "issue.opened": {
-      if (!payload.issue_number) {
-        return { status: 400, message: "缺少 issue_number" };
+  const { owner, repo } = repoInfo;
+  const action = payload.action || "";
+  logger.info(`[${deliveryId}] 收到事件: ${eventType}.${action} | 仓库: ${repoFullName}`);
+
+  switch (eventType) {
+    case "issues": {
+      const issueNumber = payload.issue?.number;
+      if (!issueNumber) return { status: 400, message: "缺少 issue number" };
+
+      if (action === "opened") {
+        if (payload.sender?.type === "Bot") {
+          return { status: 200, message: "忽略 Bot 创建的 Issue" };
+        }
+        logger.info(`Issue #${issueNumber} 已创建，启动 along run...`);
+        const proc = Bun.spawn(["along", "run", String(issueNumber), "--ci"], {
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        proc.unref();
+        return { status: 202, message: `已触发 along run ${issueNumber}` };
       }
-      logger.info(`Issue #${payload.issue_number} 已创建，启动 along run...`);
-      const proc = Bun.spawn(["along", "run", String(payload.issue_number), "--ci"], {
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      // 不等待完成，异步执行
-      proc.unref();
-      return { status: 202, message: `已触发 along run ${payload.issue_number}` };
+
+      if (action === "labeled" && payload.label?.name === "approved") {
+        logger.info(`Issue #${issueNumber} 已审批，启动 Phase 2...`);
+        const proc = Bun.spawn(["along", "run", String(issueNumber), "--ci"], {
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        proc.unref();
+        return { status: 202, message: `已触发 Phase 2: Issue #${issueNumber}` };
+      }
+
+      return { status: 200, message: `忽略 issues.${action} 事件` };
     }
 
-    case "issue.approved": {
-      if (!payload.issue_number) {
-        return { status: 400, message: "缺少 issue_number" };
+    case "pull_request": {
+      const prNumber = payload.pull_request?.number;
+      if (!prNumber) return { status: 400, message: "缺少 PR number" };
+
+      if (action === "opened" || action === "synchronize") {
+        logger.info(`PR #${prNumber} 事件: ${action}，启动代码审查...`);
+        fireAndForget(() => reviewPr(owner, repo, prNumber));
+        return { status: 202, message: `已触发代码审查 PR #${prNumber}` };
       }
-      logger.info(`Issue #${payload.issue_number} 已审批，启动 Phase 2...`);
-      // approved 事件：直接启动 Phase 2（along run 会检测 status 并进入 phase2）
-      const proc = Bun.spawn(["along", "run", String(payload.issue_number), "--ci"], {
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      proc.unref();
-      return { status: 202, message: `已触发 Phase 2: Issue #${payload.issue_number}` };
+
+      return { status: 200, message: `忽略 pull_request.${action} 事件` };
     }
 
-    case "pr.opened":
-    case "pr.synchronize": {
-      if (!payload.pr_number) {
-        return { status: 400, message: "缺少 pr_number" };
+    case "pull_request_review": {
+      const prNumber = payload.pull_request?.number;
+      if (!prNumber) return { status: 400, message: "缺少 PR number" };
+
+      if (action === "submitted") {
+        logger.info(`PR #${prNumber} 收到 review，启动评论处理...`);
+        fireAndForget(() => resolveReview(owner, repo, prNumber));
+        return { status: 202, message: `已触发评论处理 PR #${prNumber}` };
       }
-      logger.info(`PR #${payload.pr_number} 事件: ${payload.action}，启动 review-watch...`);
-      const proc = Bun.spawn(["along", "review-watch", String(payload.pr_number), "--ci"], {
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      proc.unref();
-      return { status: 202, message: `已触发 review-watch PR #${payload.pr_number}` };
+
+      return { status: 200, message: `忽略 pull_request_review.${action} 事件` };
     }
 
-    case "pr.submitted": {
-      if (!payload.pr_number) {
-        return { status: 400, message: "缺少 pr_number" };
+    case "check_run": {
+      if (action !== "completed") {
+        return { status: 200, message: `忽略 check_run.${action} 事件` };
       }
-      logger.info(`PR #${payload.pr_number} 收到 review，启动 pr-watch...`);
-      const proc = Bun.spawn(["along", "pr-watch", String(payload.pr_number), "--ci"], {
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      proc.unref();
-      return { status: 202, message: `已触发 pr-watch PR #${payload.pr_number}` };
-    }
-
-    case "pr.completed": {
-      if (!payload.pr_number || payload.conclusion !== "failure") {
+      const conclusion = payload.check_run?.conclusion;
+      if (conclusion !== "failure" && conclusion !== "timed_out") {
         return { status: 200, message: "CI 未失败，跳过" };
       }
-      logger.info(`PR #${payload.pr_number} CI 失败，启动修复...`);
-      const proc = Bun.spawn(["along", "pr-watch", String(payload.pr_number), "--ci"], {
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      proc.unref();
-      return { status: 202, message: `已触发 CI 修复 PR #${payload.pr_number}` };
+      const pullRequests = payload.check_run?.pull_requests || [];
+      if (pullRequests.length === 0) {
+        return { status: 200, message: "check_run 未关联 PR，跳过" };
+      }
+      const prNumber = pullRequests[0].number;
+      logger.info(`PR #${prNumber} CI 失败，启动修复...`);
+      fireAndForget(() => resolveCi(owner, repo, prNumber));
+      return { status: 202, message: `已触发 CI 修复 PR #${prNumber}` };
     }
 
     default:
-      logger.warn(`未知事件类型: ${payload.event}`);
-      return { status: 400, message: `未知事件类型: ${payload.event}` };
+      return { status: 200, message: `忽略事件: ${eventType}` };
   }
 }
 
 async function main() {
   const program = new Command()
     .name("along webhook-server")
-    .description("启动本地 webhook 接收服务器，监听 GitHub Actions 事件")
+    .description("启动本地 webhook 接收服务器，监听 GitHub App webhook 事件")
     .option("--port <port>", "监听端口", "9876")
-    .option("--secret <secret>", "Webhook 签名密钥（用于验证请求来源）")
+    .option("--secret <secret>", "Webhook 签名密钥（GitHub App 的 webhook secret）")
     .option("--host <host>", "监听地址", "0.0.0.0")
     .parse(process.argv);
 
@@ -170,7 +188,7 @@ async function main() {
 
         // 验证签名
         if (secret) {
-          const signature = req.headers.get("X-Along-Signature") || "";
+          const signature = req.headers.get("X-Hub-Signature-256") || "";
           if (!verifySignature(body, signature, secret)) {
             logger.error("签名验证失败");
             return new Response(JSON.stringify({ error: "签名验证失败" }), {
@@ -180,7 +198,7 @@ async function main() {
           }
         }
 
-        let payload: WebhookPayload;
+        let payload: any;
         try {
           payload = JSON.parse(body);
         } catch {
@@ -190,7 +208,26 @@ async function main() {
           });
         }
 
-        const result = await handleEvent(payload);
+        const githubEvent = req.headers.get("X-GitHub-Event") || "";
+        const deliveryId = req.headers.get("X-GitHub-Delivery") || "-";
+
+        // 处理 ping 事件（GitHub App 安装/配置时发送）
+        if (githubEvent === "ping") {
+          logger.success(`[${deliveryId}] 收到 GitHub ping 事件，zen: ${payload.zen}`);
+          return new Response(JSON.stringify({ message: "pong" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        if (!githubEvent) {
+          return new Response(JSON.stringify({ error: "缺少 X-GitHub-Event header" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        const result = await handleEvent(githubEvent, payload, deliveryId);
         return new Response(JSON.stringify({ message: result.message }), {
           status: result.status,
           headers: { "Content-Type": "application/json" },

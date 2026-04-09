@@ -67,10 +67,6 @@ export class SessionPathManager {
     return path.join(this.getIssueDir(), "review-diff.json");
   }
 
-  getReviewWatchTmuxLogFile(): string {
-    return path.join(this.getIssueDir(), "review-watch-tmux.log");
-  }
-
   getWorktreeDir(): string {
     return path.join(this.getIssueDir(), "worktree");
   }

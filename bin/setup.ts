@@ -24,15 +24,13 @@ function printHelp(commands: string[], tag: string) {
     "branch-create": "创建语义化分支并标记 WIP",
     "pr-create": "创建 Pull Request",
     "commit-push": "将变更进行原子化 Commit 并推送到远端",
-    "pr-watch": "监听 PR 评论和 CI 状态并自动触发 Agent 处理",
-    "review-watch": "监听 PR 新提交并自动触发 Reviewer Agent 进行代码审查",
     "plan-watch": "监听 Issue 审批标签并自动启动实施阶段",
     "run": "一键启动（默认前台，支持 --tmux）",
     "worktree-gc": "批量清理已合并/已关闭的 worktree",
     "sync-editor": "同步公共资源到编辑器目录",
     "migrate": "迁移旧目录结构到 owner/repo/issueNumber 层级",
-    "webhook-server": "启动本地 webhook 服务器，接收 GitHub Actions 事件",
-    "actions-init": "部署 Along GitHub Actions workflow 到目标仓库"
+    "webhook-server": "启动本地 webhook 服务器，接收 GitHub App webhook 事件",
+    "app-init": "引导配置 GitHub App 以接收仓库事件"
   };
 
   for (const name of commands) {
@@ -54,7 +52,7 @@ function printHelp(commands: string[], tag: string) {
  */
 async function dispatch(subCommand: string, args: string[], binDir: string, commands: string[], tag: string) {
   const scriptPath = path.join(binDir, `${subCommand}.ts`);
-  const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue'].includes(subCommand);
+  const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue', 'webhook-handlers'].includes(subCommand);
 
   if (commands.includes(subCommand) && !isInternal) {
     const proc = Bun.spawn([Bun.argv[0], scriptPath, ...args], {

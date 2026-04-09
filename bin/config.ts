@@ -56,7 +56,6 @@ export const config = {
   SKILLS_DIR: path.join(alongDir, "skills"),
   PROMPTS_DIR: path.join(alongDir, "prompts"),
   BIN_DIR: path.join(alongDir, "bin"),
-  WORKFLOWS_DIR: path.join(alongDir, "workflows"),
 
   // 确保用户数据根目录存在
   ensureDataDirs() {
