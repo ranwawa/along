@@ -15,20 +15,7 @@ function printHelp(commands: string[], tag: string) {
   console.log(chalk.bold.cyan(`${tag.toUpperCase()} 可用命令 (由 Bun 驱动):`));
   
   const descriptions: Record<string, string> = {
-    "cleanup": "清理 Issue 工作空间",
-    "issue-list": "列出所有任务状态",
-    "issue-status": "更新任务状态",
-    "issue-details": "获取 Issue 详情并执行安全校验",
-    "issue-comment": "在 Issue 中发表评论",
-    "issue-label": "给 Issue 添加标签",
-    "branch-create": "创建语义化分支并标记 WIP",
-    "pr-create": "创建 Pull Request",
-    "commit-push": "将变更进行原子化 Commit 并推送到远端",
-    "plan-watch": "监听 Issue 审批标签并自动启动实施阶段",
-    "run": "一键启动（默认前台，支持 --tmux）",
-    "worktree-gc": "批量清理已合并/已关闭的 worktree",
-    "sync-editor": "同步公共资源到编辑器目录",
-    "migrate": "迁移旧目录结构到 owner/repo/issueNumber 层级",
+    "run": "一键启动（默认前台，支持 --ci）",
     "webhook-server": "启动本地 webhook 服务器，接收 GitHub App webhook 事件",
     "app-init": "引导配置 GitHub App 以接收仓库事件"
   };
@@ -42,8 +29,8 @@ function printHelp(commands: string[], tag: string) {
 
   console.log("");
   console.log(chalk.cyan("快速开始:"));
-  console.log(`  along sync-editor  # 同步编辑器配置`);
-  console.log(`  along run 42       # 处理 Issue 42`);
+  console.log(`  along webhook-server  # 启动 webhook 服务`);
+  console.log(`  along run 42          # 手动处理 Issue 42`);
   console.log("");
 }
 
