@@ -12,7 +12,7 @@ export interface StepRecord {
 
 export interface SessionStatus {
   issueNumber: number;
-  status: "running" | "completed" | "error" | "crashed" | "awaiting_approval";
+  status: "running" | "completed" | "error" | "crashed";
   startTime: string;
   endTime?: string;
   branchName: string;
@@ -218,18 +218,6 @@ export class SessionManager {
     this.writeStatus({
       ciResults: { passed, failed, lastSha: sha },
     });
-  }
-
-  /**
-   * 标记会话为等待审批状态（两阶段工作流 Phase 1 完成后）
-   */
-  markAsAwaitingApproval(): void {
-    this.writeStatus({
-      status: "awaiting_approval",
-      currentStep: "等待计划审批",
-      lastMessage: "计划已发布到 Issue 评论，等待 approved 标签",
-    });
-    this.log("Phase 1 completed, awaiting plan approval", "info");
   }
 
   /** 获取内部路径管理器 */

@@ -26,7 +26,6 @@ import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { exportAgentSession } from "./agent-session-export";
-import { printStatusBoard } from "./status";
 import { getAgentRole } from "./agent-config";
 
 /**
@@ -125,11 +124,6 @@ async function executeTask(
   const tag = getLogTag();
   const editor = config.EDITORS.find((e) => e.id === tag);
 
-  // 写入执行模式文件，供 SOP prompt 读取
-  const mode = options.review ? "phase1" : "full";
-  const modeFile = path.join(path.dirname(paths.getStatusFile()), ".along-mode");
-  fs.writeFileSync(modeFile, mode);
-
   // 按照配置中的模版生成启动指令
   let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
   cmd = cmd
@@ -146,8 +140,8 @@ async function executeTask(
   sessionManager.updateStep("启动 Agent", `执行命令: ${cmd}`);
   sessionManager.log(`Starting agent with command: ${cmd}`);
 
-  if (options.ci) return execCi(startCmd, num, options.output, sessionManager, paths, options.review);
-  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager, paths, options.review);
+  if (options.ci) return execCi(startCmd, num, options.output, sessionManager, paths);
+  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager, paths);
 }
 
 async function execCi(
@@ -156,7 +150,6 @@ async function execCi(
   format: string,
   sessionManager: SessionManager,
   paths: SessionPathManager,
-  review?: boolean,
 ): Promise<number> {
   logger.info("CI 模式：直接执行...");
   sessionManager.log("CI mode: executing directly");
@@ -217,8 +210,6 @@ async function execCi(
     );
     sessionManager.log(`Stderr: ${stderr.join("\n")}`, "error");
     sessionManager.log(`Stdout: ${stdout.join("\n")}`, "error");
-  } else if (review) {
-    sessionManager.markAsAwaitingApproval();
   } else {
     sessionManager.markAsCompleted();
   }
@@ -238,7 +229,6 @@ async function execTmux(
   detach?: boolean,
   sessionManager?: SessionManager,
   paths?: SessionPathManager,
-  review?: boolean,
 ) {
   const tag = getLogTag();
   const session = sessionName || `${tag}-${num}`;
@@ -256,9 +246,6 @@ async function execTmux(
   const tokenRes = await readGithubToken();
   if (tokenRes.success) {
     envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
-  }
-  if (review) {
-    envExports.push(`export ALONG_REVIEW_MODE='1'`);
   }
 
   // 防止 Agent 启动崩溃导致 tmux 窗口瞬间消失闪退
@@ -290,13 +277,7 @@ bun -e "
     const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
     if (s.status === 'running') {
       const exitCode = Number(process.argv[1]) || 0;
-      if (exitCode === 0 && process.env.ALONG_REVIEW_MODE === '1') {
-        s.status = 'awaiting_approval';
-        s.currentStep = '等待计划审批';
-        s.lastMessage = '计划已发布到 Issue 评论，等待 approved 标签';
-      } else {
-        s.status = exitCode === 0 ? 'completed' : 'crashed';
-      }
+      s.status = exitCode === 0 ? 'completed' : 'crashed';
       s.endTime = new Date().toISOString();
       s.lastUpdate = new Date().toISOString();
       if (exitCode !== 0) {
@@ -328,16 +309,6 @@ bun -e "
 " \$\$ 2>/dev/null || true
   `.trim();
 
-  // --review 模式：agent 成功退出后自动启动 plan-watch（在 tmux 脚本内部启动，确保时序正确）
-  const planWatchScript = review
-    ? `
-if [ \${EXIT_CODE} -eq 0 ] && [ "\${ALONG_REVIEW_MODE}" = "1" ]; then
-  echo "两阶段模式：自动启动 plan-watch 监听 approved 标签..."
-  nohup bun ${path.join(config.BIN_DIR, "plan-watch.ts")} ${num} > /dev/null 2>&1 &
-fi
-    `.trim()
-    : "";
-
   // 将 tmux 脚本写入临时文件，避免 bash -c '...' 的引号嵌套问题
   const scriptContent = `#!/bin/bash
 ${envExports.join("\n")}
@@ -357,7 +328,6 @@ if [ \${EXIT_CODE} -ne 0 ]; then
   read
   exit \${EXIT_CODE}
 fi
-${planWatchScript}
 `;
 
   const scriptDir = paths ? path.dirname(paths.getStatusFile()) : "/tmp";
@@ -477,10 +447,6 @@ async function checkEnv() {
   return success(null);
 }
 
-async function showStatusBoard() {
-  await printStatusBoard();
-}
-
 function configureCommand() {
   const program = new Command();
   program
@@ -509,8 +475,7 @@ function configureCommand() {
       false,
     )
     .option("--output <format>", "输出格式 (text 或 json)", "text")
-    .option("-d, --detach", "创建 tmux 窗口后，不自动进入该窗口")
-    .option("--review", "两阶段模式：先出方案等审批后再实施", false);
+    .option("-d, --detach", "创建 tmux 窗口后，不自动进入该窗口");
 
   return program;
 }
@@ -624,24 +589,6 @@ async function handleAction(num: string, options: any) {
       sessionManager.markAsError(res.error);
       throw new Error(res.error);
     }
-
-    // --review CI 模式：Phase 1 同步完成后，在当前进程中启动 plan-watch
-    // tmux 模式下 plan-watch 由 tmux bash 脚本在 agent 退出后自动启动（见 execTmux）
-    if (options.review && options.ci) {
-      logger.info("两阶段 CI 模式：在当前进程中启动 plan-watch...");
-      const planWatchScript = path.join(config.BIN_DIR, "plan-watch.ts");
-      const planWatchProc = Bun.spawn(["bun", planWatchScript, num, "--ci"], {
-        stdout: "inherit",
-        stderr: "inherit",
-        stdin: "ignore",
-      });
-      const planWatchExit = await planWatchProc.exited;
-      if (planWatchExit !== 0) {
-        throw new Error(`plan-watch 退出码: ${planWatchExit}`);
-      }
-    }
-
-    await showStatusBoard();
   } catch (error: any) {
     const errorMsg = error.message || String(error);
     sessionManager.markAsCrashed(errorMsg, error.stack);

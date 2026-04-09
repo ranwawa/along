@@ -18,25 +18,21 @@ Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding ag
 The global command `along` maps to `bin/setup.ts`, which dispatches subcommands by spawning the corresponding `bin/<subcommand>.ts` file.
 
 ```bash
-along run 42          # Main entry: fetch issue #42, create worktree, launch agent in tmux
-along run 42 --review # 两阶段模式：Phase 1 出方案 → 等 approved 标签 → Phase 2 实施
-along sync-editor     # Symlink skills/prompts into editor-specific directories
-along cleanup 42      # Clean up worktree, branch, and session files for issue #42
-along worktree-gc     # Batch cleanup of worktrees for closed/merged issues
-along issue-list      # Show all active issue workspaces
-along status          # Print task progress dashboard
-along watch           # Live-refresh status board (2s interval)
+along webhook-server --port 9876    # 启动本地 webhook 服务器，接收 GitHub App webhook 事件
+along app-init                      # 引导配置 GitHub App 以接收仓库事件
+along run 42                        # 手动触发：fetch issue #42, create worktree, launch agent
+```
+
+Agent SOP 内部调用的命令（不在 `along --help` 中显示，但仍可执行）：
+
+```bash
 along branch-create 42 feat/issue-42-desc   # Create semantic branch + WIP label
 along commit-push --message "fix: msg" --files a.ts b.ts  # Atomic commit + rebase + push
 along pr-create 42 "title" "body"   # Create PR via gh CLI
 along issue-status 42 running       # Update session status
 along issue-comment 42 "message"    # Comment on issue
-along issue-label 42 WIP            # Add labels to issue
-along issue-details 42              # Fetch issue with safety checks (closed/WIP guard)
-along plan-watch 42                 # 监听 Issue approved 标签并自动启动实施阶段
-along logs list                     # View agent run logs
-along webhook-server --port 9876    # 启动本地 webhook 服务器，接收 GitHub App webhook 事件
-along app-init                      # 引导配置 GitHub App 以接收仓库事件
+along cleanup 42                    # Clean up worktree, branch, and session files for issue #42
+along worktree-gc                   # Batch cleanup of worktrees for closed/merged issues
 ```
 
 ## Architecture
@@ -44,7 +40,7 @@ along app-init                      # 引导配置 GitHub App 以接收仓库事
 ### Data Flow
 
 1. `along run <N>` validates environment (git repo, GitHub remote, tmux), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, syncs skills/prompts into the worktree, then launches the configured AI agent in a tmux window.
-2. The agent follows the SOP in `prompts/resolve-github-issue.md` — a 5-step workflow (understand issue → analyze code → implement fix → commit-push → create PR). With `--review` flag, execution splits into two phases: Phase 1 (Steps 1-2, plan) → human adds `approved` label on Issue → Phase 2 (Steps 3-5, implementation). The SOP reads `.along-mode` file (`full`/`phase1`/`phase2`) to determine execution scope.
+2. The agent follows the SOP in `prompts/resolve-github-issue.md` — a 5-step workflow (understand issue → analyze code → implement fix → commit-push → create PR).
 3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates `status.json` and `todo.md` in the issue directory.
 4. **Event-driven mode**: A GitHub App sends webhook events (issue opened, issue labeled, PR created, PR review submitted, check run completed) to the local `along webhook-server`. The server directly calls handler functions in `webhook-handlers.ts` (`reviewPr`, `resolveReview`, `resolveCi`) via fire-and-forget, without spawning subprocesses. Use `along app-init` to set up the GitHub App.
 
