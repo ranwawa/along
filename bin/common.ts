@@ -1,8 +1,13 @@
-import { simpleGit } from "simple-git";
+import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
 import { consola } from "consola";
 import { config } from "./config";
+
+// simple-git 的 ESM bundle 中 debug 模块在 Bun 下 default export 为 undefined
+// 通过 createRequire 强制走 CJS 入口规避此问题
+const require = createRequire(import.meta.url);
+const { simpleGit } = require("simple-git");
 
 export const git = simpleGit();
 
