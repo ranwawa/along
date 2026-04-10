@@ -14,6 +14,9 @@ import { consola } from "consola";
 import crypto from "crypto";
 import { reviewPr, resolveReview, resolveCi } from "./webhook-handlers";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
+import { launchIssueAgent } from "./issue-agent";
+import { readGithubToken, GitHubClient, readRepoInfo } from "./github-client";
+import { recoverSessions, recoverMissedIssues, startPeriodicHealthCheck, stopPeriodicHealthCheck } from "./recovery";
 
 const logger = consola.withTag("webhook-server");
 
@@ -95,24 +98,33 @@ async function handleEvent(
             logger.info(`Issue #${issueNumber} 分类结果: ${triageResult.classification} (${triageResult.reason})`);
             await handleTriagedIssue(owner, repo, issueNumber, triageResult);
           } catch (err: any) {
-            logger.error(`Issue #${issueNumber} 分类失败，回退到完整流程: ${err.message}`);
-            const proc = Bun.spawn(["along", "run", String(issueNumber), "--ci"], {
-              stdout: "inherit",
-              stderr: "inherit",
-            });
-            proc.unref();
+            logger.error(`Issue #${issueNumber} 分类失败，回退到 phase1: ${err.message}`);
+            try {
+              const tokenRes = await readGithubToken();
+              if (tokenRes.success) {
+                const client = new GitHubClient(tokenRes.data, owner, repo);
+                await client.addIssueLabels(issueNumber, ["bug", "WIP"]);
+              }
+            } catch (labelErr: any) {
+              logger.warn(`回退打标签失败: ${labelErr.message}`);
+            }
+            await launchIssueAgent(owner, repo, issueNumber, "phase1", { title: `Issue #${issueNumber}` });
           }
         });
         return { status: 202, message: `已触发 Issue #${issueNumber} 分类` };
       }
 
       if (action === "labeled" && payload.label?.name === "approved") {
+        // 类型守卫：只有 bug/enhancement 标签的 issue 才触发 phase2
+        const issueLabels = (payload.issue?.labels || []).map((l: any) =>
+          typeof l === "string" ? l : l.name
+        );
+        if (!issueLabels.some((l: string) => l === "bug" || l === "enhancement")) {
+          return { status: 200, message: "非 bug/feature issue，忽略 approved 标签" };
+        }
+
         logger.info(`Issue #${issueNumber} 已审批，启动 Phase 2...`);
-        const proc = Bun.spawn(["along", "run", String(issueNumber), "--ci"], {
-          stdout: "inherit",
-          stderr: "inherit",
-        });
-        proc.unref();
+        fireAndForget(() => launchIssueAgent(owner, repo, issueNumber, "phase2", { title: `Issue #${issueNumber}` }));
         return { status: 202, message: `已触发 Phase 2: Issue #${issueNumber}` };
       }
 
@@ -127,6 +139,25 @@ async function handleEvent(
         logger.info(`PR #${prNumber} 事件: ${action}，启动代码审查...`);
         fireAndForget(() => reviewPr(owner, repo, prNumber));
         return { status: 202, message: `已触发代码审查 PR #${prNumber}` };
+      }
+
+      if (action === "closed" && payload.pull_request?.merged) {
+        // PR 合并后，从关联 issue 移除 WIP 标签
+        const body = payload.pull_request?.body || "";
+        const issueMatch = body.match(/(?:fixes|closes|resolves)\s+#(\d+)/i);
+        if (issueMatch) {
+          const linkedIssue = Number(issueMatch[1]);
+          logger.info(`PR #${prNumber} 已合并，清理 Issue #${linkedIssue} 的 WIP 标签...`);
+          fireAndForget(async () => {
+            const tokenRes = await readGithubToken();
+            if (!tokenRes.success) return;
+            const client = new GitHubClient(tokenRes.data, owner, repo);
+            await client.removeIssueLabel(linkedIssue, "WIP");
+            logger.info(`已移除 Issue #${linkedIssue} 的 WIP 标签`);
+          });
+          return { status: 202, message: `已触发 WIP 清理: Issue #${linkedIssue}` };
+        }
+        return { status: 200, message: "PR 已合并但未关联 issue" };
       }
 
       return { status: 200, message: `忽略 pull_request.${action} 事件` };
@@ -262,6 +293,42 @@ async function main() {
     logger.info("签名验证: 已启用");
   }
   logger.info("按 Ctrl+C 停止服务器");
+
+  // ── 启动恢复：扫描孤立/崩溃会话 + 遗漏 Issue ──
+  fireAndForget(async () => {
+    logger.info("启动恢复：扫描孤立/崩溃会话...");
+    const sessionReport = await recoverSessions();
+    logger.info(
+      `会话恢复完成: 扫描 ${sessionReport.scannedSessions} 个, ` +
+      `孤立 ${sessionReport.orphanedFound}, 崩溃 ${sessionReport.crashedFound}, ` +
+      `重启 ${sessionReport.restarted}, 跳过(上限) ${sessionReport.skippedMaxRetries}`
+    );
+
+    // 检查遗漏的 Issue（需要 repo 信息）
+    const repoRes = await readRepoInfo();
+    if (repoRes.success) {
+      logger.info("检查 GitHub 上遗漏的 Issue...");
+      const missedReport = await recoverMissedIssues(repoRes.data.owner, repoRes.data.repo);
+      logger.info(
+        `遗漏 Issue 恢复完成: 发现 ${missedReport.missedIssuesFound} 个, ` +
+        `已启动 ${missedReport.missedIssuesLaunched} 个`
+      );
+    } else {
+      logger.warn(`无法获取仓库信息，跳过遗漏 Issue 检查: ${repoRes.error}`);
+    }
+  });
+
+  // ── 定期健康检查 ──
+  startPeriodicHealthCheck();
+
+  // ── 优雅关闭 ──
+  const shutdown = () => {
+    logger.info("收到关闭信号，停止健康检查...");
+    stopPeriodicHealthCheck();
+    process.exit(0);
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 main().catch((err) => {

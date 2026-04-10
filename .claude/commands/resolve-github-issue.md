@@ -31,12 +31,11 @@ description: 接收外部脚本传入的 Issue 编号并启动自动化修复 SO
 请先读取模式文件确定本次执行范围：
 
 ```bash
-cat ../.along-mode 2>/dev/null || echo "full"
+cat ../.along-mode 2>/dev/null || echo "phase1"
 ```
 
-- **`full`**（默认）：执行全部 5 步
-- **`phase1`**：仅执行第一步和第二步。第二步的 `along issue-comment` 内容末尾必须附上：`\n---\n> 🤖 以上为 Agent 的实施计划，请审阅后给 Issue 添加 approved 标签以启动实施。`。完成后正常退出，不得继续执行第三步。
-- **`phase2`**：跳过第一步和第二步（已完成），先读取 `../step2-issue-comment.md` 了解已审批的计划和 `../todo.md` 确认进度，然后从第三步开始执行。
+- **`phase1`**（默认）：仅执行第一步和第二步。完成后正常退出，等待人工审批。
+- **`phase2`**：跳过第一步和第二步（已完成），先读取 `../step2-issue-comment.md` 了解已审批的计划，然后从第三步开始执行。
 
 ## 强制工作流程
 
@@ -54,13 +53,13 @@ cat ../.along-mode 2>/dev/null || echo "full"
 
    参考 `branch-naming` SKILL，根据 Issue 类型和内容生成符合规范的分支名。格式：`<type>/issue-<N>-<short-description>`。
 
-3. **创建分支并标记 WIP**：
+3. **创建分支**：
 
    ```bash
    along branch-create $1 <生成的分支名>
    ```
 
-   该命令会自动完成：创建并切换分支 → 推送到远端 → 给 Issue 打 WIP 标签 → 更新状态文件 → 勾选 todo。
+   该命令会自动完成：创建并切换分支 → 推送到远端 → 更新状态文件 → 勾选 todo。
 
 ### 第二步：分析代码库并制定实施计划
 
