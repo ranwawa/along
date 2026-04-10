@@ -14,7 +14,7 @@ import { consola } from "consola";
 import crypto from "crypto";
 import { reviewPr, resolveReview, resolveCi } from "./webhook-handlers";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
-import { launchIssueAgent } from "./issue-agent";
+import { launchIssueAgent, setDashboardMode } from "./issue-agent";
 import { readGithubToken, GitHubClient, readRepoInfo } from "./github-client";
 import { recoverSessions, recoverMissedIssues, startPeriodicHealthCheck, stopPeriodicHealthCheck } from "./recovery";
 
@@ -206,12 +206,14 @@ async function main() {
     .option("--port <port>", "监听端口", "9876")
     .option("--secret <secret>", "Webhook 签名密钥（GitHub App 的 webhook secret）")
     .option("--host <host>", "监听地址", "0.0.0.0")
+    .option("--no-dashboard", "禁用终端 Dashboard，使用原始日志模式")
     .parse(process.argv);
 
   const opts = program.opts();
   const port = parseInt(opts.port, 10);
   const secret = opts.secret || process.env.ALONG_WEBHOOK_SECRET || "";
   const host = opts.host;
+  const useDashboard = opts.dashboard !== false;
 
   if (!secret) {
     logger.warn("未设置 webhook secret，将接受所有请求（不推荐用于生产环境）");
@@ -292,7 +294,6 @@ async function main() {
   if (secret) {
     logger.info("签名验证: 已启用");
   }
-  logger.info("按 Ctrl+C 停止服务器");
 
   // ── 启动恢复：扫描孤立/崩溃会话 + 遗漏 Issue ──
   fireAndForget(async () => {
@@ -329,6 +330,16 @@ async function main() {
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
+
+  // ── Dashboard 模式 ──
+  if (useDashboard) {
+    setDashboardMode(true);
+    const { startDashboard } = await import("./dashboard/index");
+    await startDashboard({ port, host });
+    // startDashboard 内部 waitUntilExit 后会 process.exit(0)
+  } else {
+    logger.info("按 Ctrl+C 停止服务器");
+  }
 }
 
 main().catch((err) => {
