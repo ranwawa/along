@@ -32,21 +32,23 @@ export class Issue {
   /**
    * 检查 Issue 的状态是否允许执行自动化流程
    */
-  checkHealth(): Result<null> {
+  checkHealth(options?: { skipWipCheck?: boolean }): Result<null> {
     if (!this.data) return failure("Issue数据尚未加载，请先调用load()");
-    
+
     // 状态检查
     if (this.data.state !== "open") {
       return failure(`Issue#${this.taskNo}状态为${this.data.state}，无法处理（需为 open）`);
     }
 
-    // 标签检查
-    const labels = (this.data.labels || []).map((l: any) => 
-      typeof l === "string" ? l : l.name
-    );
+    // 标签检查（webhook 自动化流程可跳过 WIP 检查，因为 WIP 是系统自己打的）
+    if (!options?.skipWipCheck) {
+      const labels = (this.data.labels || []).map((l: any) =>
+        typeof l === "string" ? l : l.name
+      );
 
-    if (labels.some((l: string) => l.toUpperCase() === "WIP")) {
-      return failure(`Issue#${this.taskNo}带有WIP标签，已主动阻断执行`);
+      if (labels.some((l: string) => l.toUpperCase() === "WIP")) {
+        return failure(`Issue#${this.taskNo}带有WIP标签，已主动阻断执行`);
+      }
     }
 
     return success(null);

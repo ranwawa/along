@@ -144,6 +144,12 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
       continue;
     }
 
+    // worktree 已不存在说明之前已清理过，跳过避免重复处理
+    if (!fs.existsSync(session.worktreePath)) {
+      if (!options.silent) logger.info(`跳过 #${session.number}（worktree 已不存在）`);
+      continue;
+    }
+
     const reason = await checkIssueSession(client, session);
 
     if (reason) {

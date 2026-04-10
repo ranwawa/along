@@ -3,7 +3,7 @@ import { Command } from "commander";
 import fs from "fs";
 import { consola } from "consola";
 import { git, iso_timestamp } from "./common";
-import { get_gh_client, readRepoInfo } from "./github-client";
+import { readRepoInfo } from "./github-client";
 
 const logger = consola.withTag("branch-create");
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
@@ -11,20 +11,19 @@ import { SessionPathManager } from "./session-paths";
 import { SessionManager } from "./session-manager";
 
 /**
- * branch-create.ts - 创建语义化分支并标记 WIP
+ * branch-create.ts - 创建语义化分支
  *
  * 在 worktree 内执行：
  * 1. git checkout -B <branch-name>
  * 2. git push -u origin <branch-name>
- * 3. 给 Issue 打 WIP 标签
- * 4. 更新 status.json 中的 branchName
+ * 3. 更新 status.json 中的 branchName
  */
 
 async function main() {
   const program = new Command();
   program
     .name("branch-create")
-    .description("创建语义化分支并标记 WIP")
+    .description("创建语义化分支")
     .argument("<issue-number>", "Issue 编号")
     .argument("<branch-name>", "分支名称（需符合 branch-naming SKILL 规范）")
     .parse();
@@ -67,18 +66,7 @@ async function main() {
     logger.success("分支已推送到远端");
     session.logEvent("branch-pushed", { branchName });
 
-    // 3. 给 Issue 打 WIP 标签
-    logger.info("标记 Issue 为 WIP...");
-    const clientRes = await get_gh_client();
-    if (!clientRes.success) {
-      logger.error(`GitHub 客户端初始化失败: ${clientRes.error}`);
-      process.exit(1);
-    }
-    await clientRes.data.addIssueLabels(issueNumber, ["WIP"]);
-    logger.success(`Issue #${issueNumber} 已标记 WIP`);
-    session.logEvent("label-added", { issueNumber, label: "WIP" });
-
-    // 4. 更新 status.json：写入 branchName + 自动推进 step
+    // 3. 更新 status.json：写入 branchName + 自动推进 step
     if (fs.existsSync(statusFile)) {
       const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
       data.branchName = branchName;
@@ -89,19 +77,18 @@ async function main() {
       logger.success("状态文件已更新");
     }
 
-    // 5. 自动更新 todo
+    // 4. 自动更新 todo
     const outputContent = [
       `# 第一步：创建语义化分支`,
       ``,
       `- **分支名**: ${branchName}`,
       `- **Issue**: #${issueNumber}`,
-      `- **WIP 标签**: 已添加`,
       `- **远程推送**: 已完成`,
     ].join("\n");
     const outputFile = saveStepOutput(paths, 1, "branch-create", outputContent);
     completeTodoStep(paths, 1, `分支: ${branchName}`, outputFile);
 
-    logger.success(`分支 ${branchName} 创建完成，Issue #${issueNumber} 已标记 WIP`);
+    logger.success(`分支 ${branchName} 创建完成`);
   } catch (error: any) {
     session.log(`branch-create 失败: ${error.message}\n${error.stack || ""}`, "error");
     logger.error(`分支创建失败: ${error.message}`);

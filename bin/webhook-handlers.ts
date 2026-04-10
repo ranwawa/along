@@ -8,14 +8,13 @@
  */
 
 import fs from "fs";
-import path from "path";
 import { consola } from "consola";
-import { iso_timestamp, ensureEditorPermissions } from "./common";
+import { iso_timestamp } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
-import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager, findAllSessions } from "./session-paths";
+import { execAgent } from "./issue-agent";
 
 const logger = consola.withTag("webhook-handlers");
 
@@ -38,7 +37,7 @@ function withIssueLock(owner: string, repo: string, issueNumber: number, fn: () 
   return next;
 }
 
-// ─── 公共工具 ───────────────────────────────────────────────
+// ─── 公共工具（Agent 执行由 issue-agent.ts 提供）────────────
 
 interface StatusData {
   issueNumber: number;
@@ -75,74 +74,6 @@ function findIssueByPr(owner: string, repo: string, prNumber: number): { issueNu
     } catch {}
   }
   return null;
-}
-
-function syncPromptsToWorktree(worktreePath: string): void {
-  const logTag = config.getLogTag();
-  const editor = config.EDITORS.find((e) => e.id === logTag) || config.EDITORS[0];
-
-  for (const mapping of editor.mappings) {
-    const sourceDir = path.join(config.ROOT_DIR, mapping.from);
-    const targetPath = path.join(worktreePath, mapping.to);
-
-    if (!fs.existsSync(sourceDir)) continue;
-
-    fs.mkdirSync(targetPath, { recursive: true });
-    const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        fs.copyFileSync(
-          path.join(sourceDir, entry.name),
-          path.join(targetPath, entry.name),
-        );
-      }
-    }
-  }
-
-  logger.info(`已同步 prompts/skills 到 worktree (${editor.name})`);
-}
-
-async function drainStream(stream: ReadableStream<Uint8Array>, out: NodeJS.WriteStream): Promise<void> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    out.write(decoder.decode(value));
-  }
-}
-
-async function execAgent(worktreePath: string, issueNumber: number, workflow: string): Promise<void> {
-  syncPromptsToWorktree(worktreePath);
-  ensureEditorPermissions(worktreePath);
-
-  const logTag = config.getLogTag();
-  const editor = config.EDITORS.find((e) => e.id === logTag);
-
-  let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
-  cmd = cmd
-    .replace("{tag}", logTag)
-    .replace("{workflow}", workflow)
-    .replace("{num}", String(issueNumber));
-
-  logger.info(`启动 Agent (${editor?.name || logTag}), workflow: ${workflow}`);
-  logger.info(`执行命令: ${cmd}`);
-
-  const proc = Bun.spawn(["bash", "-c", cmd], {
-    cwd: worktreePath,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  await Promise.all([
-    proc.stdout ? drainStream(proc.stdout, process.stdout) : Promise.resolve(),
-    proc.stderr ? drainStream(proc.stderr, process.stderr) : Promise.resolve(),
-  ]);
-
-  const exitCode = await proc.exited;
-  if (exitCode !== 0) {
-    logger.warn(`Agent 退出码: ${exitCode}`);
-  }
 }
 
 // ─── reviewPr ───────────────────────────────────────────────
@@ -235,7 +166,9 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
   logger.info(`Diff 数据已写入: ${diffFile} (${files.length} 个文件)`);
 
   session.logEvent("reviewer-agent-launched", { trigger: "webhook", headSha: pr.head.sha, fileCount: files.length });
-  await execAgent(statusData.worktreePath, issueNumber, "review-pr-diff");
+  await execAgent(statusData.worktreePath, issueNumber, "review-pr-diff", (pid) => {
+    session.writeStatus({ pid });
+  });
   session.logEvent("reviewer-agent-completed", { trigger: "webhook" });
 
   logger.info(`PR #${prNumber} 审查完成`);
@@ -360,7 +293,9 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   });
 
   session.logEvent("agent-launched", { trigger: "webhook-review", commentCount: unresolvedComments.length });
-  await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review");
+  await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review", (pid) => {
+    session.writeStatus({ pid });
+  });
   session.logEvent("agent-completed", { trigger: "webhook-review" });
 
   logger.info(`PR #${prNumber} 评论处理完成`);
@@ -482,7 +417,9 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   session.updateCiResults(0, failedRuns.length, headSha);
 
   session.logEvent("agent-launched", { trigger: "webhook-ci", failedCount: failedRuns.length, headSha });
-  await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure");
+  await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", (pid) => {
+    session.writeStatus({ pid });
+  });
   session.logEvent("agent-completed", { trigger: "webhook-ci" });
 
   logger.info(`PR #${prNumber} CI 修复完成`);

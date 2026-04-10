@@ -27,6 +27,7 @@ import { SessionPathManager } from "./session-paths";
 import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { exportAgentSession } from "./agent-session-export";
 import { getAgentRole } from "./agent-config";
+import { launchIssueAgent } from "./issue-agent";
 
 /**
  * run - 极简一键启动入口
@@ -140,86 +141,7 @@ async function executeTask(
   sessionManager.updateStep("启动 Agent", `执行命令: ${cmd}`);
   sessionManager.log(`Starting agent with command: ${cmd}`);
 
-  if (options.ci) return execCi(startCmd, num, options.output, sessionManager, paths);
   return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager, paths);
-}
-
-async function execCi(
-  cmd: string,
-  num: string,
-  format: string,
-  sessionManager: SessionManager,
-  paths: SessionPathManager,
-): Promise<number> {
-  logger.info("CI 模式：直接执行...");
-  sessionManager.log("CI mode: executing directly");
-
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-
-  const proc = Bun.spawn(["bash", "-c", cmd], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  // 将 CI 进程的 PID 写入 status.json，供 GC 检测进程是否存活
-  if (proc.pid) {
-    const statusFile = paths.getStatusFile();
-    if (fs.existsSync(statusFile)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
-        data.pid = proc.pid;
-        fs.writeFileSync(statusFile, JSON.stringify(data, null, 2));
-      } catch {}
-    }
-  }
-
-  if (proc.stdout) {
-    const reader = proc.stdout.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const text = new TextDecoder().decode(value);
-      stdout.push(text);
-      process.stdout.write(text);
-    }
-  }
-
-  if (proc.stderr) {
-    const reader = proc.stderr.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const text = new TextDecoder().decode(value);
-      stderr.push(text);
-      process.stderr.write(text);
-    }
-  }
-
-  const exitCode = await proc.exited;
-
-  // 导出 agent 会话数据
-  try {
-    await exportAgentSession(paths, paths.getWorktreeDir(), sessionManager);
-  } catch {}
-
-  if (exitCode !== 0) {
-    sessionManager.markAsError(
-      `Agent exited with code ${exitCode}`,
-      exitCode
-    );
-    sessionManager.log(`Stderr: ${stderr.join("\n")}`, "error");
-    sessionManager.log(`Stdout: ${stdout.join("\n")}`, "error");
-  } else {
-    sessionManager.markAsCompleted();
-  }
-
-  if (format === "json") {
-    process.stdout.write(
-      JSON.stringify({ type: "issue", number: Number(num), exitCode }) + "\n",
-    );
-  }
-  return exitCode;
 }
 
 async function execTmux(
@@ -355,15 +277,6 @@ fi
   }
 }
 
-async function execForeground(cmd: string): Promise<number> {
-  logger.info("前台运行模式...");
-  const proc = Bun.spawn(["bash", "-c", cmd], {
-    stdout: "inherit",
-    stderr: "inherit",
-    stdin: "inherit",
-  });
-  return await proc.exited;
-}
 
 async function tryGetSessionTask(paths: SessionPathManager) {
   const statusFile = paths.getStatusFile();
@@ -379,7 +292,7 @@ async function tryGetSessionTask(paths: SessionPathManager) {
   return null;
 }
 
-async function runTask(num: string, options: any, sessionManager: SessionManager, paths: SessionPathManager, owner: string, repoName: string): Promise<Result<null>> {
+async function runTask(num: string, options: any, sessionManager: SessionManager, paths: SessionPathManager, owner: string, repoName: string, phase: "phase1" | "phase2"): Promise<Result<null>> {
   let task = await tryGetSessionTask(paths);
   if (!task) {
     const idResult = await identifyTask(num);
@@ -398,6 +311,12 @@ async function runTask(num: string, options: any, sessionManager: SessionManager
   if (!wtResult.success) return failure(wtResult.error);
 
   ensureEditorPermissions(wtResult.data);
+
+  // 写入 .along-mode 文件，供 agent prompt 读取执行阶段
+  const modeFile = path.join(paths.getIssueDir(), ".along-mode");
+  fs.writeFileSync(modeFile, phase);
+  logger.info(`执行模式: ${phase} (已写入 .along-mode)`);
+  sessionManager.logEvent("along-mode-written", { phase, modeFile });
 
   const workflow = "resolve-github-issue";
   await executeTask(num, workflow, wtResult.data, options, sessionManager, paths);
@@ -440,10 +359,6 @@ async function checkEnv() {
   if (!repoResult.success) return repoResult;
   logger.success("远程git仓库检测通过");
 
-  const tmuxResult = tmuxCheck();
-  if (!tmuxResult.success) return tmuxResult;
-  logger.success("tmux环境检测通过");
-
   return success(null);
 }
 
@@ -474,7 +389,6 @@ function configureCommand() {
       "CI 模式：跳过 tmux 环境检查，直接在前台执行（适用于脚本调用）",
       false,
     )
-    .option("--output <format>", "输出格式 (text 或 json)", "text")
     .option("-d, --detach", "创建 tmux 窗口后，不自动进入该窗口");
 
   return program;
@@ -531,6 +445,25 @@ async function tryRecoverFromWip(taskNo: number, paths: SessionPathManager): Pro
   return false;
 }
 
+/**
+ * 自动检测执行阶段：
+ * - 如果 .along-mode 存在且为 phase1 → 说明 phase1 已完成，切换到 phase2
+ * - 否则 → phase1（首次执行或无状态）
+ */
+function detectPhase(paths: SessionPathManager): "phase1" | "phase2" {
+  const modeFile = path.join(paths.getIssueDir(), ".along-mode");
+  try {
+    if (fs.existsSync(modeFile)) {
+      const current = fs.readFileSync(modeFile, "utf-8").trim();
+      if (current === "phase1") {
+        logger.info("检测到 phase1 已完成，切换到 phase2");
+        return "phase2";
+      }
+    }
+  } catch {}
+  return "phase1";
+}
+
 async function handleAction(num: string, options: any) {
   // 提前获取 owner/repo
   const repoInfoRes = await readRepoInfo();
@@ -584,10 +517,28 @@ async function handleAction(num: string, options: any) {
 
     sessionManager.updateStep("启动任务处理", "开始执行任务流程");
 
-    const res = await runTask(num, options, sessionManager, paths, owner, repoName);
-    if (!res.success) {
-      sessionManager.markAsError(res.error);
-      throw new Error(res.error);
+    const phase = detectPhase(paths);
+    logger.info(`执行阶段: ${phase}`);
+
+    if (options.ci) {
+      // CI 模式：直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
+      await launchIssueAgent(owner, repoName, taskNo, phase, {
+        title: issueRes.data.title,
+      });
+    } else {
+      // tmux 模式：检查 tmux 环境
+      const tmuxResult = tmuxCheck();
+      if (!tmuxResult.success) {
+        throw new Error(tmuxResult.error);
+      }
+      logger.success("tmux环境检测通过");
+
+      // tmux 模式：保留交互式功能（PID 追踪、崩溃恢复、会话导出）
+      const res = await runTask(num, options, sessionManager, paths, owner, repoName, phase);
+      if (!res.success) {
+        sessionManager.markAsError(res.error);
+        throw new Error(res.error);
+      }
     }
   } catch (error: any) {
     const errorMsg = error.message || String(error);

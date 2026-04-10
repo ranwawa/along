@@ -126,6 +126,14 @@ export class GitHubClient {
     }
   }
 
+  async closeIssue(number: string | number): Promise<void> {
+    await this.octokit.issues.update({
+      ...this.repoParams,
+      issue_number: Number(number),
+      state: "closed",
+    });
+  }
+
   async getRepositoryDetails(): Promise<RestEndpointMethodTypes["repos"]["get"]["response"]["data"]> {
     const { data } = await this.octokit.repos.get({
       ...this.repoParams,
@@ -226,6 +234,27 @@ export class GitHubClient {
       mediaType: { format: "diff" },
     });
     return data as unknown as string;
+  }
+
+  /**
+   * 列出仓库 Issue（支持按标签、状态、时间过滤）
+   * 注意：GitHub API 会将 PR 混入 issues 列表，此方法自动过滤
+   */
+  async listIssues(options: {
+    labels?: string;
+    state?: "open" | "closed" | "all";
+    since?: string;
+    per_page?: number;
+  } = {}): Promise<GitHubIssue[]> {
+    const { data } = await this.octokit.issues.listForRepo({
+      ...this.repoParams,
+      state: options.state || "open",
+      labels: options.labels,
+      since: options.since,
+      per_page: options.per_page || 100,
+    });
+    // GitHub API 会将 PR 混入 issues 列表，过滤掉
+    return data.filter((issue: any) => !issue.pull_request) as GitHubIssue[];
   }
 
 }
