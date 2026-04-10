@@ -13,6 +13,7 @@ import { Command } from "commander";
 import { consola } from "consola";
 import crypto from "crypto";
 import { reviewPr, resolveReview, resolveCi } from "./webhook-handlers";
+import { triageIssue, handleTriagedIssue } from "./issue-triage";
 
 const logger = consola.withTag("webhook-server");
 
@@ -80,13 +81,29 @@ async function handleEvent(
         if (payload.sender?.type === "Bot") {
           return { status: 200, message: "忽略 Bot 创建的 Issue" };
         }
-        logger.info(`Issue #${issueNumber} 已创建，启动 along run...`);
-        const proc = Bun.spawn(["along", "run", String(issueNumber), "--ci"], {
-          stdout: "inherit",
-          stderr: "inherit",
+
+        const issueTitle = payload.issue?.title || "";
+        const issueBody = payload.issue?.body || "";
+        const issueLabels = (payload.issue?.labels || []).map((l: any) =>
+          typeof l === "string" ? l : l.name
+        );
+
+        logger.info(`Issue #${issueNumber} 已创建，开始分类...`);
+        fireAndForget(async () => {
+          try {
+            const triageResult = await triageIssue(issueTitle, issueBody, issueLabels);
+            logger.info(`Issue #${issueNumber} 分类结果: ${triageResult.classification} (${triageResult.reason})`);
+            await handleTriagedIssue(owner, repo, issueNumber, triageResult);
+          } catch (err: any) {
+            logger.error(`Issue #${issueNumber} 分类失败，回退到完整流程: ${err.message}`);
+            const proc = Bun.spawn(["along", "run", String(issueNumber), "--ci"], {
+              stdout: "inherit",
+              stderr: "inherit",
+            });
+            proc.unref();
+          }
         });
-        proc.unref();
-        return { status: 202, message: `已触发 along run ${issueNumber}` };
+        return { status: 202, message: `已触发 Issue #${issueNumber} 分类` };
       }
 
       if (action === "labeled" && payload.label?.name === "approved") {

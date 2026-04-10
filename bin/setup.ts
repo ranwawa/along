@@ -39,7 +39,7 @@ function printHelp(commands: string[], tag: string) {
  */
 async function dispatch(subCommand: string, args: string[], binDir: string, commands: string[], tag: string) {
   const scriptPath = path.join(binDir, `${subCommand}.ts`);
-  const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue', 'webhook-handlers'].includes(subCommand);
+  const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue', 'webhook-handlers', 'issue-triage'].includes(subCommand);
 
   if (commands.includes(subCommand) && !isInternal) {
     const proc = Bun.spawn([Bun.argv[0], scriptPath, ...args], {
