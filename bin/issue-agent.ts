@@ -15,6 +15,12 @@ import { SessionPathManager } from "./session-paths";
 import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { getAgentRole } from "./agent-config";
 
+/** 是否启用 Dashboard 模式（启用时 agent 输出写入日志文件而非 stdout） */
+let _dashboardMode = false;
+export function setDashboardMode(enabled: boolean): void {
+  _dashboardMode = enabled;
+}
+
 const logger = consola.withTag("issue-agent");
 
 // ─── syncPromptsToWorktree ─────────────────────────────────
@@ -50,7 +56,9 @@ export function syncPromptsToWorktree(worktreePath: string): void {
 
 // ─── execAgent ──────────────────────────────────────────────
 
-async function drainStream(stream: ReadableStream<Uint8Array>, out: NodeJS.WriteStream): Promise<void> {
+type WritableTarget = { write(data: string): any };
+
+async function drainStream(stream: ReadableStream<Uint8Array>, out: WritableTarget): Promise<void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   while (true) {
@@ -65,6 +73,7 @@ export async function execAgent(
   issueNumber: number,
   workflow: string,
   onPid?: (pid: number) => void,
+  logFile?: string,
 ): Promise<number> {
   syncPromptsToWorktree(worktreePath);
   ensureEditorPermissions(worktreePath);
@@ -91,10 +100,26 @@ export async function execAgent(
     onPid(proc.pid);
   }
 
-  await Promise.all([
-    proc.stdout ? drainStream(proc.stdout, process.stdout) : Promise.resolve(),
-    proc.stderr ? drainStream(proc.stderr, process.stderr) : Promise.resolve(),
-  ]);
+  // Dashboard 模式下将 agent 输出写入日志文件，避免破坏 Ink 渲染
+  const targetLogFile = _dashboardMode ? logFile : undefined;
+  let fileHandle: { write(data: string): any; end(): void } | undefined;
+
+  if (targetLogFile) {
+    const ws = fs.createWriteStream(targetLogFile, { flags: "a" });
+    fileHandle = ws;
+  }
+
+  const out: WritableTarget = fileHandle || process.stdout;
+  const err: WritableTarget = fileHandle || process.stderr;
+
+  try {
+    await Promise.all([
+      proc.stdout ? drainStream(proc.stdout, out) : Promise.resolve(),
+      proc.stderr ? drainStream(proc.stderr, err) : Promise.resolve(),
+    ]);
+  } finally {
+    fileHandle?.end();
+  }
 
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
@@ -204,9 +229,10 @@ export async function launchIssueAgent(
   session.updateStep("启动 Agent", `phase=${phase}, workflow=${workflow}`);
 
   try {
+    const logFile = paths.getTmuxLogFile();
     const exitCode = await execAgent(worktreePath, issueNumber, workflow, (pid) => {
       session.writeStatus({ pid });
-    });
+    }, logFile);
 
     if (exitCode !== 0) {
       session.markAsError(`Agent 退出码: ${exitCode}`, exitCode);
