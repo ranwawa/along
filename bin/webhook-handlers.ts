@@ -15,8 +15,9 @@ import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
-import { findSessionByPr } from "./db";
+import { findSessionByPr, deleteSession, readSession } from "./db";
 import { execAgent } from "./issue-agent";
+import { removeWorktree } from "./worktree-init";
 
 const logger = consola.withTag("webhook-handlers");
 
@@ -449,4 +450,45 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   session.logEvent("agent-completed", { trigger: "webhook-ci" });
 
   logger.info(`PR #${prNumber} CI 修复完成`);
+}
+
+/**
+ * 清理 Issue 相关的所有资产（Worktree、本地目录、数据库记录）
+ */
+export async function cleanupIssueSession(owner: string, repo: string, issueNumber: number): Promise<Result<void>> {
+  logger.info(`准备清理 Issue #${issueNumber} 的所有资产...`);
+
+  // 1. 获取 session 信息（为了拿到 worktree 路径）
+  const sessionRes = readSession(owner, repo, issueNumber);
+  if (!sessionRes.success) return sessionRes;
+  const status = sessionRes.data;
+
+  if (status) {
+    // 2. 清理由 git 维护的 worktree
+    if (status.worktreePath) {
+      await removeWorktree(status.worktreePath);
+    }
+  }
+
+  // 3. 删除本地数据目录 (~/.along/owner/repo/num)
+  const paths = new SessionPathManager(owner, repo, issueNumber);
+  const issueDir = paths.getIssueDir();
+  if (fs.existsSync(issueDir)) {
+    try {
+      fs.rmSync(issueDir, { recursive: true, force: true });
+      logger.info(`已删除本地数据目录: ${issueDir}`);
+    } catch (e: any) {
+      logger.warn(`删除本地数据目录失败: ${e.message}`);
+    }
+  }
+
+  // 4. 从数据库抹除记录
+  const dbRes = deleteSession(owner, repo, issueNumber);
+  if (!dbRes.success) {
+    logger.error(`数据库清理失败: ${dbRes.error}`);
+    return dbRes;
+  }
+
+  logger.info(`Issue #${issueNumber} 资产清理完成`);
+  return success(undefined);
 }
