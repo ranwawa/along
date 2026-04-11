@@ -1,7 +1,8 @@
 import path from "path";
 import fs from "fs";
 import os from "os";
-import { Result, success, failure } from "./result";
+import { success, failure } from "./result";
+import type { Result } from "./result";
 
 /**
  * .along/bin/config.ts

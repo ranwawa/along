@@ -16,7 +16,8 @@ import path from "path";
 import { z } from "zod";
 import { GitHubClient, readGithubToken } from "./github-client";
 import { launchIssueAgent } from "./issue-agent";
-import { Result, success, failure } from "./common";
+import { success, failure } from "./common";
+import type { Result } from "./common";
 
 const logger = consola.withTag("issue-triage");
 

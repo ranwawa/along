@@ -60,7 +60,7 @@ async function dispatch(subCommand: string, args: string[], binDir: string, comm
 async function main() {
   config.ensureDataDirs();
   const binDir = config.BIN_DIR;
-  const tag = config.getLogTag();
+  const tagResult = config.getLogTag();
   const args = process.argv.slice(2);
 
   if (!fs.existsSync(binDir)) {
@@ -70,6 +70,9 @@ async function main() {
 
   const files = fs.readdirSync(binDir).filter(f => f.endsWith(".ts"));
   const commands = files.map(f => f.replace(".ts", ""));
+
+  // 这里的 tag 仅用于展示帮助或回显，如果获取失败则默认使用 "ALONG"
+  const tag = tagResult.success ? tagResult.data : "ALONG";
 
   if (args.length > 0) {
     await dispatch(args[0], args.slice(1), binDir, commands, tag);

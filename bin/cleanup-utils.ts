@@ -3,10 +3,10 @@ import { consola } from "consola";
 import {
   check_process_running,
   iso_timestamp,
-  Result,
   success,
   failure,
 } from "./common";
+import type { Result } from "./common";
 import { get_gh_client, readRepoInfo } from "./github-client";
 
 const logger = consola.withTag("cleanup-utils");

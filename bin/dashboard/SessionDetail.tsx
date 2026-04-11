@@ -28,7 +28,9 @@ function readLastBytes(filePath: string, bytes: number): string {
 
 export function SessionDetail({ session, onBack, height }: SessionDetailProps) {
   const absoluteLogDir = path.join(os.homedir(), ".along", session.owner, session.repo, String(session.issueNumber));
-  const tmuxLogPath = path.join(absoluteLogDir, "tmux.log");
+  const agentLogPath = path.join(absoluteLogDir, "agent.log");
+  const fallbackTmuxLogPath = path.join(absoluteLogDir, "tmux.log");
+  const activeLogPath = fs.existsSync(agentLogPath) ? agentLogPath : fallbackTmuxLogPath;
   const logDir = `~/.along/${session.owner}/${session.repo}/${session.issueNumber}`;
   
   const [analyzing, setAnalyzing] = useState(false);
@@ -36,15 +38,15 @@ export function SessionDetail({ session, onBack, height }: SessionDetailProps) {
 
   useInput((input) => {
     if (input === 'v') {
-      if (fs.existsSync(tmuxLogPath)) {
+      if (fs.existsSync(activeLogPath)) {
         // 使用 less 打开完整日志，+G 表示默认跳到最后
-        spawnSync("less", ["-R", "+G", tmuxLogPath], { stdio: "inherit" });
+        spawnSync("less", ["-R", "+G", activeLogPath], { stdio: "inherit" });
       }
     }
     if (input === 'a' && !analyzing && !aiReport) {
-      if (fs.existsSync(tmuxLogPath)) {
+      if (fs.existsSync(activeLogPath)) {
         setAnalyzing(true);
-        const logContent = readLastBytes(tmuxLogPath, 16000); // 读最后大概16KB作分析
+        const logContent = readLastBytes(activeLogPath, 16000); // 读最后大概16KB作分析
         analyzeErrorLog(logContent).then((report) => {
           setAiReport(report);
           setAnalyzing(false);
@@ -53,7 +55,7 @@ export function SessionDetail({ session, onBack, height }: SessionDetailProps) {
           setAnalyzing(false);
         });
       } else {
-        setAiReport("未找到 tmux.log 文件，无法分析。");
+        setAiReport("未找到日志文件 (agent.log 或 tmux.log)，无法分析。");
       }
     }
   });
@@ -117,8 +119,8 @@ export function SessionDetail({ session, onBack, height }: SessionDetailProps) {
       <Box flexDirection="column" marginTop={1}>
         <Text bold color="gray">相关文件:</Text>
         <Text dimColor> 📂 目录: {logDir}</Text>
-        <Text dimColor> 📝 日志: {logDir}/session.log</Text>
-        <Text dimColor> 🖥️ Tmux: {logDir}/tmux.log</Text>
+        <Text dimColor> 📝 系统: {logDir}/system.log</Text>
+        <Text dimColor> 🤖 代理: {logDir}/agent.log</Text>
       </Box>
     </Box>
   );

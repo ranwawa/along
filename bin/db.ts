@@ -9,7 +9,8 @@
 import { Database } from "bun:sqlite";
 import { config } from "./config";
 import path from "path";
-import { Result, success, failure } from "./result";
+import { success, failure } from "./result";
+import type { Result } from "./result";
 
 import type { SessionStatus } from "./session-manager";
 
