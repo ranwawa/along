@@ -3,6 +3,9 @@ import { consola } from "consola";
 import {
   check_process_running,
   iso_timestamp,
+  Result,
+  success,
+  failure,
 } from "./common";
 import { get_gh_client, readRepoInfo } from "./github-client";
 
@@ -38,7 +41,9 @@ export async function checkAndKillProcess(
   issueNumber: number,
   options: CleanupOptions,
 ): Promise<{ canProceed: boolean; error?: string }> {
-  const data = readSession(owner, repo, issueNumber);
+  const res = readSession(owner, repo, issueNumber);
+  if (!res.success) return { canProceed: false, error: res.error };
+  const data = res.data;
   if (!data) return { canProceed: true };
   if (data.status !== "running") return { canProceed: true };
 
@@ -46,7 +51,8 @@ export async function checkAndKillProcess(
   if (!pid || !(await check_process_running(pid))) return { canProceed: true };
 
   if (!options.force) {
-    const tag = config.getLogTag();
+    const tagRes = config.getLogTag();
+    const tag = tagRes.success ? tagRes.data : "along";
     return {
       canProceed: false,
       error: `Issue #${issueNumber} 仍在运行中 (PID: ${pid})\n如需强制清理，请使用: ${tag} cleanup ${issueNumber} --force`,
@@ -112,9 +118,9 @@ export async function archiveSession(
  * 从数据库读取 branchName
  */
 export function readBranchName(owner: string, repo: string, issueNumber: number): string {
-  const data = readSession(owner, repo, issueNumber);
-  if (!data) return "";
-  return data.branchName || "";
+  const res = readSession(owner, repo, issueNumber);
+  if (!res.success || !res.data) return "";
+  return res.data.branchName || "";
 }
 
 /**
@@ -125,13 +131,13 @@ export async function cleanupIssue(
   options: CleanupOptions = {},
   owner?: string,
   repo?: string,
-) {
+): Promise<Result<void>> {
   // 如果没有传入 owner/repo，尝试从 git remote 获取
   if (!owner || !repo) {
     const repoInfoRes = await readRepoInfo();
     if (!repoInfoRes.success) {
       logger.error(`无法获取仓库信息: ${repoInfoRes.error}`);
-      return;
+      return failure(repoInfoRes.error);
     }
     owner = repoInfoRes.data.owner;
     repo = repoInfoRes.data.repo;
@@ -185,4 +191,5 @@ export async function cleanupIssue(
   await archiveSession(owner, repo, Number(issueNumber), reason, options.silent, session);
 
   session.logEvent("cleanup-completed", { issueNumber, reason, branchName });
+  return success(undefined);
 }

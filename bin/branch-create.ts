@@ -65,11 +65,15 @@ async function main() {
     session.logEvent("branch-pushed", { branchName });
 
     // 3. 更新数据库：写入 branchName + 自动推进 step
-    session.writeStatus({
+    const writeRes = session.writeStatus({
       branchName,
       lastMessage: "已创建语义化分支",
       currentStep: "分析代码库并制定实施计划",
     });
+    if (!writeRes.success) {
+      logger.error(`更新分支状态失败: ${writeRes.error}`);
+      process.exit(1);
+    }
     logger.success("状态已更新");
 
     // 4. 自动更新 todo

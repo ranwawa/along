@@ -30,12 +30,15 @@ export function useSessions(): { sessions: DashboardSession[]; counts: StatusCou
     async function poll() {
       if (!active) return;
 
-      const allSessions = findAllSessions();
+      const allRes = findAllSessions();
+      if (!allRes.success) return;
+      const allSessions = allRes.data;
       const results: DashboardSession[] = [];
 
       for (const info of allSessions) {
-        const status = readSession(info.owner, info.repo, info.issueNumber);
-        if (!status) continue;
+        const res = readSession(info.owner, info.repo, info.issueNumber);
+        if (!res.success || !res.data) continue;
+        const status = res.data;
 
         let displayStatus = status.status as DashboardSession["status"];
         if (status.status === "running" && status.pid) {

@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { config } from "./config";
+import { Result, success, failure } from "./result";
 
 /**
  * 统一管理所有 session 相关的路径生成
@@ -26,8 +27,13 @@ export class SessionPathManager {
   }
 
   /** 确保 issue 目录存在 */
-  ensureDir(): void {
-    fs.mkdirSync(this.getIssueDir(), { recursive: true });
+  ensureDir(): Result<void> {
+    try {
+      fs.mkdirSync(this.getIssueDir(), { recursive: true });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`无法创建目录 ${this.getIssueDir()}: ${e.message}`);
+    }
   }
 
   getTodoFile(): string {

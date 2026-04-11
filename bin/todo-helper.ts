@@ -24,9 +24,16 @@ export function saveStepOutput(
   scriptName: string,
   content: string,
 ): string {
-  paths.ensureDir();
+  const ensureRes = paths.ensureDir();
+  if (!ensureRes.success) {
+    logger.error(`无法确保目录存在: ${ensureRes.error}`);
+  }
   const filePath = paths.getStepOutputFile(stepNumber, scriptName);
-  fs.writeFileSync(filePath, content, "utf-8");
+  try {
+    fs.writeFileSync(filePath, content, "utf-8");
+  } catch (e: any) {
+    logger.error(`无法写入产出文件: ${e.message}`);
+  }
   return path.basename(filePath);
 }
 

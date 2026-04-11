@@ -11,15 +11,7 @@ const { simpleGit } = require("simple-git");
 
 export const git = simpleGit();
 
-export type Result<T> = { success: true; data: T } | { success: false; error: string };
-
-export function success<T>(data: T): Result<T> {
-  return { success: true, data };
-}
-
-export function failure<T>(error: string): Result<T> {
-  return { success: false, error };
-}
+export { Result, success, failure } from "./result";
 
 let cachedIsRepo: boolean | null = null;
 
@@ -82,7 +74,12 @@ const commonLogger = consola.withTag("common");
  * 确保 worktree 中的编辑器配置包含 ~/.along/ 目录的访问权限
  */
 export function ensureEditorPermissions(worktreePath: string) {
-  const editorId = config.getLogTag();
+  const editorRes = config.getLogTag();
+  if (!editorRes.success) {
+    commonLogger.error(editorRes.error);
+    return;
+  }
+  const editorId = editorRes.data;
 
   if (editorId === "opencode") {
     ensureOpenCodePermissions(worktreePath);

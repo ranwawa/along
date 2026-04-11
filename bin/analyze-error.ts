@@ -4,6 +4,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
+import { Result, success, failure } from "./common";
+
 const logger = consola.withTag("analyze-error");
 
 function readClaudeSettings(): Record<string, string> {
@@ -23,12 +25,12 @@ const SYSTEM_PROMPT = `你是一个资深的研发工程师。你的任务是分
 **详细分析**: （结合日志解释为什么会报错）
 **建议措施**: （给出可行的解决建议或命令）`;
 
-export async function analyzeErrorLog(logContent: string): Promise<string> {
+export async function analyzeErrorLog(logContent: string): Promise<Result<string>> {
   const claudeEnv = readClaudeSettings();
   const apiKey = process.env.DEEPSEEK_API_KEY || claudeEnv.DEEPSEEK_API_KEY || "sk-099e5ef9e54d4a1f8760dd9e541cf5fd";
 
   if (!apiKey) {
-    return "无法进行 AI 分析：未找到 DEEPSEEK_API_KEY。";
+    return failure("无法进行 AI 分析：未找到 DEEPSEEK_API_KEY。");
   }
 
   const modelName = process.env.ALONG_TRIAGE_MODEL || "deepseek-chat";
@@ -53,9 +55,9 @@ export async function analyzeErrorLog(logContent: string): Promise<string> {
       { role: "user", content: userMessage },
     ]);
 
-    return result.content as string;
+    return success(result.content as string);
   } catch (error: any) {
     logger.error(`AI 分析失败: ${error.message}`);
-    return `AI 分析失败: ${error.message}`;
+    return failure(`AI 分析失败: ${error.message}`);
   }
 }

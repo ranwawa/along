@@ -38,7 +38,7 @@ import { readSession } from "./db";
 import { Command } from "commander";
 
 // logTag 延迟获取，避免模块加载时 worktree 未就绪导致检测失败
-function getLogTag(): string {
+function getLogTag(): Result<string> {
   return config.getLogTag();
 }
 
@@ -91,24 +91,28 @@ async function ensureWorktree(
   }
 
   // 记录完整环境信息
-  try {
-    const tag = getLogTag();
-    const gitHeadSha = (await git.raw(["rev-parse", "HEAD"])).trim();
-    const pkg = JSON.parse(fs.readFileSync(path.join(config.ROOT_DIR, "package.json"), "utf-8"));
-    statusData.agentType = tag;
-    statusData.environment = {
-      agentType: tag,
-      gitHeadSha,
-      alongVersion: pkg.version || "unknown",
-      nodeVersion: process.version,
-      platform: process.platform,
-    };
-    sessionManager?.logEvent("environment-captured", statusData.environment);
-  } catch (e: any) {
-    logger.warn(`记录环境信息失败: ${e.message}`);
+  const tagRes = getLogTag();
+  if (tagRes.success) {
+    const tag = tagRes.data;
+    try {
+      const gitHeadSha = (await git.raw(["rev-parse", "HEAD"])).trim();
+      const pkg = JSON.parse(fs.readFileSync(path.join(config.ROOT_DIR, "package.json"), "utf-8"));
+      statusData.agentType = tag;
+      statusData.environment = {
+        agentType: tag,
+        gitHeadSha,
+        alongVersion: pkg.version || "unknown",
+        nodeVersion: process.version,
+        platform: process.platform,
+      };
+      sessionManager?.logEvent("environment-captured", statusData.environment);
+    } catch (e: any) {
+      logger.warn(`记录环境信息失败: ${e.message}`);
+    }
   }
 
-  await initSessionFiles(paths, worktreePath, statusData, sessionManager);
+  const initRes = await initSessionFiles(paths, worktreePath, statusData, sessionManager);
+  if (!initRes.success) return initRes;
 
   logger.success("初始化完成\n");
   return success(worktreePath);
@@ -122,8 +126,11 @@ async function executeTask(
   options: any,
   sessionManager: SessionManager,
   paths: SessionPathManager,
-) {
-  const tag = getLogTag();
+): Promise<Result<void>> {
+  const tagRes = getLogTag();
+  if (!tagRes.success) return tagRes;
+  const tag = tagRes.data;
+
   const editor = config.EDITORS.find((e) => e.id === tag);
 
   // 按照配置中的模版生成启动指令
@@ -152,8 +159,11 @@ async function execTmux(
   sessionName?: string,
   detach?: boolean,
   sessionManager?: SessionManager,
-) {
-  const tag = getLogTag();
+): Promise<Result<void>> {
+  const tagRes = getLogTag();
+  if (!tagRes.success) return tagRes;
+  const tag = tagRes.data;
+
   const session = sessionName || `${tag}-${num}`;
   logger.info(`在 tmux 中创建新窗口并自动切换到会话: ${session}...`);
   if (sessionManager) {
@@ -220,8 +230,14 @@ fi
 `;
 
   const scriptFile = path.join(issueDir, `tmux-run-${num}.sh`);
-  paths.ensureDir();
-  fs.writeFileSync(scriptFile, scriptContent, { mode: 0o755 });
+  const ensureRes = paths.ensureDir();
+  if (!ensureRes.success) return ensureRes;
+
+  try {
+    fs.writeFileSync(scriptFile, scriptContent, { mode: 0o755 });
+  } catch (e: any) {
+    return failure(`无法写入 tmux 脚本文件: ${e.message}`);
+  }
 
   try {
     await $`tmux new-window -n ${session} ${scriptFile}`;
@@ -234,32 +250,38 @@ fi
         sessionManager.log(`Tmux window created and running in background: ${session}`);
       }
     }
+    return success(undefined);
   } catch (error: any) {
     const errorMsg = `Failed to create tmux window: ${error.message}`;
     logger.error(errorMsg);
     if (sessionManager) {
       sessionManager.markAsCrashed(errorMsg, error.stack);
     }
-    throw error;
+    return failure(errorMsg, error.stack);
   }
 }
 
 
-async function tryGetSessionTask(paths: SessionPathManager) {
+async function tryGetSessionTask(paths: SessionPathManager): Promise<Result<{ taskData: { title: string, number: number } } | null>> {
   const worktreePath = paths.getWorktreeDir();
-  const session = readSession(paths.getOwner(), paths.getRepo(), paths.getIssueNumber());
+  const sessionRes = readSession(paths.getOwner(), paths.getRepo(), paths.getIssueNumber());
+  if (!sessionRes.success) return sessionRes;
+  const session = sessionRes.data;
 
   if (session && fs.existsSync(worktreePath)) {
     logger.info(`  检测到现有状况: Issue #${paths.getIssueNumber()} (从 Session 快进)`);
-    return {
+    return success({
       taskData: { title: session.title, number: paths.getIssueNumber() },
-    };
+    });
   }
-  return null;
+  return success(null);
 }
 
 async function runTask(num: string, options: any, sessionManager: SessionManager, paths: SessionPathManager, owner: string, repoName: string, phase: "phase1" | "phase2"): Promise<Result<null>> {
-  let task = await tryGetSessionTask(paths);
+  const sessionTaskRes = await tryGetSessionTask(paths);
+  if (!sessionTaskRes.success) return failure(sessionTaskRes.error);
+  let task = sessionTaskRes.data;
+
   if (!task) {
     const idResult = await identifyTask(num);
     if (!idResult.success) return failure(idResult.error);
@@ -280,12 +302,18 @@ async function runTask(num: string, options: any, sessionManager: SessionManager
 
   // 写入 .along-mode 文件，供 agent prompt 读取执行阶段
   const modeFile = path.join(paths.getIssueDir(), ".along-mode");
-  fs.writeFileSync(modeFile, phase);
+  try {
+    fs.writeFileSync(modeFile, phase);
+  } catch (e: any) {
+    return failure(`无法写入 .along-mode 文件: ${e.message}`);
+  }
   logger.info(`执行模式: ${phase} (已写入 .along-mode)`);
   sessionManager.logEvent("along-mode-written", { phase, modeFile });
 
   const workflow = "resolve-github-issue";
-  await executeTask(num, workflow, wtResult.data, options, sessionManager, paths);
+  const executeRes = await executeTask(num, workflow, wtResult.data, options, sessionManager, paths);
+  if (!executeRes.success) return executeRes;
+
   return success(null);
 }
 
@@ -453,19 +481,25 @@ async function handleAction(num: string, options: any) {
       }
       if (!issueRes.success) {
         sessionManager.markAsError(issueRes.error);
-        throw new Error(issueRes.error);
+        logger.error(`任务检测失败: ${issueRes.error}`);
+        process.exit(1);
       }
     }
     logger.success("issue检测通过");
 
     // 将 Issue 数据持久化，供 Agent prompt 直接读取
-    paths.ensureDir();
+    const ensureRes = paths.ensureDir();
+    if (!ensureRes.success) {
+      logger.error(ensureRes.error);
+      process.exit(1);
+    }
     fs.writeFileSync(paths.getIssueFile(), JSON.stringify(issueRes.data, null, 2));
 
     const taskRes = checkTask(owner, repoName, taskNo);
     if (!taskRes.success) {
       sessionManager.markAsError(taskRes.error);
-      throw new Error(taskRes.error);
+      logger.error(`Task 检查失败: ${taskRes.error}`);
+      process.exit(1);
     }
     logger.success("task检测通过");
 
@@ -485,14 +519,20 @@ async function handleAction(num: string, options: any) {
 
     if (options.ci) {
       // CI 模式：直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
-      await launchIssueAgent(owner, repoName, taskNo, phase, {
+      const agentRes = await launchIssueAgent(owner, repoName, taskNo, phase, {
         title: issueRes.data.title,
       });
+      if (!agentRes.success) {
+        sessionManager.markAsError(agentRes.error);
+        logger.error(`Agent 启动失败: ${agentRes.error}`);
+        process.exit(1);
+      }
     } else {
       // tmux 模式：检查 tmux 环境
       const tmuxResult = tmuxCheck();
       if (!tmuxResult.success) {
-        throw new Error(tmuxResult.error);
+        logger.error(tmuxResult.error);
+        process.exit(1);
       }
       logger.success("tmux环境检测通过");
 
@@ -500,7 +540,8 @@ async function handleAction(num: string, options: any) {
       const res = await runTask(num, options, sessionManager, paths, owner, repoName, phase);
       if (!res.success) {
         sessionManager.markAsError(res.error);
-        throw new Error(res.error);
+        logger.error(`任务执行失败: ${res.error}`);
+        process.exit(1);
       }
     }
   } catch (error: any) {

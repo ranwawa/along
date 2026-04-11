@@ -47,9 +47,9 @@ function parseRepository(fullName: string): { owner: string; repo: string } | nu
 /**
  * 异步执行处理函数（fire-and-forget，不阻塞 HTTP 响应）
  */
-function fireAndForget(fn: () => Promise<void>) {
+function fireAndForget(fn: () => Promise<any>) {
   fn().catch((err) => {
-    logger.error(`处理函数执行失败: ${err.message}`);
+    logger.error(`处理函数执行内部异常: ${err.message}`);
   });
 }
 
@@ -93,22 +93,24 @@ async function handleEvent(
 
         logger.info(`Issue #${issueNumber} 已创建，开始分类...`);
         fireAndForget(async () => {
-          try {
-            const triageResult = await triageIssue(issueTitle, issueBody, issueLabels);
-            logger.info(`Issue #${issueNumber} 分类结果: ${triageResult.classification} (${triageResult.reason})`);
-            await handleTriagedIssue(owner, repo, issueNumber, triageResult);
-          } catch (err: any) {
-            logger.error(`Issue #${issueNumber} 分类失败，回退到 phase1: ${err.message}`);
-            try {
-              const tokenRes = await readGithubToken();
-              if (tokenRes.success) {
+          const triageRes = await triageIssue(issueTitle, issueBody, issueLabels);
+          if (!triageRes.success) {
+            logger.error(`Issue #${issueNumber} 分类失败，回退到 phase1: ${triageRes.error}`);
+            // 回退逻辑
+            const tokenRes = await readGithubToken();
+            if (tokenRes.success) {
                 const client = new GitHubClient(tokenRes.data, owner, repo);
                 await client.addIssueLabels(issueNumber, ["bug", "WIP"]);
-              }
-            } catch (labelErr: any) {
-              logger.warn(`回退打标签失败: ${labelErr.message}`);
             }
             await launchIssueAgent(owner, repo, issueNumber, "phase1", { title: `Issue #${issueNumber}` });
+            return;
+          }
+
+          const triageResult = triageRes.data;
+          logger.info(`Issue #${issueNumber} 分类结果: ${triageResult.classification} (${triageResult.reason})`);
+          const handleRes = await handleTriagedIssue(owner, repo, issueNumber, triageResult);
+          if (!handleRes.success) {
+            logger.error(`处理分类结果失败: ${handleRes.error}`);
           }
         });
         return { status: 202, message: `已触发 Issue #${issueNumber} 分类` };
@@ -124,7 +126,10 @@ async function handleEvent(
         }
 
         logger.info(`Issue #${issueNumber} 已审批，启动 Phase 2...`);
-        fireAndForget(() => launchIssueAgent(owner, repo, issueNumber, "phase2", { title: `Issue #${issueNumber}` }));
+        fireAndForget(async () => {
+          const res = await launchIssueAgent(owner, repo, issueNumber, "phase2", { title: `Issue #${issueNumber}` });
+          if (!res.success) logger.error(`启动 Phase 2 失败: ${res.error}`);
+        });
         return { status: 202, message: `已触发 Phase 2: Issue #${issueNumber}` };
       }
 
@@ -137,7 +142,10 @@ async function handleEvent(
 
       if (action === "opened" || action === "synchronize") {
         logger.info(`PR #${prNumber} 事件: ${action}，启动代码审查...`);
-        fireAndForget(() => reviewPr(owner, repo, prNumber));
+        fireAndForget(async () => {
+          const res = await reviewPr(owner, repo, prNumber);
+          if (!res.success) logger.error(`代码审查失败: ${res.error}`);
+        });
         return { status: 202, message: `已触发代码审查 PR #${prNumber}` };
       }
 
@@ -150,10 +158,17 @@ async function handleEvent(
           logger.info(`PR #${prNumber} 已合并，清理 Issue #${linkedIssue} 的 WIP 标签...`);
           fireAndForget(async () => {
             const tokenRes = await readGithubToken();
-            if (!tokenRes.success) return;
+            if (!tokenRes.success) {
+              logger.error(`获取 Token 失败: ${tokenRes.error}`);
+              return;
+            }
             const client = new GitHubClient(tokenRes.data, owner, repo);
-            await client.removeIssueLabel(linkedIssue, "WIP");
-            logger.info(`已移除 Issue #${linkedIssue} 的 WIP 标签`);
+            const res = await client.removeIssueLabel(linkedIssue, "WIP");
+            if (!res.success) {
+              logger.warn(`移除 Issue #${linkedIssue} 的 WIP 标签失败: ${res.error}`);
+            } else {
+              logger.info(`已移除 Issue #${linkedIssue} 的 WIP 标签`);
+            }
           });
           return { status: 202, message: `已触发 WIP 清理: Issue #${linkedIssue}` };
         }
@@ -169,7 +184,10 @@ async function handleEvent(
 
       if (action === "submitted") {
         logger.info(`PR #${prNumber} 收到 review，启动评论处理...`);
-        fireAndForget(() => resolveReview(owner, repo, prNumber));
+        fireAndForget(async () => {
+          const res = await resolveReview(owner, repo, prNumber);
+          if (!res.success) logger.error(`评论处理失败: ${res.error}`);
+        });
         return { status: 202, message: `已触发评论处理 PR #${prNumber}` };
       }
 
@@ -190,7 +208,10 @@ async function handleEvent(
       }
       const prNumber = pullRequests[0].number;
       logger.info(`PR #${prNumber} CI 失败，启动修复...`);
-      fireAndForget(() => resolveCi(owner, repo, prNumber));
+      fireAndForget(async () => {
+        const res = await resolveCi(owner, repo, prNumber);
+        if (!res.success) logger.error(`CI 修复失败: ${res.error}`);
+      });
       return { status: 202, message: `已触发 CI 修复 PR #${prNumber}` };
     }
 

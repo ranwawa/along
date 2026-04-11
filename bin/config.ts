@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { Result, success, failure } from "./result";
 
 /**
  * .along/bin/config.ts
@@ -63,34 +64,35 @@ export const config = {
   },
 
   // 日志标签识别
-  getLogTag(): string {
+  getLogTag(): Result<string> {
     // 1. 最高优先级：环境变量
-    if (process.env.AGENT_TYPE) return process.env.AGENT_TYPE;
+    if (process.env.AGENT_TYPE) return success(process.env.AGENT_TYPE);
 
     // 2. 项目级配置文件：.along.json 或 package.json 中的 along.agent
+    const workingDir = process.cwd();
     const alongConfigPath = path.join(workingDir, ".along.json");
     if (fs.existsSync(alongConfigPath)) {
       try {
         const alongConfig = JSON.parse(fs.readFileSync(alongConfigPath, "utf-8"));
-        if (alongConfig.agent) return alongConfig.agent;
+        if (alongConfig.agent) return success(alongConfig.agent);
       } catch { }
     }
     const pkgPath = path.join(workingDir, "package.json");
     if (fs.existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-        if (pkg.along?.agent) return pkg.along.agent;
+        if (pkg.along?.agent) return success(pkg.along.agent);
       } catch { }
     }
 
     // 3. 目录特征检测（向后兼容已有项目）
     const execPath = process.argv[1] || "";
-    if (fs.existsSync(path.join(workingDir, ".opencode")) || execPath.includes(".opencode")) return "opencode";
-    if (fs.existsSync(path.join(workingDir, ".pi")) || execPath.includes(".pi")) return "pi";
-    if (fs.existsSync(path.join(workingDir, ".claude")) || execPath.includes(".claude")) return "claude";
+    if (fs.existsSync(path.join(workingDir, ".opencode")) || execPath.includes(".opencode")) return success("opencode");
+    if (fs.existsSync(path.join(workingDir, ".pi")) || execPath.includes(".pi")) return success("pi");
+    if (fs.existsSync(path.join(workingDir, ".claude")) || execPath.includes(".claude")) return success("claude");
 
     // 4. 无法检测时报错，不再静默回退为 "along"
-    throw new Error(
+    return failure(
       `无法检测 Agent 类型。请通过以下方式之一指定：\n` +
       `  1. 设置环境变量 AGENT_TYPE=opencode|pi|claude\n` +
       `  2. 在项目根目录创建 .along.json，内容为 {"agent": "opencode|pi|claude"}\n` +

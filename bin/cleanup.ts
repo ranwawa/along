@@ -34,7 +34,11 @@ async function main() {
     process.exit(1);
   }
 
-  await cleanupIssue(issueNumber, { force, reason: force ? "force" : "normal" }, owner, repo);
+  const cleanRes = await cleanupIssue(issueNumber, { force, reason: force ? "force" : "normal" }, owner, repo);
+  if (!cleanRes.success) {
+    logger.error(`清理失败: ${cleanRes.error}`);
+    process.exit(1);
+  }
 
   logger.success(`Issue #${issueNumber} 清理完成`);
 }

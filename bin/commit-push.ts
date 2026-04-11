@@ -29,15 +29,18 @@ interface Commit {
 
 function updateStatusAfterPush(branchName: string): { issueNumber: string; owner: string; repo: string } | null {
   // 通过 branchName 在数据库中找到对应的 session
-  const found = findSessionByBranch(branchName);
-  if (!found) return null;
+  const foundRes = findSessionByBranch(branchName);
+  if (!foundRes.success || !foundRes.data) return null;
+  const found = foundRes.data;
 
-  upsertSession(found.owner, found.repo, found.issueNumber, {
+  const res = upsertSession(found.owner, found.repo, found.issueNumber, {
     lastUpdate: iso_timestamp(),
     lastMessage: "代码已提交推送",
     currentStep: "创建 PR",
   });
-  logger.success("状态已自动更新");
+  if (res.success) {
+    logger.success("状态已自动更新");
+  }
 
   return { issueNumber: String(found.issueNumber), owner: found.owner, repo: found.repo };
 }
@@ -71,8 +74,19 @@ async function main() {
   }
 
   try {
-    const currentBranch = runCommand("git branch --show-current");
-    const status = runCommand("git status --porcelain");
+    const currentBranchRes = runCommand("git branch --show-current");
+    if (!currentBranchRes.success) {
+      logger.error(`无法获取当前分支: ${currentBranchRes.error}`);
+      process.exit(1);
+    }
+    const currentBranch = currentBranchRes.data.trim();
+
+    const statusRes = runCommand("git status --porcelain");
+    if (!statusRes.success) {
+      logger.error(`无法获取 git 状态: ${statusRes.error}`);
+      process.exit(1);
+    }
+    const status = statusRes.data;
     const commitShas: string[] = [];
 
     // 清理当前暂存区
@@ -133,8 +147,8 @@ async function main() {
     // 4. 推送到远程
     let hasRemoteBranch = false;
     try {
-      runCommand(`git rev-parse --abbrev-ref ${currentBranch}@{upstream}`);
-      hasRemoteBranch = true;
+      const checkRes = runCommand(`git rev-parse --abbrev-ref ${currentBranch}@{upstream}`);
+      hasRemoteBranch = checkRes.success;
     } catch {
       hasRemoteBranch = false;
     }
@@ -184,11 +198,13 @@ async function main() {
   } catch (error: any) {
     // 尝试写入 session.log
     try {
-      const currentBranch = runCommand("git branch --show-current");
-      const found = findSessionByBranch(currentBranch);
-      if (found) {
-        const session = new SessionManager(found.owner, found.repo, found.issueNumber);
-        session.log(`commit-push 失败: ${error.message}\n${error.stack || ""}`, "error");
+      const currentBranchRes = runCommand("git branch --show-current");
+      if (currentBranchRes.success) {
+        const foundRes = findSessionByBranch(currentBranchRes.data.trim());
+        if (foundRes.success && foundRes.data) {
+          const session = new SessionManager(foundRes.data.owner, foundRes.data.repo, foundRes.data.issueNumber);
+          session.log(`commit-push 失败: ${error.message}\n${error.stack || ""}`, "error");
+        }
       }
     } catch {}
     logger.error(`操作失败: ${error.message}`);

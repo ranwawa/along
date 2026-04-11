@@ -8,7 +8,7 @@
 import fs from "fs";
 import path from "path";
 import { consola } from "consola";
-import { iso_timestamp, ensureEditorPermissions, git } from "./common";
+import { iso_timestamp, ensureEditorPermissions, git, Result, success, failure } from "./common";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
@@ -29,8 +29,11 @@ const logger = consola.withTag("issue-agent");
  * 将 prompts/skills 同步到 worktree（增量覆盖，不删除已有文件）
  * 用于 webhook 触发的二次同步（worktree 已存在时刷新 prompt 内容）
  */
-export function syncPromptsToWorktree(worktreePath: string): void {
-  const logTag = config.getLogTag();
+export function syncPromptsToWorktree(worktreePath: string): Result<void> {
+  const logTagRes = config.getLogTag();
+  if (!logTagRes.success) return logTagRes;
+  const logTag = logTagRes.data;
+
   const editor = config.EDITORS.find((e) => e.id === logTag) || config.EDITORS[0];
 
   for (const mapping of editor.mappings) {
@@ -52,6 +55,7 @@ export function syncPromptsToWorktree(worktreePath: string): void {
   }
 
   logger.info(`已同步 prompts/skills 到 worktree (${editor.name})`);
+  return success(undefined);
 }
 
 // ─── execAgent ──────────────────────────────────────────────
@@ -74,11 +78,15 @@ export async function execAgent(
   workflow: string,
   onPid?: (pid: number) => void,
   logFile?: string,
-): Promise<number> {
-  syncPromptsToWorktree(worktreePath);
+): Promise<Result<number>> {
+  const syncRes = syncPromptsToWorktree(worktreePath);
+  if (!syncRes.success) return syncRes;
+
   ensureEditorPermissions(worktreePath);
 
-  const logTag = config.getLogTag();
+  const logTagRes = config.getLogTag();
+  if (!logTagRes.success) return logTagRes;
+  const logTag = logTagRes.data;
   const editor = config.EDITORS.find((e) => e.id === logTag);
 
   let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
@@ -125,7 +133,7 @@ export async function execAgent(
   if (exitCode !== 0) {
     logger.warn(`Agent 退出码: ${exitCode}`);
   }
-  return exitCode;
+  return success(exitCode);
 }
 
 // ─── launchIssueAgent ───────────────────────────────────────
@@ -144,7 +152,7 @@ export async function launchIssueAgent(
   issueNumber: number,
   phase: "phase1" | "phase2",
   taskData?: { title: string },
-): Promise<void> {
+): Promise<Result<void>> {
   const paths = new SessionPathManager(owner, repo, issueNumber);
   const session = new SessionManager(owner, repo, issueNumber);
 
@@ -175,7 +183,7 @@ export async function launchIssueAgent(
     const wtResult = await setupWorktree(worktreePath, session);
     if (!wtResult.success) {
       session.markAsError(`worktree 创建失败: ${wtResult.error}`);
-      throw new Error(wtResult.error);
+      return failure(wtResult.error);
     }
 
     const statusData: Record<string, any> = {
@@ -194,7 +202,8 @@ export async function launchIssueAgent(
     }
 
     try {
-      const tag = config.getLogTag();
+      const tagRes = config.getLogTag();
+      const tag = tagRes.success ? tagRes.data : "unknown";
       const gitHeadSha = (await git.raw(["rev-parse", "HEAD"])).trim();
       const pkg = JSON.parse(fs.readFileSync(path.join(config.ROOT_DIR, "package.json"), "utf-8"));
       statusData.agentType = tag;
@@ -230,17 +239,21 @@ export async function launchIssueAgent(
 
   try {
     const logFile = paths.getTmuxLogFile();
-    const exitCode = await execAgent(worktreePath, issueNumber, workflow, (pid) => {
+    const agentRes = await execAgent(worktreePath, issueNumber, workflow, (pid) => {
       session.writeStatus({ pid });
     }, logFile);
+
+    if (!agentRes.success) return agentRes;
+    const exitCode = agentRes.data;
 
     if (exitCode !== 0) {
       session.markAsError(`Agent 退出码: ${exitCode}`, exitCode);
     } else {
       session.markAsCompleted();
     }
+    return success(undefined);
   } catch (error: any) {
     session.markAsCrashed(error.message, error.stack);
-    throw error;
+    return failure(error.message, error.stack);
   }
 }

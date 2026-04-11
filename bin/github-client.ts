@@ -79,101 +79,147 @@ export class GitHubClient {
     };
   }
 
-  async getIssue(number: string | number): Promise<GitHubIssue> {
-    const { data } = await this.octokit.issues.get({
-      ...this.repoParams,
-      issue_number: Number(number),
-    });
-    return data;
+  async getIssue(number: string | number): Promise<Result<GitHubIssue>> {
+    try {
+      const { data } = await this.octokit.issues.get({
+        ...this.repoParams,
+        issue_number: Number(number),
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`获取 Issue #${number} 失败: ${e.message}`);
+    }
   }
 
 
 
-  async getIssueComments(number: string | number): Promise<RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"]> {
-    const { data } = await this.octokit.issues.listComments({
-      ...this.repoParams,
-      issue_number: Number(number),
-    });
-    return data;
+  async getIssueComments(number: string | number): Promise<Result<RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"]>> {
+    try {
+      const { data } = await this.octokit.issues.listComments({
+        ...this.repoParams,
+        issue_number: Number(number),
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`获取 Issue #${number} 评论失败: ${e.message}`);
+    }
   }
 
-  async addIssueComment(number: string | number, body: string): Promise<void> {
-    await this.octokit.issues.createComment({
-      ...this.repoParams,
-      issue_number: Number(number),
-      body,
-    });
+  async addIssueComment(number: string | number, body: string): Promise<Result<void>> {
+    try {
+      await this.octokit.issues.createComment({
+        ...this.repoParams,
+        issue_number: Number(number),
+        body,
+      });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`添加 Issue #${number} 评论失败: ${e.message}`);
+    }
   }
 
-  async addIssueLabels(number: string | number, labels: string[]): Promise<void> {
-    await this.octokit.issues.addLabels({
-      ...this.repoParams,
-      issue_number: Number(number),
-      labels,
-    });
+  async addIssueLabels(number: string | number, labels: string[]): Promise<Result<void>> {
+    try {
+      await this.octokit.issues.addLabels({
+        ...this.repoParams,
+        issue_number: Number(number),
+        labels,
+      });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`添加 Issue #${number} 标签失败: ${e.message}`);
+    }
   }
 
-  async removeIssueLabel(number: string | number, label: string): Promise<void> {
+  async removeIssueLabel(number: string | number, label: string): Promise<Result<void>> {
     try {
       await this.octokit.issues.removeLabel({
         ...this.repoParams,
         issue_number: Number(number),
         name: label,
       });
+      return success(undefined);
     } catch (e: any) {
       // 标签不存在时忽略 404
-      if (e.status !== 404) throw e;
+      if (e.status === 404) return success(undefined);
+      return failure(`移除 Issue #${number} 标签 ${label} 失败: ${e.message}`);
     }
   }
 
-  async closeIssue(number: string | number): Promise<void> {
-    await this.octokit.issues.update({
-      ...this.repoParams,
-      issue_number: Number(number),
-      state: "closed",
-    });
+  async closeIssue(number: string | number): Promise<Result<void>> {
+    try {
+      await this.octokit.issues.update({
+        ...this.repoParams,
+        issue_number: Number(number),
+        state: "closed",
+      });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`关闭 Issue #${number} 失败: ${e.message}`);
+    }
   }
 
-  async getRepositoryDetails(): Promise<RestEndpointMethodTypes["repos"]["get"]["response"]["data"]> {
-    const { data } = await this.octokit.repos.get({
-      ...this.repoParams,
-    });
-    return data;
+  async getRepositoryDetails(): Promise<Result<RestEndpointMethodTypes["repos"]["get"]["response"]["data"]>> {
+    try {
+      const { data } = await this.octokit.repos.get({
+        ...this.repoParams,
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`获取仓库详情失败: ${e.message}`);
+    }
   }
 
-  async getPullRequest(prNumber: number): Promise<GitHubPullRequest> {
-    const { data } = await this.octokit.pulls.get({
-      ...this.repoParams,
-      pull_number: prNumber,
-    });
-    return data;
+  async getPullRequest(prNumber: number): Promise<Result<GitHubPullRequest>> {
+    try {
+      const { data } = await this.octokit.pulls.get({
+        ...this.repoParams,
+        pull_number: prNumber,
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`获取 PR #${prNumber} 失败: ${e.message}`);
+    }
   }
 
-  async getReviewComments(prNumber: number): Promise<GitHubReviewComment[]> {
-    const { data } = await this.octokit.pulls.listReviewComments({
-      ...this.repoParams,
-      pull_number: prNumber,
-      per_page: 100,
-    });
-    return data;
+  async getReviewComments(prNumber: number): Promise<Result<GitHubReviewComment[]>> {
+    try {
+      const { data } = await this.octokit.pulls.listReviewComments({
+        ...this.repoParams,
+        pull_number: prNumber,
+        per_page: 100,
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`获取 PR #${prNumber} 评审评论失败: ${e.message}`);
+    }
   }
 
-  async createReviewCommentReply(prNumber: number, commentId: number, body: string): Promise<void> {
-    await this.octokit.pulls.createReplyForReviewComment({
-      ...this.repoParams,
-      pull_number: prNumber,
-      comment_id: commentId,
-      body,
-    });
+  async createReviewCommentReply(prNumber: number, commentId: number, body: string): Promise<Result<void>> {
+    try {
+      await this.octokit.pulls.createReplyForReviewComment({
+        ...this.repoParams,
+        pull_number: prNumber,
+        comment_id: commentId,
+        body,
+      });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`回复 PR #${prNumber} 评审评论失败: ${e.message}`);
+    }
   }
 
-  async getCheckRuns(ref: string): Promise<GitHubCheckRun[]> {
-    const { data } = await this.octokit.checks.listForRef({
-      ...this.repoParams,
-      ref,
-      per_page: 100,
-    });
-    return data.check_runs;
+  async getCheckRuns(ref: string): Promise<Result<GitHubCheckRun[]>> {
+    try {
+      const { data } = await this.octokit.checks.listForRef({
+        ...this.repoParams,
+        ref,
+        per_page: 100,
+      });
+      return success(data.check_runs);
+    } catch (e: any) {
+      return failure(`获取 Ref ${ref} 的 CheckRuns 失败: ${e.message}`);
+    }
   }
 
   /**
@@ -185,55 +231,72 @@ export class GitHubClient {
     body: string,
     event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
     comments?: Array<{ path: string; line: number; body: string; side?: "LEFT" | "RIGHT" }>,
-  ): Promise<void> {
-    await this.octokit.pulls.createReview({
-      ...this.repoParams,
-      pull_number: prNumber,
-      body,
-      event,
-      comments: comments?.map(c => ({
-        path: c.path,
-        line: c.line,
-        body: c.body,
-        side: c.side || "RIGHT",
-      })),
-    });
+  ): Promise<Result<void>> {
+    try {
+      await this.octokit.pulls.createReview({
+        ...this.repoParams,
+        pull_number: prNumber,
+        body,
+        event,
+        comments: comments?.map(c => ({
+          path: c.path,
+          line: c.line,
+          body: c.body,
+          side: c.side || "RIGHT",
+        })),
+      });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`提交 PR #${prNumber} 评审失败: ${e.message}`);
+    }
   }
 
   /**
    * 列出 PR 上的所有 Reviews
    */
-  async listReviews(prNumber: number): Promise<RestEndpointMethodTypes["pulls"]["listReviews"]["response"]["data"]> {
-    const { data } = await this.octokit.pulls.listReviews({
-      ...this.repoParams,
-      pull_number: prNumber,
-      per_page: 100,
-    });
-    return data;
+  async listReviews(prNumber: number): Promise<Result<RestEndpointMethodTypes["pulls"]["listReviews"]["response"]["data"]>> {
+    try {
+      const { data } = await this.octokit.pulls.listReviews({
+        ...this.repoParams,
+        pull_number: prNumber,
+        per_page: 100,
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`获取 PR #${prNumber} 评审列表失败: ${e.message}`);
+    }
   }
 
   /**
    * 获取 PR 变更文件列表（含 patch/diff）
    */
-  async getPullRequestFiles(prNumber: number): Promise<RestEndpointMethodTypes["pulls"]["listFiles"]["response"]["data"]> {
-    const { data } = await this.octokit.pulls.listFiles({
-      ...this.repoParams,
-      pull_number: prNumber,
-      per_page: 100,
-    });
-    return data;
+  async getPullRequestFiles(prNumber: number): Promise<Result<RestEndpointMethodTypes["pulls"]["listFiles"]["response"]["data"]>> {
+    try {
+      const { data } = await this.octokit.pulls.listFiles({
+        ...this.repoParams,
+        pull_number: prNumber,
+        per_page: 100,
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`获取 PR #${prNumber} 文件列表失败: ${e.message}`);
+    }
   }
 
   /**
    * 获取 PR 的完整 diff 文本
    */
-  async getPullRequestDiff(prNumber: number): Promise<string> {
-    const { data } = await this.octokit.pulls.get({
-      ...this.repoParams,
-      pull_number: prNumber,
-      mediaType: { format: "diff" },
-    });
-    return data as unknown as string;
+  async getPullRequestDiff(prNumber: number): Promise<Result<string>> {
+    try {
+      const { data } = await this.octokit.pulls.get({
+        ...this.repoParams,
+        pull_number: prNumber,
+        mediaType: { format: "diff" },
+      });
+      return success(data as unknown as string);
+    } catch (e: any) {
+      return failure(`获取 PR #${prNumber} Diff 失败: ${e.message}`);
+    }
   }
 
   /**
@@ -245,16 +308,21 @@ export class GitHubClient {
     state?: "open" | "closed" | "all";
     since?: string;
     per_page?: number;
-  } = {}): Promise<GitHubIssue[]> {
-    const { data } = await this.octokit.issues.listForRepo({
-      ...this.repoParams,
-      state: options.state || "open",
-      labels: options.labels,
-      since: options.since,
-      per_page: options.per_page || 100,
-    });
-    // GitHub API 会将 PR 混入 issues 列表，过滤掉
-    return data.filter((issue: any) => !issue.pull_request) as GitHubIssue[];
+  } = {}): Promise<Result<GitHubIssue[]>> {
+    try {
+      const { data } = await this.octokit.issues.listForRepo({
+        ...this.repoParams,
+        state: options.state || "open",
+        labels: options.labels,
+        since: options.since,
+        per_page: options.per_page || 100,
+      });
+      // GitHub API 会将 PR 混入 issues 列表，过滤掉
+      const filtered = data.filter((issue: any) => !issue.pull_request) as GitHubIssue[];
+      return success(filtered);
+    } catch (e: any) {
+      return failure(`列出 Issue 失败: ${e.message}`);
+    }
   }
 
 }
