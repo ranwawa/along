@@ -28,6 +28,7 @@ import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { exportAgentSession } from "./agent-session-export";
 import { getAgentRole } from "./agent-config";
 import { launchIssueAgent } from "./issue-agent";
+import { readSession } from "./db";
 
 /**
  * run - 极简一键启动入口
@@ -141,16 +142,16 @@ async function executeTask(
   sessionManager.updateStep("启动 Agent", `执行命令: ${cmd}`);
   sessionManager.log(`Starting agent with command: ${cmd}`);
 
-  return execTmux(startCmd, num, options.tmuxSession, options.detach, sessionManager, paths);
+  return execTmux(startCmd, num, paths, options.tmuxSession, options.detach, sessionManager);
 }
 
 async function execTmux(
   cmd: string,
   num: string,
+  paths: SessionPathManager,
   sessionName?: string,
   detach?: boolean,
   sessionManager?: SessionManager,
-  paths?: SessionPathManager,
 ) {
   const tag = getLogTag();
   const session = sessionName || `${tag}-${num}`;
@@ -170,68 +171,34 @@ async function execTmux(
     envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
   }
 
-  // 防止 Agent 启动崩溃导致 tmux 窗口瞬间消失闪退
-  const logFile = paths ? paths.getTmuxLogFile() : "";
-  const statusFile = paths ? paths.getStatusFile() : "";
+  // 日志文件路径
+  const logFile = paths.getTmuxLogFile();
+  const owner = paths.getOwner();
+  const repo = paths.getRepo();
+  const issueNumber = paths.getIssueNumber();
 
   // Agent 完成后导出会话数据（在 worktree 被清理前保存 agent 的对话历史）
-  const worktreePath = paths ? paths.getWorktreeDir() : "";
+  const worktreePath = paths.getWorktreeDir();
   const exportBinPath = path.join(config.BIN_DIR, "agent-session-export.ts");
-  const exportOwner = paths ? paths.getOwner() : "";
-  const exportRepo = paths ? paths.getRepo() : "";
-  const exportSessionScript = paths ? `
+  const exportSessionScript = `
 bun -e "
   const { exportAgentSession } = require('${exportBinPath}');
   const { SessionPathManager } = require('${path.join(config.BIN_DIR, "session-paths.ts")}');
-  const paths = new SessionPathManager('${exportOwner}', '${exportRepo}', ${num});
+  const paths = new SessionPathManager('${owner}', '${repo}', ${num});
   exportAgentSession(paths, '${worktreePath}').catch(() => {});
 " 2>/dev/null || true
-  `.trim() : "";
-
-  // Agent 完成后更新 status.json，确保外部监控能检测到完成/崩溃
-  // 当 exitCode 非零时，额外读取日志文件最后 20 行作为 crashLog
-  const updateStatusScript = `
-bun -e "
-  const fs = require('fs');
-  const f = '${statusFile}';
-  const logPath = '${logFile}';
-  if (fs.existsSync(f)) {
-    const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
-    if (s.status === 'running') {
-      const exitCode = Number(process.argv[1]) || 0;
-      s.status = exitCode === 0 ? 'completed' : 'crashed';
-      s.endTime = new Date().toISOString();
-      s.lastUpdate = new Date().toISOString();
-      if (exitCode !== 0) {
-        s.errorMessage = 'Agent 退出码: ' + exitCode;
-        s.exitCode = exitCode;
-        try {
-          if (fs.existsSync(logPath)) {
-            const lines = fs.readFileSync(logPath, 'utf-8').split('\\n');
-            s.crashLog = lines.slice(-20).join('\\n');
-          }
-        } catch {}
-      }
-      fs.writeFileSync(f, JSON.stringify(s, null, 2));
-    }
-  }
-" \${EXIT_CODE} 2>/dev/null || true
   `.trim();
 
-  // 启动时将 shell PID 写入 status.json，供 GC 检测进程是否存活
-  const writePidScript = `
-bun -e "
-  const fs = require('fs');
-  const f = '${statusFile}';
-  if (fs.existsSync(f)) {
-    const s = JSON.parse(fs.readFileSync(f, 'utf-8'));
-    s.pid = Number(process.argv[1]);
-    fs.writeFileSync(f, JSON.stringify(s, null, 2));
-  }
-" \$\$ 2>/dev/null || true
-  `.trim();
+  // Agent 完成后更新数据库（通过独立 CLI 脚本）
+  const finalizeBinPath = path.join(config.BIN_DIR, "session-finalize.ts");
+  const updateStatusScript = `bun ${finalizeBinPath} '${owner}' '${repo}' ${issueNumber} \${EXIT_CODE} '${logFile}' 2>/dev/null || true`;
+
+  // 启动时将 shell PID 写入数据库（通过独立 CLI 脚本）
+  const pidBinPath = path.join(config.BIN_DIR, "session-update-pid.ts");
+  const writePidScript = `bun ${pidBinPath} '${owner}' '${repo}' ${issueNumber} $$ 2>/dev/null || true`;
 
   // 将 tmux 脚本写入临时文件，避免 bash -c '...' 的引号嵌套问题
+  const issueDir = paths.getIssueDir();
   const scriptContent = `#!/bin/bash
 ${envExports.join("\n")}
 echo "Starting at $(date)" > ${logFile}
@@ -252,8 +219,8 @@ if [ \${EXIT_CODE} -ne 0 ]; then
 fi
 `;
 
-  const scriptDir = paths ? path.dirname(paths.getStatusFile()) : "/tmp";
-  const scriptFile = path.join(scriptDir, `tmux-run-${num}.sh`);
+  const scriptFile = path.join(issueDir, `tmux-run-${num}.sh`);
+  paths.ensureDir();
   fs.writeFileSync(scriptFile, scriptContent, { mode: 0o755 });
 
   try {
@@ -279,11 +246,10 @@ fi
 
 
 async function tryGetSessionTask(paths: SessionPathManager) {
-  const statusFile = paths.getStatusFile();
   const worktreePath = paths.getWorktreeDir();
+  const session = readSession(paths.getOwner(), paths.getRepo(), paths.getIssueNumber());
 
-  if (fs.existsSync(statusFile) && fs.existsSync(worktreePath)) {
-    const session = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+  if (session && fs.existsSync(worktreePath)) {
     logger.info(`  检测到现有状况: Issue #${paths.getIssueNumber()} (从 Session 快进)`);
     return {
       taskData: { title: session.title, number: paths.getIssueNumber() },
@@ -418,16 +384,13 @@ async function tryRecoverFromWip(taskNo: number, paths: SessionPathManager): Pro
     return false;
   }
 
-  // 检查 status.json 中的 PID 是否存活
-  const statusFile = paths.getStatusFile();
-  if (fs.existsSync(statusFile)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
-      if (data.pid && await check_process_running(data.pid)) {
-        logger.warn(`Issue #${taskNo} 的进程 (PID: ${data.pid}) 仍在运行，无法自动恢复`);
-        return false;
-      }
-    } catch {}
+  // 检查数据库中的 PID 是否存活
+  const sessionData = readSession(paths.getOwner(), paths.getRepo(), taskNo);
+  if (sessionData) {
+    if (sessionData.pid && await check_process_running(sessionData.pid)) {
+      logger.warn(`Issue #${taskNo} 的进程 (PID: ${sessionData.pid}) 仍在运行，无法自动恢复`);
+      return false;
+    }
   }
 
   // tmux 窗口不存在且进程已退出，自动清理 WIP 标签

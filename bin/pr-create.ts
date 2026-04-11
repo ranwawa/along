@@ -15,7 +15,7 @@ import { SessionManager } from "./session-manager";
 /**
  * pr-create.ts - 创建 Pull Request
  *
- * 读取 status.json 获取分支和仓库信息，通过 gh CLI 创建 PR。
+ * 从数据库读取分支和仓库信息，通过 gh CLI 创建 PR。
  * 不移除 WIP 标签（WIP 在 PR 合并到默认分支后才移除）。
  */
 
@@ -45,23 +45,22 @@ async function main() {
   const paths = new SessionPathManager(owner, repoName, Number(issueNumber));
   const session = new SessionManager(owner, repoName, Number(issueNumber));
 
-  const statusFile = paths.getStatusFile();
-  if (!fs.existsSync(statusFile)) {
-    logger.error(`状态文件不存在: ${statusFile}`);
+  const statusData = session.readStatus();
+  if (!statusData) {
+    logger.error("会话状态不存在，请先执行 run 初始化");
     process.exit(1);
   }
 
-  const statusData = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
   const branchName = statusData.branchName;
   const repo = statusData.repo;
 
   if (!branchName) {
-    logger.error("状态文件中缺少 branchName，请先执行 branch-create");
+    logger.error("状态中缺少 branchName，请先执行 branch-create");
     process.exit(1);
   }
 
   if (!repo?.owner || !repo?.name) {
-    logger.error("状态文件中缺少仓库信息");
+    logger.error("状态中缺少仓库信息");
     process.exit(1);
   }
 
@@ -91,13 +90,13 @@ async function main() {
     const prNumberMatch = prUrl.match(/\/pull\/(\d+)/);
     const prNum = prNumberMatch ? Number(prNumberMatch[1]) : undefined;
 
-    // 自动更新 status.json：记录 PR URL，保持 running 状态
-    statusData.prUrl = prUrl;
-    statusData.lastUpdate = iso_timestamp();
-    statusData.lastMessage = "PR 已创建";
-    statusData.currentStep = "等待 PR 审核与合并";
-    if (prNum) statusData.prNumber = prNum;
-    fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2));
+    // 更新数据库：记录 PR URL，保持 running 状态
+    session.writeStatus({
+      prUrl,
+      lastMessage: "PR 已创建",
+      currentStep: "等待 PR 审核与合并",
+      ...(prNum ? { prNumber: prNum } : {}),
+    });
 
     // 记录到 session.log
     session.logEvent("pr-created", {

@@ -13,7 +13,8 @@ import { iso_timestamp } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { SessionManager } from "./session-manager";
-import { SessionPathManager, findAllSessions } from "./session-paths";
+import { SessionPathManager } from "./session-paths";
+import { findSessionByPr } from "./db";
 import { execAgent } from "./issue-agent";
 
 const logger = consola.withTag("webhook-handlers");
@@ -39,41 +40,19 @@ function withIssueLock(owner: string, repo: string, issueNumber: number, fn: () 
 
 // ─── 公共工具（Agent 执行由 issue-agent.ts 提供）────────────
 
-interface StatusData {
-  issueNumber: number;
-  status: string;
-  branchName: string;
-  worktreePath: string;
-  title: string;
-  repo: { owner: string; name: string };
-  prUrl?: string;
-  prNumber?: number;
-  [key: string]: any;
-}
-
 /**
- * 通过 PR 编号反查 issue 编号，扫描所有 session 的 status.json
+ * 通过 PR 编号反查 issue 编号（从 SQLite 数据库）
  */
-function findIssueByPr(owner: string, repo: string, prNumber: number): { issueNumber: number; statusData: StatusData; paths: SessionPathManager } | null {
-  const sessions = findAllSessions(owner, repo);
-  for (const s of sessions) {
-    try {
-      const data: StatusData = JSON.parse(fs.readFileSync(s.statusFile, "utf-8"));
-      if (data.prNumber === prNumber) {
-        const paths = new SessionPathManager(s.owner, s.repo, s.issueNumber);
-        return { issueNumber: s.issueNumber, statusData: data, paths };
-      }
-      // 也尝试从 prUrl 匹配
-      if (data.prUrl) {
-        const match = data.prUrl.match(/\/pull\/(\d+)/);
-        if (match && Number(match[1]) === prNumber) {
-          const paths = new SessionPathManager(s.owner, s.repo, s.issueNumber);
-          return { issueNumber: s.issueNumber, statusData: data, paths };
-        }
-      }
-    } catch {}
-  }
-  return null;
+function findIssueByPr(owner: string, repo: string, prNumber: number): { issueNumber: number; statusData: any; paths: SessionPathManager } | null {
+  const found = findSessionByPr(owner, repo, prNumber);
+  if (!found) return null;
+
+  const paths = new SessionPathManager(owner, repo, found.issueNumber);
+  return {
+    issueNumber: found.issueNumber,
+    statusData: found.statusData,
+    paths,
+  };
 }
 
 // ─── reviewPr ───────────────────────────────────────────────

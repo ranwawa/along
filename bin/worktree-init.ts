@@ -17,6 +17,7 @@ import type { Result } from "./common";
 import { config } from "./config";
 import type { SessionPathManager } from "./session-paths";
 import type { SessionManager } from "./session-manager";
+import { upsertSession } from "./db";
 
 export async function getDefaultBranch(): Promise<string> {
   try {
@@ -140,10 +141,15 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
   }
   console.log(chalk.green("✓"), "同步编辑器环境完成");
 
-  logger.info("创建状态文件...");
+  logger.info("创建会话状态...");
   paths.ensureDir();
-  fs.writeFileSync(paths.getStatusFile(), JSON.stringify(statusData, null, 2));
-  console.log(chalk.green("✓"), "创建状态文件完成");
+  upsertSession(
+    paths.getOwner(),
+    paths.getRepo(),
+    paths.getIssueNumber(),
+    statusData,
+  );
+  console.log(chalk.green("✓"), "创建会话状态完成");
 
   logger.info("创建初始 todo 文件...");
   const todoContent = `- [ ] 第一步：理解 Issue 并创建语义化分支\n- [ ] 第二步：分析代码库并制定实施计划\n- [ ] 第三步：实施修复\n- [ ] 第四步：提交并推送代码\n- [ ] 第五步：创建 PR 并更新状态\n`;

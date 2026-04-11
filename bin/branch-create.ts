@@ -16,7 +16,7 @@ import { SessionManager } from "./session-manager";
  * 在 worktree 内执行：
  * 1. git checkout -B <branch-name>
  * 2. git push -u origin <branch-name>
- * 3. 更新 status.json 中的 branchName
+ * 3. 更新数据库中的 branchName
  */
 
 async function main() {
@@ -50,8 +50,6 @@ async function main() {
     process.exit(1);
   }
 
-  const statusFile = paths.getStatusFile();
-
   try {
     // 1. 在 worktree 中切换到新分支
     logger.info(`创建分支: ${branchName}`);
@@ -66,16 +64,13 @@ async function main() {
     logger.success("分支已推送到远端");
     session.logEvent("branch-pushed", { branchName });
 
-    // 3. 更新 status.json：写入 branchName + 自动推进 step
-    if (fs.existsSync(statusFile)) {
-      const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
-      data.branchName = branchName;
-      data.lastUpdate = iso_timestamp();
-      data.lastMessage = "已创建语义化分支";
-      data.currentStep = "分析代码库并制定实施计划";
-      fs.writeFileSync(statusFile, JSON.stringify(data, null, 2));
-      logger.success("状态文件已更新");
-    }
+    // 3. 更新数据库：写入 branchName + 自动推进 step
+    session.writeStatus({
+      branchName,
+      lastMessage: "已创建语义化分支",
+      currentStep: "分析代码库并制定实施计划",
+    });
+    logger.success("状态已更新");
 
     // 4. 自动更新 todo
     const outputContent = [

@@ -12,9 +12,10 @@ const logger = consola.withTag("commit-push");
 import { runCommand } from "./exec";
 import chalk from "chalk";
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
-import { findAllSessions, SessionPathManager } from "./session-paths";
+import { SessionPathManager } from "./session-paths";
 import { readRepoInfo } from "./github-client";
 import { SessionManager } from "./session-manager";
+import { findSessionByBranch, upsertSession } from "./db";
 
 /**
  * .along/bin/commit-push.ts
@@ -27,22 +28,18 @@ interface Commit {
 }
 
 function updateStatusAfterPush(branchName: string): { issueNumber: string; owner: string; repo: string } | null {
-  // 通过 branchName 在所有 session 中找到对应的 status 文件，返回 issueNumber
-  const sessions = findAllSessions();
-  for (const session of sessions) {
-    try {
-      const data = JSON.parse(fs.readFileSync(session.statusFile, "utf-8"));
-      if (data.branchName === branchName) {
-        data.lastUpdate = iso_timestamp();
-        data.lastMessage = "代码已提交推送";
-        data.currentStep = "创建 PR";
-        fs.writeFileSync(session.statusFile, JSON.stringify(data, null, 2));
-        logger.success("状态文件已自动更新");
-        return { issueNumber: String(session.issueNumber), owner: session.owner, repo: session.repo };
-      }
-    } catch {}
-  }
-  return null;
+  // 通过 branchName 在数据库中找到对应的 session
+  const found = findSessionByBranch(branchName);
+  if (!found) return null;
+
+  upsertSession(found.owner, found.repo, found.issueNumber, {
+    lastUpdate: iso_timestamp(),
+    lastMessage: "代码已提交推送",
+    currentStep: "创建 PR",
+  });
+  logger.success("状态已自动更新");
+
+  return { issueNumber: String(found.issueNumber), owner: found.owner, repo: found.repo };
 }
 
 async function main() {
@@ -152,7 +149,7 @@ async function main() {
 
     logger.success(`成功提交并推送到分支 ${currentBranch}`);
 
-    // 自动更新 status.json + todo + session.log
+    // 自动更新数据库 + todo + session.log
     const sessionInfo = updateStatusAfterPush(currentBranch);
     if (sessionInfo) {
       const { owner, repo } = sessionInfo;
@@ -188,14 +185,10 @@ async function main() {
     // 尝试写入 session.log
     try {
       const currentBranch = runCommand("git branch --show-current");
-      const sessions = findAllSessions();
-      for (const s of sessions) {
-        const data = JSON.parse(fs.readFileSync(s.statusFile, "utf-8"));
-        if (data.branchName === currentBranch) {
-          const session = new SessionManager(s.owner, s.repo, s.issueNumber);
-          session.log(`commit-push 失败: ${error.message}\n${error.stack || ""}`, "error");
-          break;
-        }
+      const found = findSessionByBranch(currentBranch);
+      if (found) {
+        const session = new SessionManager(found.owner, found.repo, found.issueNumber);
+        session.log(`commit-push 失败: ${error.message}\n${error.stack || ""}`, "error");
       }
     } catch {}
     logger.error(`操作失败: ${error.message}`);

@@ -12,6 +12,7 @@ import fs from "fs";
 import { SessionPathManager } from "./session-paths";
 import { SessionManager } from "./session-manager";
 import { exportAgentSession } from "./agent-session-export";
+import { readSession } from "./db";
 
 export interface CleanupOptions {
   force?: boolean;
@@ -32,16 +33,16 @@ function warn(msg: string, silent?: boolean) {
  * 返回 true 表示可以继续清理，false 表示应跳过
  */
 export async function checkAndKillProcess(
-  statusFile: string,
-  issueNumber: string,
+  owner: string,
+  repo: string,
+  issueNumber: number,
   options: CleanupOptions,
 ): Promise<{ canProceed: boolean; error?: string }> {
-  if (!fs.existsSync(statusFile)) return { canProceed: true };
-
-  const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+  const data = readSession(owner, repo, issueNumber);
+  if (!data) return { canProceed: true };
   if (data.status !== "running") return { canProceed: true };
 
-  const pid = data.pid || "";
+  const pid = data.pid || 0;
   if (!pid || !(await check_process_running(pid))) return { canProceed: true };
 
   if (!options.force) {
@@ -90,37 +91,34 @@ export async function cleanupBranch(branchName: string, silent?: boolean, sessio
   }
 }
 
-/** 归档 session 文件：在 status.json 中注入 cleanupTime/cleanupReason */
-export async function archiveFiles(paths: SessionPathManager, reason: string, silent?: boolean, session?: SessionManager) {
-  const statusFile = paths.getStatusFile();
-  if (fs.existsSync(statusFile)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
-      data.cleanupTime = iso_timestamp();
-      data.cleanupReason = reason;
-      fs.writeFileSync(statusFile, JSON.stringify(data, null, 2));
-      info(`状态文件已标记清理: ${statusFile}`, silent);
-      session?.logEvent("session-archived", { reason, statusFile });
-    } catch {}
-  }
+/** 归档 session：在数据库中标记 cleanupTime/cleanupReason */
+export async function archiveSession(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  reason: string,
+  silent?: boolean,
+  session?: SessionManager,
+) {
+  session?.writeStatus({
+    cleanupTime: iso_timestamp(),
+    cleanupReason: reason,
+  });
+  info(`会话状态已标记清理: ${owner}/${repo}#${issueNumber}`, silent);
+  session?.logEvent("session-archived", { reason });
 }
 
 /**
- * 读取 status 文件中的 branchName
+ * 从数据库读取 branchName
  */
-export function readBranchName(statusFile: string): string {
-  if (!fs.existsSync(statusFile)) return "";
-  try {
-    const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
-    return data.branchName || data.headRef || "";
-  } catch {
-    return "";
-  }
+export function readBranchName(owner: string, repo: string, issueNumber: number): string {
+  const data = readSession(owner, repo, issueNumber);
+  if (!data) return "";
+  return data.branchName || "";
 }
 
 /**
  * 完整清理一个 Issue 的所有资源
- * 接受 owner/repo/issueNumber 或从 status.json 中读取
  */
 export async function cleanupIssue(
   issueNumber: string,
@@ -141,11 +139,17 @@ export async function cleanupIssue(
 
   const paths = new SessionPathManager(owner, repo, Number(issueNumber));
   const session = new SessionManager(owner, repo, Number(issueNumber));
-  const statusFile = paths.getStatusFile();
   const worktreePath = paths.getWorktreeDir();
   const reason = options.reason || (options.force ? "force" : "normal");
 
   session.logEvent("cleanup-started", { issueNumber, reason, force: !!options.force });
+
+  // 检查进程并决定是否继续
+  const processCheck = await checkAndKillProcess(owner, repo, Number(issueNumber), options);
+  if (!processCheck.canProceed) {
+    if (processCheck.error) logger.error(processCheck.error);
+    return;
+  }
 
   // PR 合并时兜底移除 WIP 标签
   if (reason === "pr-merged") {
@@ -162,7 +166,7 @@ export async function cleanupIssue(
   }
 
   // 读取分支名（必须在归档前读取）
-  const branchName = readBranchName(statusFile);
+  const branchName = readBranchName(owner, repo, Number(issueNumber));
 
   // 导出 agent 会话数据（必须在 worktree 删除前执行）
   try {
@@ -177,8 +181,8 @@ export async function cleanupIssue(
   // 删除本地分支
   await cleanupBranch(branchName, options.silent, session);
 
-  // 归档（在 status.json 中标记清理信息）
-  await archiveFiles(paths, reason, options.silent, session);
+  // 归档（在数据库中标记清理信息）
+  await archiveSession(owner, repo, Number(issueNumber), reason, options.silent, session);
 
   session.logEvent("cleanup-completed", { issueNumber, reason, branchName });
 }

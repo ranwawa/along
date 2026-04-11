@@ -10,23 +10,31 @@ import {
 
 const logger = consola.withTag("issue-status");
 import { readRepoInfo } from "./github-client";
-import { SessionPathManager } from "./session-paths";
-import fs from "fs";
+import { readSession, upsertSession } from "./db";
 
 import { Command } from "commander";
 
-async function updateStatus(statusFile: string, status: string, message?: string, step?: string): Promise<Result<null>> {
-  if (!fs.existsSync(statusFile)) {
-    return failure(`状态文件不存在: ${statusFile}`);
+async function updateStatus(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  status: string,
+  message?: string,
+  step?: string,
+): Promise<Result<null>> {
+  const data = readSession(owner, repo, issueNumber);
+  if (!data) {
+    return failure(`会话状态不存在: ${owner}/${repo}#${issueNumber}`);
   }
 
-  const data = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
-  data.status = status;
-  data.lastUpdate = iso_timestamp();
-  if (message) data.lastMessage = message;
-  if (step) data.currentStep = step;
+  const update: Record<string, any> = {
+    status,
+    lastUpdate: iso_timestamp(),
+  };
+  if (message) update.lastMessage = message;
+  if (step) update.currentStep = step;
 
-  await Bun.write(statusFile, JSON.stringify(data, null, 2));
+  upsertSession(owner, repo, issueNumber, update);
   return success(null);
 }
 
@@ -56,11 +64,9 @@ async function main() {
     process.exit(1);
   }
   const { owner, repo } = repoInfoRes.data;
-  const paths = new SessionPathManager(owner, repo, Number(issueNumber));
-  const statusFile = paths.getStatusFile();
 
   logger.info(`更新 Issue #${issueNumber} 状态为: ${status}`);
-  const result = await updateStatus(statusFile, status, message, step);
+  const result = await updateStatus(owner, repo, Number(issueNumber), status, message, step);
   if (!result.success) {
     logger.error(result.error);
     process.exit(1);

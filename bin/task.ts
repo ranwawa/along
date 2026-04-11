@@ -1,6 +1,7 @@
 import fs from "fs";
 import { failure, success } from "./common";
 import { SessionPathManager } from "./session-paths";
+import { readSession } from "./db";
 
 /**
  * Task 类，用于管理任务相关的 Session 文件数据和工作区
@@ -33,13 +34,7 @@ export class Task {
    * 读取状态文件并解析为 JSON 对象
    */
   readStatus() {
-    const file = this.paths.getStatusFile();
-    if (!fs.existsSync(file)) return null;
-    try {
-      return JSON.parse(fs.readFileSync(file, "utf-8"));
-    } catch {
-      return null;
-    }
+    return readSession(this.owner, this.repo, this.taskNumber);
   }
 
   /**

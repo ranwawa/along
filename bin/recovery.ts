@@ -11,8 +11,9 @@ import fs from "fs";
 import path from "path";
 import { consola } from "consola";
 import { check_process_running } from "./common";
-import { findAllSessions, SessionPathManager } from "./session-paths";
+import { SessionPathManager } from "./session-paths";
 import { SessionManager, type SessionStatus } from "./session-manager";
+import { findAllSessions, readSession } from "./db";
 import { launchIssueAgent } from "./issue-agent";
 import { readGithubToken, GitHubClient } from "./github-client";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
@@ -88,7 +89,7 @@ function readCurrentPhase(issueDir: string): "phase1" | "phase2" {
 }
 
 /**
- * 从 status.json 或 issue.json 中读取 Issue 标题
+ * 从数据库或 issue.json 中读取 Issue 标题
  */
 function readIssueTitle(paths: SessionPathManager, status: SessionStatus): string {
   if (status.title) return status.title;

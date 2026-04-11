@@ -5,6 +5,9 @@ import { config } from "./config";
 /**
  * 统一管理所有 session 相关的路径生成
  * 目录结构: ~/.along/{owner}/{repo}/{issueNumber}/
+ *
+ * 注意：session 状态数据已迁移至 SQLite (db.ts)，
+ * 此模块仅管理文件系统路径（日志、todo、worktree 等）。
  */
 export class SessionPathManager {
   private owner: string;
@@ -25,10 +28,6 @@ export class SessionPathManager {
   /** 确保 issue 目录存在 */
   ensureDir(): void {
     fs.mkdirSync(this.getIssueDir(), { recursive: true });
-  }
-
-  getStatusFile(): string {
-    return path.join(this.getIssueDir(), "status.json");
   }
 
   getTodoFile(): string {
@@ -97,65 +96,4 @@ export class SessionPathManager {
  */
 export function getSessionPaths(owner: string, repo: string, issueNumber: number): SessionPathManager {
   return new SessionPathManager(owner, repo, issueNumber);
-}
-
-export interface SessionInfo {
-  owner: string;
-  repo: string;
-  issueNumber: number;
-  statusFile: string;
-}
-
-/**
- * 扫描所有 session（三级目录遍历）
- * 可选按 owner/repo 过滤
- */
-export function findAllSessions(filterOwner?: string, filterRepo?: string): SessionInfo[] {
-  const baseDir = config.USER_ALONG_DIR;
-  if (!fs.existsSync(baseDir)) return [];
-
-  const results: SessionInfo[] = [];
-
-  const ownerDirs = filterOwner
-    ? [filterOwner]
-    : fs.readdirSync(baseDir).filter(d => {
-        const full = path.join(baseDir, d);
-        return fs.statSync(full).isDirectory() && !d.startsWith(".");
-      });
-
-  for (const owner of ownerDirs) {
-    const ownerPath = path.join(baseDir, owner);
-    if (!fs.existsSync(ownerPath) || !fs.statSync(ownerPath).isDirectory()) continue;
-
-    const repoDirs = filterRepo
-      ? [filterRepo]
-      : fs.readdirSync(ownerPath).filter(d => {
-          const full = path.join(ownerPath, d);
-          return fs.statSync(full).isDirectory();
-        });
-
-    for (const repo of repoDirs) {
-      const repoPath = path.join(ownerPath, repo);
-      if (!fs.existsSync(repoPath) || !fs.statSync(repoPath).isDirectory()) continue;
-
-      const issueDirs = fs.readdirSync(repoPath).filter(d => {
-        const full = path.join(repoPath, d);
-        return fs.statSync(full).isDirectory() && /^\d+$/.test(d);
-      });
-
-      for (const issueDir of issueDirs) {
-        const statusFile = path.join(repoPath, issueDir, "status.json");
-        if (fs.existsSync(statusFile)) {
-          results.push({
-            owner,
-            repo,
-            issueNumber: Number(issueDir),
-            statusFile,
-          });
-        }
-      }
-    }
-  }
-
-  return results;
 }
