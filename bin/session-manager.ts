@@ -1,7 +1,7 @@
-import path from "path";
 import fs from "fs";
 import { iso_timestamp } from "./common";
 import { SessionPathManager } from "./session-paths";
+import { readSession, upsertSession } from "./db";
 
 export interface StepRecord {
   step: string;
@@ -49,13 +49,15 @@ export interface SessionStatus {
 
 export class SessionManager {
   private paths: SessionPathManager;
+  private owner: string;
+  private repo: string;
+  private issueNumber: number;
 
   constructor(owner: string, repo: string, issueNumber: number) {
+    this.owner = owner;
+    this.repo = repo;
+    this.issueNumber = issueNumber;
     this.paths = new SessionPathManager(owner, repo, issueNumber);
-  }
-
-  private get statusFile(): string {
-    return this.paths.getStatusFile();
   }
 
   private get logFile(): string {
@@ -66,40 +68,37 @@ export class SessionManager {
    * 读取当前会话状态
    */
   readStatus(): SessionStatus | null {
-    if (!fs.existsSync(this.statusFile)) return null;
-    try {
-      return JSON.parse(fs.readFileSync(this.statusFile, "utf-8"));
-    } catch {
-      return null;
-    }
+    return readSession(this.owner, this.repo, this.issueNumber);
   }
 
   /**
    * 写入会话状态
    */
   writeStatus(status: Partial<SessionStatus>): void {
-    let currentStatus = this.readStatus();
+    const currentStatus = this.readStatus();
 
     if (!currentStatus) {
-      currentStatus = {
-        issueNumber: this.paths.getIssueNumber(),
+      // 首次写入，设置默认值
+      const defaults: Partial<SessionStatus> = {
+        issueNumber: this.issueNumber,
         status: "running",
         startTime: iso_timestamp(),
         branchName: "",
         worktreePath: "",
         title: "",
-        repo: { owner: this.paths.getOwner(), name: this.paths.getRepo() },
-      } as SessionStatus;
+        repo: { owner: this.owner, name: this.repo },
+      };
+      upsertSession(this.owner, this.repo, this.issueNumber, {
+        ...defaults,
+        ...status,
+        lastUpdate: iso_timestamp(),
+      });
+    } else {
+      upsertSession(this.owner, this.repo, this.issueNumber, {
+        ...status,
+        lastUpdate: iso_timestamp(),
+      });
     }
-
-    const updatedStatus = {
-      ...currentStatus,
-      ...status,
-      lastUpdate: iso_timestamp(),
-    };
-
-    this.paths.ensureDir();
-    fs.writeFileSync(this.statusFile, JSON.stringify(updatedStatus, null, 2));
   }
 
   /**

@@ -21,6 +21,8 @@ export interface DashboardSession {
   branchName: string;
   agentType?: string;
   retryCount?: number;
+  errorMessage?: string;
+  crashLog?: string;
 }
 
 export interface StatusCounts {

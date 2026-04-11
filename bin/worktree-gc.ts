@@ -13,17 +13,17 @@ import type { GitHubClient } from "./github-client";
 import chalk from "chalk";
 import { cleanupIssue } from "./cleanup-utils";
 import fs from "fs";
-import { findAllSessions, SessionPathManager } from "./session-paths";
+import { SessionPathManager } from "./session-paths";
+import { findAllSessions, readSession } from "./db";
 
 import { Command } from "commander";
 
-// session 文件解析后的结构
+// session 信息结构
 interface GcSessionInfo {
   type: "issue";
   number: string;
   owner: string;
   repo: string;
-  statusFile: string;
   worktreePath: string;
   branchName: string;
   data: any;
@@ -35,24 +35,25 @@ interface GcCandidate {
   reason: string;
 }
 
-/** 扫描 sessions，收集所有 session 信息 */
+/** 扫描 sessions（从 SQLite 数据库），收集所有 session 信息 */
 function scanSessions(): GcSessionInfo[] {
   const allSessions = findAllSessions();
   const results: GcSessionInfo[] = [];
 
   for (const session of allSessions) {
     try {
-      const data = JSON.parse(fs.readFileSync(session.statusFile, "utf-8"));
+      const data = readSession(session.owner, session.repo, session.issueNumber);
+      if (!data) continue;
+
       const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
       const worktreePath = paths.getWorktreeDir();
-      const branchName = data.branchName || data.headRef || "";
+      const branchName = data.branchName || "";
 
       results.push({
         type: "issue",
         number: String(session.issueNumber),
         owner: session.owner,
         repo: session.repo,
-        statusFile: session.statusFile,
         worktreePath,
         branchName,
         data,

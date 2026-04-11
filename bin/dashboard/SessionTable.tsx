@@ -5,6 +5,7 @@ import type { DashboardSession } from "./types";
 interface SessionTableProps {
   sessions: DashboardSession[];
   height: number;
+  selectedIndex: number;
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -25,7 +26,7 @@ function padRight(str: string, len: number): string {
   return str + " ".repeat(len - str.length);
 }
 
-export function SessionTable({ sessions, height }: SessionTableProps) {
+export function SessionTable({ sessions, height, selectedIndex }: SessionTableProps) {
   // Reserve 1 row for header, 1 for separator
   const maxRows = Math.max(0, height - 2);
   const visibleSessions = sessions.slice(0, maxRows);
@@ -35,6 +36,7 @@ export function SessionTable({ sessions, height }: SessionTableProps) {
       {/* Header */}
       <Box paddingX={1}>
         <Text bold dimColor>
+          {padRight(" ", 2)}
           {padRight("#", 4)}
           {padRight("仓库", 22)}
           {padRight("Issue", 8)}
@@ -45,26 +47,28 @@ export function SessionTable({ sessions, height }: SessionTableProps) {
         </Text>
       </Box>
       <Box paddingX={1}>
-        <Text dimColor>{"─".repeat(86)}</Text>
+        <Text dimColor>{"─".repeat(88)}</Text>
       </Box>
 
       {/* Rows */}
       {visibleSessions.map((s, i) => {
+        const isSelected = i === selectedIndex;
         const statusInfo = STATUS_MAP[s.status] || { label: s.status, color: "white" };
         const repoStr = `${s.owner}/${s.repo}`;
         return (
           <Box key={`${s.owner}/${s.repo}/${s.issueNumber}`} paddingX={1}>
-            <Text dimColor>{padRight(String(i + 1), 4)}</Text>
-            <Text>{padRight(truncate(repoStr, 20), 22)}</Text>
+            <Text color="cyan">{isSelected ? "→ " : "  "}</Text>
+            <Text dimColor={!isSelected} bold={isSelected}>{padRight(String(i + 1), 4)}</Text>
+            <Text bold={isSelected}>{padRight(truncate(repoStr, 20), 22)}</Text>
             <Text bold>
               {padRight(`#${s.issueNumber}`, 8)}
             </Text>
-            <Text>{padRight(truncate(s.title, 18), 20)}</Text>
-            <Text color={statusInfo.color as any}>
+            <Text bold={isSelected}>{padRight(truncate(s.title, 18), 20)}</Text>
+            <Text color={statusInfo.color as any} bold={isSelected}>
               {padRight(statusInfo.label, 8)}
             </Text>
-            <Text dimColor>{padRight(truncate(s.currentStep, 14), 16)}</Text>
-            <Text>{padRight(s.runtime, 8)}</Text>
+            <Text dimColor={!isSelected} bold={isSelected}>{padRight(truncate(s.currentStep, 14), 16)}</Text>
+            <Text bold={isSelected}>{padRight(s.runtime, 8)}</Text>
           </Box>
         );
       })}

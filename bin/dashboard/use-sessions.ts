@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { findAllSessions } from "../session-paths";
-import { SessionManager } from "../session-manager";
+import { findAllSessions, readSession } from "../db";
 import { calculate_runtime, check_process_running } from "../common";
 import type { DashboardSession, StatusCounts } from "./types";
 
@@ -35,8 +34,7 @@ export function useSessions(): { sessions: DashboardSession[]; counts: StatusCou
       const results: DashboardSession[] = [];
 
       for (const info of allSessions) {
-        const mgr = new SessionManager(info.owner, info.repo, info.issueNumber);
-        const status = mgr.readStatus();
+        const status = readSession(info.owner, info.repo, info.issueNumber);
         if (!status) continue;
 
         let displayStatus = status.status as DashboardSession["status"];
@@ -59,8 +57,10 @@ export function useSessions(): { sessions: DashboardSession[]; counts: StatusCou
           pid: status.pid,
           prUrl: status.prUrl,
           branchName: status.branchName || "",
-          agentType: status.agentType,
+           agentType: status.agentType,
           retryCount: status.retryCount,
+          errorMessage: status.errorMessage,
+          crashLog: status.crashLog,
         });
       }
 

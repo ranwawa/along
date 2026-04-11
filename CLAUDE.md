@@ -41,7 +41,7 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 1. `along run <N>` validates environment (git repo, GitHub remote, tmux), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, syncs skills/prompts into the worktree, then launches the configured AI agent in a tmux window.
 2. The agent follows the SOP in `prompts/resolve-github-issue.md` — a 5-step workflow (understand issue → analyze code → implement fix → commit-push → create PR).
-3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates `status.json` and `todo.md` in the issue directory.
+3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates the session status in SQLite and `todo.md` in the issue directory.
 4. **Event-driven mode**: A GitHub App sends webhook events (issue opened, issue labeled, PR created, PR review submitted, check run completed) to the local `along webhook-server`. The server directly calls handler functions in `webhook-handlers.ts` (`reviewPr`, `resolveReview`, `resolveCi`) via fire-and-forget, without spawning subprocesses. Use `along app-init` to set up the GitHub App.
 
 ### Directory Layout
@@ -57,9 +57,9 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 - **`Result<T>`** (`common.ts`): Discriminated union `{success: true, data: T} | {success: false, error: string}` used throughout for error handling. Use `success()` / `failure()` constructors.
 - **`config`** (`config.ts`): Singleton with path constants. Base data directory is `~/.along/`. Per-issue artifacts live under `~/.along/{owner}/{repo}/{issueNumber}/`. Source resources live under the repo's own directory.
-- **`SessionPathManager`** (`session-paths.ts`): Centralized path resolution for per-issue directories. Constructor: `(owner, repo, issueNumber)`. All artifact paths (status, todo, logs, worktree) are resolved relative to the issue directory.
-- **`GitHubClient`** (`github-client.ts`): Octokit wrapper. Token sourced from `GITHUB_TOKEN` env or `gh auth token`.
-- **`SessionManager`** (`session-manager.ts`): Manages `status.json` lifecycle (running → completed/error/crashed). Constructor: `(owner, repo, issueNumber)`.
+- **`db`** (`db.ts`): SQLite database module (`~/.along/along.db`) providing ACID transactions for session state. Key functions: `readSession()`, `upsertSession()`, `findAllSessions()`, `findSessionByPr()`, `findSessionByBranch()`.
+- **`SessionManager`** (`session-manager.ts`): High-level session lifecycle manager (running → completed/error/crashed). Delegates to `db.ts` for persistence. Constructor: `(owner, repo, issueNumber)`.
+- **`SessionPathManager`** (`session-paths.ts`): Centralized path resolution for per-issue file artifacts (logs, todo, worktree). Does NOT manage session status (that's in SQLite). Constructor: `(owner, repo, issueNumber)`.
 - **`Task`** / **`Issue`** (`task.ts`, `issue.ts`): Domain objects for session state and GitHub issue data respectively.
 
 ### Editor Support
@@ -68,7 +68,7 @@ Along supports multiple AI editors via `config.EDITORS`. Each editor has directo
 
 ### Issue Artifacts (under `~/.along/{owner}/{repo}/{issueNumber}/`)
 
-- `status.json` — Session state (status, branch, worktree path, timestamps)
+- `~/.along/along.db` — SQLite database storing all session state (status, branch, worktree path, timestamps, etc.)
 - `todo.md` — 5-step checklist, auto-updated by subcommand scripts
 - `issue.json` — Cached GitHub issue data
 - `step{M}-{script}.md` — Step output artifacts
