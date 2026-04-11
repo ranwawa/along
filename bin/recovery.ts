@@ -235,7 +235,7 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
 
           fireAndForget(async () => {
             try {
-              await launchIssueAgent(owner, repo, issueNumber, phase, { title });
+              await launchIssueAgent(owner, repo, issueNumber, phase, { taskData: { title } });
             } finally {
               recoveringIssues.delete(key);
             }
@@ -368,7 +368,7 @@ export async function recoverMissedIssues(
 
         fireAndForget(async () => {
           try {
-            const res = await launchIssueAgent(owner, repo, issue.number, "phase1", { title: issue.title });
+            const res = await launchIssueAgent(owner, repo, issue.number, "phase1", { taskData: { title: issue.title } });
             if (!res.success) logger.error(`启动 Issue #${issue.number} 失败: ${res.error}`);
           } finally {
             recoveringIssues.delete(key);

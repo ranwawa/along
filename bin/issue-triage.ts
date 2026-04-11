@@ -167,7 +167,7 @@ export async function handleTriagedIssue(
       logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}, WIP]`);
 
       // 启动 phase1（出方案）
-      const launchRes = await launchIssueAgent(owner, repo, issueNumber, "phase1", { title: `Issue #${issueNumber}` });
+      const launchRes = await launchIssueAgent(owner, repo, issueNumber, "phase1", { taskData: { title: `Issue #${issueNumber}` } });
       if (!launchRes.success) return launchRes;
       break;
     }
