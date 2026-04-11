@@ -102,7 +102,7 @@ async function handleEvent(
                 const client = new GitHubClient(tokenRes.data, owner, repo);
                 await client.addIssueLabels(issueNumber, ["bug", "WIP"]);
             }
-            await launchIssueAgent(owner, repo, issueNumber, "phase1", { title: `Issue #${issueNumber}` });
+            await launchIssueAgent(owner, repo, issueNumber, "phase1", { taskData: { title: `Issue #${issueNumber}` } });
             return;
           }
 
@@ -127,7 +127,7 @@ async function handleEvent(
 
         logger.info(`Issue #${issueNumber} 已审批，启动 Phase 2...`);
         fireAndForget(async () => {
-          const res = await launchIssueAgent(owner, repo, issueNumber, "phase2", { title: `Issue #${issueNumber}` });
+          const res = await launchIssueAgent(owner, repo, issueNumber, "phase2", { taskData: { title: `Issue #${issueNumber}` } });
           if (!res.success) logger.error(`启动 Phase 2 失败: ${res.error}`);
         });
         return { status: 202, message: `已触发 Phase 2: Issue #${issueNumber}` };
