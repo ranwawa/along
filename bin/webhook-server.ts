@@ -11,11 +11,14 @@
 
 import { Command } from "commander";
 import { consola } from "consola";
+import fs from "fs";
+import path from "path";
 import crypto from "crypto";
-import { reviewPr, resolveReview, resolveCi } from "./webhook-handlers";
+import { reviewPr, resolveReview, resolveCi, cleanupIssueSession } from "./webhook-handlers";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { launchIssueAgent, setDashboardMode } from "./issue-agent";
 import { readGithubToken, GitHubClient, readRepoInfo } from "./github-client";
+import { config } from "./config";
 import { recoverSessions, recoverMissedIssues, startPeriodicHealthCheck, stopPeriodicHealthCheck } from "./recovery";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
@@ -57,6 +60,31 @@ function fireAndForget(fn: () => Promise<any>) {
   fn().catch((err) => {
     logger.error(`处理函数执行内部异常: ${err.message}`);
   });
+}
+
+/**
+ * 将 Webhook 事件持久化到 ~/.along/webhook-events.jsonl 供后续分析
+ */
+function logWebhookEvent(deliveryId: string, event: string, payload: any) {
+  const logFile = path.join(config.USER_ALONG_DIR, "webhook-events.jsonl");
+  const entry = {
+    timestamp: new Date().toISOString(),
+    deliveryId,
+    event,
+    action: payload.action || null,
+    owner: payload.repository?.owner?.login,
+    repo: payload.repository?.name,
+    sender: payload.sender?.login,
+    // 仅记录关键标识，不记录整个 Payload 以免日志过大
+    issueNumber: payload.issue?.number,
+    prNumber: payload.pull_request?.number,
+  };
+
+  try {
+    fs.appendFileSync(logFile, JSON.stringify(entry) + "\n");
+  } catch (err: any) {
+    logger.warn(`写入事件日志失败: ${err.message}`);
+  }
 }
 
 /**
@@ -137,6 +165,17 @@ async function handleEvent(
           if (!res.success) logger.error(`启动 Phase 2 失败: ${res.error}`);
         });
         return { status: 202, message: `已触发 Phase 2: Issue #${issueNumber}` };
+      }
+
+      if (action === "deleted") {
+        logger.info(`收到 Issue #${issueNumber} 删除事件，启动资产清理...`);
+        fireAndForget(async () => {
+          const res = await cleanupIssueSession(owner, repo, issueNumber);
+          if (!res.success) {
+            logger.error(`Issue #${issueNumber} 资产清理失败: ${res.error}`);
+          }
+        });
+        return { status: 202, message: `已触发 Issue #${issueNumber} 资产清理` };
       }
 
       return { status: 200, message: `忽略 issues.${action} 事件` };
@@ -291,6 +330,9 @@ async function main() {
 
         const githubEvent = req.headers.get("X-GitHub-Event") || "";
         const deliveryId = req.headers.get("X-GitHub-Delivery") || "-";
+
+        // 持久化记录所有收到的事件（异步）
+        logWebhookEvent(deliveryId, githubEvent, payload);
 
         // 处理 ping 事件（GitHub App 安装/配置时发送）
         if (githubEvent === "ping") {

@@ -182,3 +182,22 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
     return failure(`初始化会话文件失败: ${e.message}`);
   }
 }
+
+/**
+ * 移除指定路径的 worktree
+ */
+export async function removeWorktree(worktreePath: string): Promise<Result<void>> {
+  if (!fs.existsSync(worktreePath)) {
+    return success(undefined);
+  }
+
+  try {
+    // 使用 --force 强制移除，即使有未提交的变更
+    await git.raw(["worktree", "remove", "--force", worktreePath]);
+    logger.info(`已成功移除 worktree: ${worktreePath}`);
+    return success(undefined);
+  } catch (e: any) {
+    logger.error(`移除 worktree 失败: ${e.message}`);
+    return failure(`移除 worktree 失败: ${e.message}`);
+  }
+}

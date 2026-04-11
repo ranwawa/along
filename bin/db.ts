@@ -366,6 +366,24 @@ export function findSessionByBranch(
 }
 
 /**
+ * 彻底删除指定 session 的记录
+ */
+export function deleteSession(owner: string, repo: string, issueNumber: number): Result<void> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
+
+  try {
+    db.prepare(
+      "DELETE FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?"
+    ).run(owner, repo, issueNumber);
+    return success(undefined);
+  } catch (e: any) {
+    return failure(`删除 Session 记录失败: ${e.message}`);
+  }
+}
+
+/**
  * 关闭数据库连接（用于测试或清理）
  */
 export function closeDb(): void {
