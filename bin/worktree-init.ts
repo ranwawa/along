@@ -19,17 +19,17 @@ import type { SessionPathManager } from "./session-paths";
 import type { SessionManager } from "./session-manager";
 import { upsertSession } from "./db";
 
-export async function getDefaultBranch(): Promise<string> {
+export async function getDefaultBranch(): Promise<Result<string>> {
   try {
     const remoteInfo = await git.raw(["remote", "show", "origin"]);
     const match = remoteInfo.match(/HEAD branch: (.+)/);
     if (match && match[1]) {
-      return match[1].trim();
+      return success(match[1].trim());
     }
-  } catch (e) {
-    // 如果获取失败，回退到master
+  } catch {
+    // 如果获取失败，回退到 master
   }
-  return "master";
+  return success("master");
 }
 
 export async function setupWorktree(worktreePath: string, session?: SessionManager): Promise<Result<null>> {
@@ -38,7 +38,10 @@ export async function setupWorktree(worktreePath: string, session?: SessionManag
     return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
   }
 
-  const defaultBranch = await getDefaultBranch();
+  const defaultBranchRes = await getDefaultBranch();
+  if (!defaultBranchRes.success) return defaultBranchRes;
+  const defaultBranch = defaultBranchRes.data;
+
   logger.info(`检测到远程默认分支: ${defaultBranch}`);
 
   logger.info("获取远程最新代码...");
@@ -88,7 +91,8 @@ function copyDirectory(src: string, dest: string) {
   }
 }
 
-export async function initSessionFiles(paths: SessionPathManager, worktreePath: string, statusData: any, session?: SessionManager) {
+export async function initSessionFiles(paths: SessionPathManager, worktreePath: string, statusData: any, session?: SessionManager): Promise<Result<void>> {
+  try {
   const issueNumber = String(paths.getIssueNumber());
 
   // 1. 创建 .along 并标记
@@ -99,7 +103,10 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
 
   // 2. 自动环境同步（从 along 源目录复制 skills 和 prompts）
   logger.info("同步编辑器环境...");
-  const currentTag = config.getLogTag();
+  const tagRes = config.getLogTag();
+  if (!tagRes.success) return tagRes;
+  const currentTag = tagRes.data;
+
   const currentEditor = config.EDITORS.find(e => e.id === currentTag) || config.EDITORS[0];
   logger.info(`检测到编辑器环境: ${currentEditor.name}`);
 
@@ -108,7 +115,7 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
     const targetPath = path.join(worktreePath, mapping.to);
 
     if (!fs.existsSync(sourceDir)) {
-      throw new Error(`源目录不存在: ${sourceDir}`);
+      return failure(`源目录不存在: ${sourceDir}`);
     }
 
     try {
@@ -122,7 +129,7 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
             fs.renameSync(targetPath, backupPath);
             fs.rmSync(backupPath, { recursive: true, force: true });
           } catch (renameError: any) {
-            throw new Error(`无法清理目标路径 ${targetPath}: ${renameError.message}`);
+            return failure(`无法清理目标路径 ${targetPath}: ${renameError.message}`);
           }
         }
       }
@@ -136,19 +143,22 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
       logger.info(`  已同步: ${chalk.cyan(mapping.to)}`);
     } catch (e: any) {
       logger.error(`  同步失败 (${mapping.to}): ${e.message}`);
-      throw e;
+      return failure(`同步编辑器环境 ${mapping.to} 失败: ${e.message}`);
     }
   }
   console.log(chalk.green("✓"), "同步编辑器环境完成");
 
   logger.info("创建会话状态...");
-  paths.ensureDir();
-  upsertSession(
+  const ensureRes = paths.ensureDir();
+  if (!ensureRes.success) return ensureRes;
+
+  const upRes = upsertSession(
     paths.getOwner(),
     paths.getRepo(),
     paths.getIssueNumber(),
     statusData,
   );
+  if (!upRes.success) return upRes;
   console.log(chalk.green("✓"), "创建会话状态完成");
 
   logger.info("创建初始 todo 文件...");
@@ -162,4 +172,5 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
     editor: currentEditor.name,
     mappingCount: currentEditor.mappings.length,
   });
+  return success(undefined);
 }

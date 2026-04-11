@@ -45,9 +45,14 @@ async function main() {
   const paths = new SessionPathManager(owner, repoName, Number(issueNumber));
   const session = new SessionManager(owner, repoName, Number(issueNumber));
 
-  const statusData = session.readStatus();
+  const statusRes = session.readStatus();
+  if (!statusRes.success) {
+    logger.error(`读取会话状态失败: ${statusRes.error}`);
+    process.exit(1);
+  }
+  const statusData = statusRes.data;
   if (!statusData) {
-    logger.error("会话状态不存在，请先执行 run 初始化");
+    logger.error("会话状态不存在，请先执行 run 检查或重置状态");
     process.exit(1);
   }
 
@@ -66,16 +71,21 @@ async function main() {
 
   const worktreePath = paths.getWorktreeDir();
 
+  const defaultBranchRes = await getDefaultBranch();
+  if (!defaultBranchRes.success) {
+    logger.error(defaultBranchRes.error);
+    process.exit(1);
+  }
+  const defaultBranch = defaultBranchRes.data;
+  logger.info(`创建 PR: ${branchName} -> ${defaultBranch}`);
+
+  // 使用当前认证 token（可能是 agent 角色 token）确保 gh CLI 使用正确身份
+  const tokenRes = await readGithubToken();
+  const ghEnv = tokenRes.success
+    ? { ...process.env, GH_TOKEN: tokenRes.data }
+    : { ...process.env };
+
   try {
-    const defaultBranch = await getDefaultBranch();
-    logger.info(`创建 PR: ${branchName} -> ${defaultBranch}`);
-
-    // 使用当前认证 token（可能是 agent 角色 token）确保 gh CLI 使用正确身份
-    const tokenRes = await readGithubToken();
-    const ghEnv = tokenRes.success
-      ? { ...process.env, GH_TOKEN: tokenRes.data }
-      : { ...process.env };
-
     const result = await $`gh pr create \
       --repo ${repo.owner}/${repo.name} \
       --head ${branchName} \
@@ -91,12 +101,15 @@ async function main() {
     const prNum = prNumberMatch ? Number(prNumberMatch[1]) : undefined;
 
     // 更新数据库：记录 PR URL，保持 running 状态
-    session.writeStatus({
+    const writeRes = session.writeStatus({
       prUrl,
       lastMessage: "PR 已创建",
       currentStep: "等待 PR 审核与合并",
       ...(prNum ? { prNumber: prNum } : {}),
     });
+    if (!writeRes.success) {
+      logger.warn(`更新 PR 状态失败: ${writeRes.error}`);
+    }
 
     // 记录到 session.log
     session.logEvent("pr-created", {

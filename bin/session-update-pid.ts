@@ -15,9 +15,13 @@ if (!owner || !repo || !issueNumberStr || !pidStr) {
 }
 
 try {
-  upsertSession(owner, repo, Number(issueNumberStr), {
+  const res = upsertSession(owner, repo, Number(issueNumberStr), {
     pid: Number(pidStr),
   });
+  if (!res.success) {
+     // 如果更新失败，至少在终端能看到（虽然 tmux 启动脚本可能不会显示）
+     console.error(`更新 PID 失败: ${res.error}`);
+  }
 } catch {
   // 静默失败，不影响 agent 启动
   process.exit(0);

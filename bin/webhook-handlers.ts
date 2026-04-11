@@ -9,7 +9,7 @@
 
 import fs from "fs";
 import { consola } from "consola";
-import { iso_timestamp } from "./common";
+import { iso_timestamp, Result, success, failure } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { SessionManager } from "./session-manager";
@@ -44,9 +44,10 @@ function withIssueLock(owner: string, repo: string, issueNumber: number, fn: () 
  * 通过 PR 编号反查 issue 编号（从 SQLite 数据库）
  */
 function findIssueByPr(owner: string, repo: string, prNumber: number): { issueNumber: number; statusData: any; paths: SessionPathManager } | null {
-  const found = findSessionByPr(owner, repo, prNumber);
-  if (!found) return null;
+  const res = findSessionByPr(owner, repo, prNumber);
+  if (!res.success || !res.data) return null;
 
+  const found = res.data;
   const paths = new SessionPathManager(owner, repo, found.issueNumber);
   return {
     issueNumber: found.issueNumber,
@@ -113,11 +114,6 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
 
   const { issueNumber, statusData, paths } = found;
 
-  if (!fs.existsSync(statusData.worktreePath)) {
-    logger.error(`工作目录不存在: ${statusData.worktreePath}`);
-    return;
-  }
-
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
     logger.error(`GitHub 认证失败: ${tokenRes.error}`);
@@ -127,14 +123,31 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
   const client = new GitHubClient(tokenRes.data, owner, repo);
   const session = new SessionManager(owner, repo, issueNumber);
 
-  const pr = await client.getPullRequest(prNumber);
+  const prRes = await client.getPullRequest(prNumber);
+  if (!prRes.success) {
+    logger.error(`获取 PR #${prNumber} 失败: ${prRes.error}`);
+    return;
+  }
+  const pr = prRes.data;
+
   if (pr.state === "closed" || pr.merged) {
     logger.info(`PR #${prNumber} 已${pr.merged ? "合并" : "关闭"}，跳过审查`);
     return;
   }
 
-  const files = await client.getPullRequestFiles(prNumber);
-  const diff = await client.getPullRequestDiff(prNumber);
+  const filesRes = await client.getPullRequestFiles(prNumber);
+  if (!filesRes.success) {
+    logger.error(`获取 PR #${prNumber} 文件列表失败: ${filesRes.error}`);
+    return;
+  }
+  const files = filesRes.data;
+
+  const diffRes = await client.getPullRequestDiff(prNumber);
+  if (!diffRes.success) {
+    logger.error(`获取 PR #${prNumber} diff 失败: ${diffRes.error}`);
+    return;
+  }
+  const diff = diffRes.data;
 
   if (files.length === 0) {
     logger.info("PR 无变更文件，跳过审查");
@@ -145,9 +158,16 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
   logger.info(`Diff 数据已写入: ${diffFile} (${files.length} 个文件)`);
 
   session.logEvent("reviewer-agent-launched", { trigger: "webhook", headSha: pr.head.sha, fileCount: files.length });
-  await execAgent(statusData.worktreePath, issueNumber, "review-pr-diff", (pid) => {
+  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "review-pr-diff", (pid) => {
     session.writeStatus({ pid });
   });
+
+  if (!agentRes.success) {
+    logger.error(`Reviewer Agent 启动失败: ${agentRes.error}`);
+    session.markAsCrashed(agentRes.error);
+    return;
+  }
+
   session.logEvent("reviewer-agent-completed", { trigger: "webhook" });
 
   logger.info(`PR #${prNumber} 审查完成`);
@@ -222,11 +242,6 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
 
   const { issueNumber, statusData, paths } = found;
 
-  if (!fs.existsSync(statusData.worktreePath)) {
-    logger.error(`工作目录不存在: ${statusData.worktreePath}`);
-    return;
-  }
-
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
     logger.error(`GitHub 认证失败: ${tokenRes.error}`);
@@ -236,13 +251,24 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   const client = new GitHubClient(tokenRes.data, owner, repo);
   const session = new SessionManager(owner, repo, issueNumber);
 
-  const pr = await client.getPullRequest(prNumber);
+  const prRes = await client.getPullRequest(prNumber);
+  if (!prRes.success) {
+    logger.error(`获取 PR #${prNumber} 失败: ${prRes.error}`);
+    return;
+  }
+  const pr = prRes.data;
+
   if (pr.state === "closed" || pr.merged) {
     logger.info(`PR #${prNumber} 已${pr.merged ? "合并" : "关闭"}，跳过`);
     return;
   }
 
-  const allComments = await client.getReviewComments(prNumber);
+  const commentsRes = await client.getReviewComments(prNumber);
+  if (!commentsRes.success) {
+    logger.error(`获取 PR #${prNumber} 评论失败: ${commentsRes.error}`);
+    return;
+  }
+  const allComments = commentsRes.data;
 
   // 找出未解决的评论：顶层评论且没有回复
   const repliedToIds = new Set(
@@ -272,9 +298,16 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   });
 
   session.logEvent("agent-launched", { trigger: "webhook-review", commentCount: unresolvedComments.length });
-  await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review", (pid) => {
+  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review", (pid) => {
     session.writeStatus({ pid });
   });
+
+  if (!agentRes.success) {
+    logger.error(`Agent 启动失败: ${agentRes.error}`);
+    session.markAsCrashed(agentRes.error);
+    return;
+  }
+
   session.logEvent("agent-completed", { trigger: "webhook-review" });
 
   logger.info(`PR #${prNumber} 评论处理完成`);
@@ -349,11 +382,6 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
 
   const { issueNumber, statusData, paths } = found;
 
-  if (!fs.existsSync(statusData.worktreePath)) {
-    logger.error(`工作目录不存在: ${statusData.worktreePath}`);
-    return;
-  }
-
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
     logger.error(`GitHub 认证失败: ${tokenRes.error}`);
@@ -363,14 +391,25 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   const client = new GitHubClient(tokenRes.data, owner, repo);
   const session = new SessionManager(owner, repo, issueNumber);
 
-  const pr = await client.getPullRequest(prNumber);
+  const prRes = await client.getPullRequest(prNumber);
+  if (!prRes.success) {
+    logger.error(`获取 PR #${prNumber} 失败: ${prRes.error}`);
+    return;
+  }
+  const pr = prRes.data;
+
   if (pr.state === "closed" || pr.merged) {
     logger.info(`PR #${prNumber} 已${pr.merged ? "合并" : "关闭"}，跳过`);
     return;
   }
 
   const headSha = pr.head.sha;
-  const checkRuns = await client.getCheckRuns(headSha);
+  const checkRes = await client.getCheckRuns(headSha);
+  if (!checkRes.success) {
+    logger.error(`获取 headSha ${headSha} 的检查运行失败: ${checkRes.error}`);
+    return;
+  }
+  const checkRuns = checkRes.data;
   const failedRuns = checkRuns.filter(
     (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
   );
@@ -396,9 +435,16 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   session.updateCiResults(0, failedRuns.length, headSha);
 
   session.logEvent("agent-launched", { trigger: "webhook-ci", failedCount: failedRuns.length, headSha });
-  await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", (pid) => {
+  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", (pid) => {
     session.writeStatus({ pid });
   });
+
+  if (!agentRes.success) {
+    logger.error(`Agent 启动失败: ${agentRes.error}`);
+    session.markAsCrashed(agentRes.error);
+    return;
+  }
+
   session.logEvent("agent-completed", { trigger: "webhook-ci" });
 
   logger.info(`PR #${prNumber} CI 修复完成`);

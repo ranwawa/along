@@ -1,5 +1,5 @@
 import fs from "fs";
-import { failure, success } from "./common";
+import { failure, success, Result } from "./common";
 import { SessionPathManager } from "./session-paths";
 import { readSession } from "./db";
 
@@ -16,16 +16,13 @@ export class Task {
   private paths: SessionPathManager;
 
   constructor(owner: string, repo: string, taskNumber: number) {
-    if (taskNumber === undefined || taskNumber === null) {
-      throw new Error("实例化 Task 时必须传入 taskNumber");
-    }
     this.taskNumber = taskNumber;
     this.owner = owner;
     this.repo = repo;
     this.paths = new SessionPathManager(owner, repo, taskNumber);
 
-    // 在构造时自动加载并解析数据
-    this.status = this.readStatus();
+    // 尝试加载数据
+    this.status = this.readStatus().success ? this.readStatus().data : null;
     this.todo = this.readToDo();
     this.worktree = this.readWorktree();
   }
@@ -33,7 +30,7 @@ export class Task {
   /**
    * 读取状态文件并解析为 JSON 对象
    */
-  readStatus() {
+  readStatus(): Result<any> {
     return readSession(this.owner, this.repo, this.taskNumber);
   }
 
@@ -93,11 +90,15 @@ export class Task {
     return !this.status && !this.todo && !this.worktree;
   }
 
-  checkHealth() {
-    if (this.notExists()) return success(null);
+  checkHealth(): Result<null> {
+    const statusRes = this.readStatus();
+    if (!statusRes.success) return statusRes;
+    const status = statusRes.data;
 
-    // 如果status是running，但没有worktree
-    if (this.status.status === 'running' && this.worktree === null) {
+    if (!status && !this.todo && !this.worktree) return success(null);
+
+    // 如果 status 是 running，但没有 worktree
+    if (status?.status === 'running' && this.worktree === null) {
       const msg = `Task#${this.taskNumber}正在运行，但没有worktree
       💡 建议做法：
       1. 运行along issue-clean ${this.taskNumber}, 清理任务后重新启动

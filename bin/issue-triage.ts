@@ -16,6 +16,7 @@ import path from "path";
 import { z } from "zod";
 import { GitHubClient, readGithubToken } from "./github-client";
 import { launchIssueAgent } from "./issue-agent";
+import { Result, success, failure } from "./common";
 
 const logger = consola.withTag("issue-triage");
 
@@ -75,13 +76,13 @@ export async function triageIssue(
   issueTitle: string,
   issueBody: string,
   issueLabels: string[],
-): Promise<TriageResult> {
+): Promise<Result<TriageResult>> {
   const claudeEnv = readClaudeSettings();
   const apiKey = process.env.DEEPSEEK_API_KEY || claudeEnv.DEEPSEEK_API_KEY || "sk-099e5ef9e54d4a1f8760dd9e541cf5fd";
 
   if (!apiKey) {
     logger.warn("未设置 DEEPSEEK_API_KEY，跳过分类，默认为 bug");
-    return { classification: "bug", reason: "缺少 API Key，默认为 bug" };
+    return success({ classification: "bug", reason: "缺少 API Key，默认为 bug" });
   }
 
   const modelName = process.env.ALONG_TRIAGE_MODEL || "deepseek-chat";
@@ -115,17 +116,17 @@ export async function triageIssue(
 
     if (!VALID_CLASSIFICATIONS.includes(result.classification)) {
       logger.warn(`AI 返回未知分类: ${result.classification}，默认 bug`);
-      return { classification: "bug", reason: "未知分类结果，默认为 bug" };
+      return success({ classification: "bug", reason: "未知分类结果，默认为 bug" });
     }
 
-    return {
+    return success({
       classification: result.classification,
       reason: result.reason || "",
       replyMessage: result.replyMessage,
-    };
+    });
   } catch (error: any) {
     logger.error(`[triage] AI 分类失败: ${error.message}`);
-    return { classification: "bug", reason: `AI 分类异常，默认为 bug: ${error.message}` };
+    return success({ classification: "bug", reason: `AI 分类异常，默认为 bug: ${error.message}` });
   }
 }
 
@@ -147,11 +148,11 @@ export async function handleTriagedIssue(
   repo: string,
   issueNumber: number,
   result: TriageResult,
-): Promise<void> {
+): Promise<Result<void>> {
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
     logger.error(`获取 GitHub Token 失败: ${tokenRes.error}`);
-    throw new Error(tokenRes.error);
+    return failure(tokenRes.error);
   }
 
   const client = new GitHubClient(tokenRes.data, owner, repo);
@@ -161,21 +162,25 @@ export async function handleTriagedIssue(
     case "bug":
     case "feature": {
       // 打类型标签 + WIP 标签
-      await client.addIssueLabels(issueNumber, [typeLabel, "WIP"]);
+      const addRes = await client.addIssueLabels(issueNumber, [typeLabel, "WIP"]);
+      if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
       logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}, WIP]`);
 
       // 启动 phase1（出方案）
-      await launchIssueAgent(owner, repo, issueNumber, "phase1", { title: `Issue #${issueNumber}` });
+      const launchRes = await launchIssueAgent(owner, repo, issueNumber, "phase1", { title: `Issue #${issueNumber}` });
+      if (!launchRes.success) return launchRes;
       break;
     }
 
     case "question": {
       // 打标签 + 回复
-      await client.addIssueLabels(issueNumber, [typeLabel]);
+      const addRes = await client.addIssueLabels(issueNumber, [typeLabel]);
+      if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
       logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}]`);
 
       if (result.replyMessage) {
-        await client.addIssueComment(issueNumber, result.replyMessage);
+        const commentRes = await client.addIssueComment(issueNumber, result.replyMessage);
+        if (!commentRes.success) logger.warn(`回复失败: ${commentRes.error}`);
         logger.info(`已回复 Issue #${issueNumber}`);
       }
       break;
@@ -183,11 +188,13 @@ export async function handleTriagedIssue(
 
     case "spam": {
       // 打标签 + 回复 + 关闭
-      await client.addIssueLabels(issueNumber, [typeLabel]);
+      const addRes = await client.addIssueLabels(issueNumber, [typeLabel]);
+      if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
       logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}]`);
 
       if (result.replyMessage) {
-        await client.addIssueComment(issueNumber, result.replyMessage);
+        const commentRes = await client.addIssueComment(issueNumber, result.replyMessage);
+        if (!commentRes.success) logger.warn(`回复失败: ${commentRes.error}`);
         logger.info(`已回复 Issue #${issueNumber}`);
       }
 
@@ -196,4 +203,5 @@ export async function handleTriagedIssue(
       break;
     }
   }
+  return success(undefined);
 }

@@ -1,6 +1,8 @@
+import path from "path";
 import fs from "fs";
 import { consola } from "consola";
 import { config } from "./config";
+import { Result, success, failure } from "./result";
 
 const logger = consola.withTag("agent-config");
 
@@ -19,18 +21,17 @@ let cachedConfig: AlongGlobalConfig | null = null;
 /**
  * 读取全局配置文件 ~/.along/config.json
  */
-function readGlobalConfig(): AlongGlobalConfig | null {
-  if (cachedConfig) return cachedConfig;
+function readGlobalConfig(): Result<AlongGlobalConfig | null> {
+  if (cachedConfig) return success(cachedConfig);
 
   const configFile = config.CONFIG_FILE;
-  if (!fs.existsSync(configFile)) return null;
+  if (!fs.existsSync(configFile)) return success(null);
 
   try {
     cachedConfig = JSON.parse(fs.readFileSync(configFile, "utf-8"));
-    return cachedConfig;
+    return success(cachedConfig);
   } catch (e: any) {
-    logger.warn(`读取全局配置文件失败: ${e.message}`);
-    return null;
+    return failure(`读取全局配置文件失败: ${e.message}`);
   }
 }
 
@@ -41,8 +42,8 @@ function readGlobalConfig(): AlongGlobalConfig | null {
 export function getAgentRole(): string | null {
   if (process.env.ALONG_AGENT_ROLE) return process.env.ALONG_AGENT_ROLE;
 
-  const globalConfig = readGlobalConfig();
-  if (globalConfig?.defaultAgent) return globalConfig.defaultAgent;
+  const res = readGlobalConfig();
+  if (res.success && res.data?.defaultAgent) return res.data.defaultAgent;
 
   return null;
 }
@@ -51,16 +52,22 @@ export function getAgentRole(): string | null {
  * 获取指定角色的 GitHub Token
  */
 export function getAgentToken(role: string): string | null {
-  const globalConfig = readGlobalConfig();
-  return globalConfig?.agents?.[role]?.githubToken || null;
+  const res = readGlobalConfig();
+  if (res.success) {
+    return res.data?.agents?.[role]?.githubToken || null;
+  }
+  return null;
 }
 
 /**
  * 获取指定角色的显示名称
  */
 export function getAgentName(role: string): string | null {
-  const globalConfig = readGlobalConfig();
-  return globalConfig?.agents?.[role]?.name || null;
+  const res = readGlobalConfig();
+  if (res.success) {
+    return res.data?.agents?.[role]?.name || null;
+  }
+  return null;
 }
 
 /**

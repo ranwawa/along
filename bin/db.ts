@@ -9,6 +9,7 @@
 import { Database } from "bun:sqlite";
 import { config } from "./config";
 import path from "path";
+import { Result, success, failure } from "./result";
 
 import type { SessionStatus } from "./session-manager";
 
@@ -75,19 +76,23 @@ function toCamel(key: string): string {
 
 let _db: Database | null = null;
 
-export function getDb(): Database {
-  if (_db) return _db;
+export function getDb(): Result<Database> {
+  if (_db) return success(_db);
 
   const dbPath = path.join(config.USER_ALONG_DIR, "along.db");
   config.ensureDataDirs();
 
-  _db = new Database(dbPath);
-  _db.exec("PRAGMA journal_mode = WAL");
-  _db.exec("PRAGMA foreign_keys = ON");
-  _db.exec("PRAGMA busy_timeout = 5000");
+  try {
+    _db = new Database(dbPath);
+    _db.exec("PRAGMA journal_mode = WAL");
+    _db.exec("PRAGMA foreign_keys = ON");
+    _db.exec("PRAGMA busy_timeout = 5000");
 
-  initSchema(_db);
-  return _db;
+    initSchema(_db);
+    return success(_db);
+  } catch (e: any) {
+    return failure(`打开数据库失败: ${e.message}`);
+  }
 }
 
 function initSchema(db: Database) {
@@ -192,87 +197,107 @@ function statusToColumns(data: Partial<SessionStatus>): Record<string, any> {
 /**
  * 读取指定 session 的状态
  */
-export function readSession(owner: string, repo: string, issueNumber: number): SessionStatus | null {
-  const db = getDb();
-  const row = db.prepare(
-    "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?"
-  ).get(owner, repo, issueNumber) as any;
+export function readSession(owner: string, repo: string, issueNumber: number): Result<SessionStatus | null> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
 
-  if (!row) return null;
-  return rowToSessionStatus(row);
+  try {
+    const row = db.prepare(
+      "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?"
+    ).get(owner, repo, issueNumber) as any;
+
+    if (!row) return success(null);
+    return success(rowToSessionStatus(row));
+  } catch (e: any) {
+    return failure(`查询 Session 失败: ${e.message}`);
+  }
 }
 
 /**
  * 插入或更新 session 状态（UPSERT）
  * 如果记录不存在则插入，存在则合并更新
  */
-export function upsertSession(owner: string, repo: string, issueNumber: number, data: Partial<SessionStatus>): void {
-  const db = getDb();
+export function upsertSession(owner: string, repo: string, issueNumber: number, data: Partial<SessionStatus>): Result<void> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
 
-  const existing = db.prepare(
-    "SELECT id FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?"
-  ).get(owner, repo, issueNumber) as any;
+  try {
+    const existing = db.prepare(
+      "SELECT id FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?"
+    ).get(owner, repo, issueNumber) as any;
 
-  if (!existing) {
-    // INSERT
-    const columns = statusToColumns(data);
-    columns.owner = columns.owner || owner;
-    columns.repo = columns.repo || repo;
-    columns.issue_number = issueNumber;
+    if (!existing) {
+      // INSERT
+      const columns = statusToColumns(data);
+      columns.owner = columns.owner || owner;
+      columns.repo = columns.repo || repo;
+      columns.issue_number = issueNumber;
 
-    // 确保必填字段有默认值
-    if (!columns.start_time) columns.start_time = new Date().toISOString();
-    if (!columns.status) columns.status = "running";
+      // 确保必填字段有默认值
+      if (!columns.start_time) columns.start_time = new Date().toISOString();
+      if (!columns.status) columns.status = "running";
 
-    const keys = Object.keys(columns);
-    const placeholders = keys.map(() => "?").join(", ");
-    const sql = `INSERT INTO sessions (${keys.join(", ")}) VALUES (${placeholders})`;
-    db.prepare(sql).run(...keys.map(k => columns[k]));
-  } else {
-    // UPDATE：只更新传入的字段
-    const columns = statusToColumns(data);
-    // 不要覆盖 owner/repo/issue_number
-    delete columns.owner;
-    delete columns.repo;
-    delete columns.issue_number;
+      const keys = Object.keys(columns);
+      const placeholders = keys.map(() => "?").join(", ");
+      const sql = `INSERT INTO sessions (${keys.join(", ")}) VALUES (${placeholders})`;
+      db.prepare(sql).run(...keys.map(k => columns[k]));
+    } else {
+      // UPDATE：只更新传入的字段
+      const columns = statusToColumns(data);
+      // 不要覆盖 owner/repo/issue_number
+      delete columns.owner;
+      delete columns.repo;
+      delete columns.issue_number;
 
-    if (Object.keys(columns).length === 0) return;
+      if (Object.keys(columns).length === 0) return success(undefined);
 
-    const setClauses = Object.keys(columns).map(k => `${k} = ?`).join(", ");
-    const sql = `UPDATE sessions SET ${setClauses} WHERE owner = ? AND repo = ? AND issue_number = ?`;
-    db.prepare(sql).run(...Object.values(columns), owner, repo, issueNumber);
+      const setClauses = Object.keys(columns).map(k => `${k} = ?`).join(", ");
+      const sql = `UPDATE sessions SET ${setClauses} WHERE owner = ? AND repo = ? AND issue_number = ?`;
+      db.prepare(sql).run(...Object.values(columns), owner, repo, issueNumber);
+    }
+    return success(undefined);
+  } catch (e: any) {
+    return failure(`保存 Session 失败: ${e.message}`);
   }
 }
 
 /**
  * 查询所有 session（可按 owner/repo 过滤）
  */
-export function findAllSessions(filterOwner?: string, filterRepo?: string): SessionInfo[] {
-  const db = getDb();
+export function findAllSessions(filterOwner?: string, filterRepo?: string): Result<SessionInfo[]> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
 
-  let sql = "SELECT owner, repo, issue_number FROM sessions";
-  const params: any[] = [];
-  const conditions: string[] = [];
+  try {
+    let sql = "SELECT owner, repo, issue_number FROM sessions";
+    const params: any[] = [];
+    const conditions: string[] = [];
 
-  if (filterOwner) {
-    conditions.push("owner = ?");
-    params.push(filterOwner);
+    if (filterOwner) {
+      conditions.push("owner = ?");
+      params.push(filterOwner);
+    }
+    if (filterRepo) {
+      conditions.push("repo = ?");
+      params.push(filterRepo);
+    }
+
+    if (conditions.length > 0) {
+      sql += " WHERE " + conditions.join(" AND ");
+    }
+
+    const rows = db.prepare(sql).all(...params) as any[];
+    return success(rows.map(row => ({
+      owner: row.owner,
+      repo: row.repo,
+      issueNumber: row.issue_number,
+    })));
+  } catch (e: any) {
+    return failure(`列出 Session 失败: ${e.message}`);
   }
-  if (filterRepo) {
-    conditions.push("repo = ?");
-    params.push(filterRepo);
-  }
-
-  if (conditions.length > 0) {
-    sql += " WHERE " + conditions.join(" AND ");
-  }
-
-  const rows = db.prepare(sql).all(...params) as any[];
-  return rows.map(row => ({
-    owner: row.owner,
-    repo: row.repo,
-    issueNumber: row.issue_number,
-  }));
 }
 
 /**
@@ -282,27 +307,33 @@ export function findSessionByPr(
   owner: string,
   repo: string,
   prNumber: number,
-): { issueNumber: number; statusData: SessionStatus } | null {
-  const db = getDb();
+): Result<{ issueNumber: number; statusData: SessionStatus } | null> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
 
-  // 先精确匹配 pr_number
-  let row = db.prepare(
-    "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_number = ?"
-  ).get(owner, repo, prNumber) as any;
+  try {
+    // 先精确匹配 pr_number
+    let row = db.prepare(
+      "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_number = ?"
+    ).get(owner, repo, prNumber) as any;
 
-  // 回退：从 pr_url 匹配
-  if (!row) {
-    row = db.prepare(
-      "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_url LIKE ?"
-    ).get(owner, repo, `%/pull/${prNumber}%`) as any;
+    // 回退：从 pr_url 匹配
+    if (!row) {
+      row = db.prepare(
+        "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_url LIKE ?"
+      ).get(owner, repo, `%/pull/${prNumber}%`) as any;
+    }
+
+    if (!row) return success(null);
+
+    return success({
+      issueNumber: row.issue_number,
+      statusData: rowToSessionStatus(row),
+    });
+  } catch (e: any) {
+    return failure(`通过 PR 查找 Session 失败: ${e.message}`);
   }
-
-  if (!row) return null;
-
-  return {
-    issueNumber: row.issue_number,
-    statusData: rowToSessionStatus(row),
-  };
 }
 
 /**
@@ -310,21 +341,27 @@ export function findSessionByPr(
  */
 export function findSessionByBranch(
   branchName: string,
-): { owner: string; repo: string; issueNumber: number; statusData: SessionStatus } | null {
-  const db = getDb();
+): Result<{ owner: string; repo: string; issueNumber: number; statusData: SessionStatus } | null> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
 
-  const row = db.prepare(
-    "SELECT * FROM sessions WHERE branch_name = ?"
-  ).get(branchName) as any;
+  try {
+    const row = db.prepare(
+      "SELECT * FROM sessions WHERE branch_name = ?"
+    ).get(branchName) as any;
 
-  if (!row) return null;
+    if (!row) return success(null);
 
-  return {
-    owner: row.owner,
-    repo: row.repo,
-    issueNumber: row.issue_number,
-    statusData: rowToSessionStatus(row),
-  };
+    return success({
+      owner: row.owner,
+      repo: row.repo,
+      issueNumber: row.issue_number,
+      statusData: rowToSessionStatus(row),
+    });
+  } catch (e: any) {
+    return failure(`通过分支查找 Session 失败: ${e.message}`);
+  }
 }
 
 /**

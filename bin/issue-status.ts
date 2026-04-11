@@ -22,8 +22,11 @@ async function updateStatus(
   message?: string,
   step?: string,
 ): Promise<Result<null>> {
-  const data = readSession(owner, repo, issueNumber);
-  if (!data) {
+  const res = readSession(owner, repo, issueNumber);
+  if (!res.success) {
+    return failure(`读取会话状态失败: ${res.error}`);
+  }
+  if (!res.data) {
     return failure(`会话状态不存在: ${owner}/${repo}#${issueNumber}`);
   }
 
@@ -34,7 +37,10 @@ async function updateStatus(
   if (message) update.lastMessage = message;
   if (step) update.currentStep = step;
 
-  upsertSession(owner, repo, issueNumber, update);
+  const upRes = upsertSession(owner, repo, issueNumber, update);
+  if (!upRes.success) {
+    return failure(`更新会话状态失败: ${upRes.error}`);
+  }
   return success(null);
 }
 

@@ -20,8 +20,9 @@ const issueNumber = Number(issueNumberStr);
 const exitCode = Number(exitCodeStr) || 0;
 
 try {
-  const session = readSession(owner, repo, issueNumber);
-  if (!session) process.exit(0);
+  const res = readSession(owner, repo, issueNumber);
+  if (!res.success || !res.data) process.exit(0);
+  const session = res.data;
   if (session.status !== "running") process.exit(0);
 
   const now = new Date().toISOString();

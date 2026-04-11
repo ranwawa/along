@@ -1,5 +1,5 @@
 import fs from "fs";
-import { iso_timestamp } from "./common";
+import { iso_timestamp, Result, success, failure } from "./common";
 import { SessionPathManager } from "./session-paths";
 import { readSession, upsertSession } from "./db";
 
@@ -67,15 +67,17 @@ export class SessionManager {
   /**
    * 读取当前会话状态
    */
-  readStatus(): SessionStatus | null {
+  readStatus(): Result<SessionStatus | null> {
     return readSession(this.owner, this.repo, this.issueNumber);
   }
 
   /**
    * 写入会话状态
    */
-  writeStatus(status: Partial<SessionStatus>): void {
-    const currentStatus = this.readStatus();
+  writeStatus(status: Partial<SessionStatus>): Result<void> {
+    const res = this.readStatus();
+    if (!res.success) return res;
+    const currentStatus = res.data;
 
     if (!currentStatus) {
       // 首次写入，设置默认值
@@ -88,13 +90,13 @@ export class SessionManager {
         title: "",
         repo: { owner: this.owner, name: this.repo },
       };
-      upsertSession(this.owner, this.repo, this.issueNumber, {
+      return upsertSession(this.owner, this.repo, this.issueNumber, {
         ...defaults,
         ...status,
         lastUpdate: iso_timestamp(),
       });
     } else {
-      upsertSession(this.owner, this.repo, this.issueNumber, {
+      return upsertSession(this.owner, this.repo, this.issueNumber, {
         ...status,
         lastUpdate: iso_timestamp(),
       });
@@ -104,31 +106,38 @@ export class SessionManager {
   /**
    * 记录日志到文件
    */
-  log(message: string, level: "info" | "warn" | "error" = "info"): void {
+  log(message: string, level: "info" | "warn" | "error" = "info"): Result<void> {
     const timestamp = new Date().toISOString();
     const logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
-    this.paths.ensureDir();
-    fs.appendFileSync(this.logFile, logLine);
+    const ensureRes = this.paths.ensureDir();
+    if (!ensureRes.success) return ensureRes;
+    try {
+      fs.appendFileSync(this.logFile, logLine);
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`无法写入日志文件 ${this.logFile}: ${e.message}`);
+    }
   }
 
   /**
    * 标记会话为错误状态
    */
-  markAsError(errorMessage: string, exitCode?: number): void {
-    this.writeStatus({
+  markAsError(errorMessage: string, exitCode?: number): Result<void> {
+    const writeRes = this.writeStatus({
       status: "error",
       endTime: iso_timestamp(),
       errorMessage,
       exitCode,
     });
     this.log(`Error: ${errorMessage}`, "error");
+    return writeRes;
   }
 
   /**
    * 标记会话为崩溃状态（异常退出）
    */
-  markAsCrashed(errorMessage: string, crashLog?: string, exitCode?: number): void {
-    this.writeStatus({
+  markAsCrashed(errorMessage: string, crashLog?: string, exitCode?: number): Result<void> {
+    const writeRes = this.writeStatus({
       status: "crashed",
       endTime: iso_timestamp(),
       errorMessage,
@@ -139,24 +148,28 @@ export class SessionManager {
     if (crashLog) {
       this.log(`Crash details:\n${crashLog}`, "error");
     }
+    return writeRes;
   }
 
   /**
    * 标记会话为完成状态
    */
-  markAsCompleted(): void {
-    this.writeStatus({
+  markAsCompleted(): Result<void> {
+    const writeRes = this.writeStatus({
       status: "completed",
       endTime: iso_timestamp(),
     });
     this.log("Completed successfully", "info");
+    return writeRes;
   }
 
   /**
    * 更新当前步骤（同时记录步骤历史）
    */
-  updateStep(step: string, message?: string): void {
-    const current = this.readStatus();
+  updateStep(step: string, message?: string): Result<void> {
+    const res = this.readStatus();
+    if (!res.success) return res;
+    const current = res.data;
     const now = iso_timestamp();
 
     // 关闭上一个步骤的 endTime
@@ -171,7 +184,7 @@ export class SessionManager {
     // 添加新步骤
     history.push({ step, message, startTime: now });
 
-    this.writeStatus({
+    const writeRes = this.writeStatus({
       currentStep: step,
       lastMessage: message,
       stepHistory: history,
@@ -181,40 +194,45 @@ export class SessionManager {
     } else {
       this.log(`Step: ${step}`, "info");
     }
+    return writeRes;
   }
 
   /**
    * 记录结构化事件到 session.log（供各子脚本调用）
    */
-  logEvent(event: string, details?: Record<string, any>): void {
+  logEvent(event: string, details?: Record<string, any>): Result<void> {
     const detailStr = details ? " " + JSON.stringify(details) : "";
-    this.log(`[EVENT] ${event}${detailStr}`, "info");
+    return this.log(`[EVENT] ${event}${detailStr}`, "info");
   }
 
   /**
    * 追加 commit SHA 到 commitShas 列表
    */
-  addCommitSha(sha: string): void {
-    const current = this.readStatus();
+  addCommitSha(sha: string): Result<void> {
+    const res = this.readStatus();
+    if (!res.success) return res;
+    const current = res.data;
     const shas = current?.commitShas || [];
     shas.push(sha);
-    this.writeStatus({ commitShas: shas });
+    return this.writeStatus({ commitShas: shas });
   }
 
   /**
    * 递增 retryCount
    */
-  incrementRetry(): void {
-    const current = this.readStatus();
+  incrementRetry(): Result<void> {
+    const res = this.readStatus();
+    if (!res.success) return res;
+    const current = res.data;
     const count = (current?.retryCount || 0) + 1;
-    this.writeStatus({ retryCount: count });
+    return this.writeStatus({ retryCount: count });
   }
 
   /**
    * 更新 CI 结果
    */
-  updateCiResults(passed: number, failed: number, sha?: string): void {
-    this.writeStatus({
+  updateCiResults(passed: number, failed: number, sha?: string): Result<void> {
+    return this.writeStatus({
       ciResults: { passed, failed, lastSha: sha },
     });
   }

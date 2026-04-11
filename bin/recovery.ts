@@ -121,7 +121,12 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
   const report = emptyReport();
 
   try {
-    const sessions = findAllSessions();
+    const sessRes = findAllSessions();
+    if (!sessRes.success) {
+      logger.error(`获取 Session 列表失败: ${sessRes.error}`);
+      return report;
+    }
+    const sessions = sessRes.data;
     report.scannedSessions = sessions.length;
 
     for (const sessionInfo of sessions) {
@@ -130,8 +135,9 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
 
       try {
         const session = new SessionManager(owner, repo, issueNumber);
-        const status = session.readStatus();
-        if (!status) continue;
+        const statusRes = session.readStatus();
+        if (!statusRes.success || !statusRes.data) continue;
+        const status = statusRes.data;
 
         // 跳过已完成/已清理的会话
         if (status.status === "completed" || status.status === "error") continue;
@@ -156,8 +162,9 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
           report.crashedFound++;
 
           // 重新读取状态（可能刚被标记为 crashed）
-          const currentStatus = session.readStatus();
-          if (!currentStatus || currentStatus.status !== "crashed") continue;
+          const currentStatusRes = session.readStatus();
+          if (!currentStatusRes.success || !currentStatusRes.data || currentStatusRes.data.status !== "crashed") continue;
+          const currentStatus = currentStatusRes.data;
 
           // 检查重试上限
           const retryCount = currentStatus.retryCount || 0;
@@ -189,7 +196,12 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
               continue;
             }
             const client = new GitHubClient(tokenRes.data, owner, repo);
-            const issue = await client.getIssue(issueNumber);
+            const issueRes = await client.getIssue(issueNumber);
+            if (!issueRes.success) {
+              report.errors.push({ issueKey: key, error: `获取 Issue 失败: ${issueRes.error}` });
+              continue;
+            }
+            const issue = issueRes.data;
             if (issue.state !== "open") {
               report.skippedClosed++;
               logger.info(`${key} 对应的 Issue 已关闭，跳过恢复`);
@@ -270,8 +282,10 @@ export async function recoverMissedIssues(
   const sinceDate = new Date(Date.now() - MISSED_ISSUE_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
 
   // 获取所有本地 session 用于比对
-  const localSessions = findAllSessions(owner, repo);
-  const localIssueNumbers = new Set(localSessions.map((s) => s.issueNumber));
+  const localRes = findAllSessions(owner, repo);
+  const localIssueNumbers = new Set(
+    localRes.success ? localRes.data.map((s) => s.issueNumber) : []
+  );
 
   // ── 类别 A: 有 WIP 标签但无活跃 session ──
   try {
@@ -282,8 +296,8 @@ export async function recoverMissedIssues(
       // 检查是否有活跃的本地 session
       if (localIssueNumbers.has(issue.number)) {
         const session = new SessionManager(owner, repo, issue.number);
-        const status = session.readStatus();
-        if (status && (status.status === "running" || status.status === "crashed")) {
+        const statusRes = session.readStatus();
+        if (statusRes.success && statusRes.data && (statusRes.data.status === "running" || statusRes.data.status === "crashed")) {
           // recoverSessions() 已经处理了这些
           continue;
         }
@@ -303,7 +317,8 @@ export async function recoverMissedIssues(
       recoveringIssues.add(key);
       fireAndForget(async () => {
         try {
-          await launchIssueAgent(owner, repo, issue.number, "phase1", { title: issue.title });
+          const res = await launchIssueAgent(owner, repo, issue.number, "phase1", { title: issue.title });
+          if (!res.success) logger.error(`恢复 Issue #${issue.number} 失败: ${res.error}`);
         } finally {
           recoveringIssues.delete(key);
         }
@@ -329,8 +344,8 @@ export async function recoverMissedIssues(
         // 检查是否已有完成的 session
         if (localIssueNumbers.has(issue.number)) {
           const session = new SessionManager(owner, repo, issue.number);
-          const status = session.readStatus();
-          if (status && status.status === "completed") continue;
+          const statusRes = session.readStatus();
+          if (statusRes.success && statusRes.data && statusRes.data.status === "completed") continue;
         }
 
         report.missedIssuesFound++;
@@ -353,7 +368,8 @@ export async function recoverMissedIssues(
 
         fireAndForget(async () => {
           try {
-            await launchIssueAgent(owner, repo, issue.number, "phase1", { title: issue.title });
+            const res = await launchIssueAgent(owner, repo, issue.number, "phase1", { title: issue.title });
+            if (!res.success) logger.error(`启动 Issue #${issue.number} 失败: ${res.error}`);
           } finally {
             recoveringIssues.delete(key);
           }
@@ -396,11 +412,17 @@ export async function recoverMissedIssues(
 
       fireAndForget(async () => {
         try {
-          const triageResult = await triageIssue(issue.title, issue.body || "", []);
+          const triageRes = await triageIssue(issue.title, issue.body || "", []);
+          if (!triageRes.success) {
+            logger.error(`Issue #${issue.number} 分类失败: ${triageRes.error}`);
+            return;
+          }
+          const triageResult = triageRes.data;
           logger.info(`Issue #${issue.number} 分类结果: ${triageResult.classification}`);
-          await handleTriagedIssue(owner, repo, issue.number, triageResult);
+          const handleRes = await handleTriagedIssue(owner, repo, issue.number, triageResult);
+          if (!handleRes.success) logger.error(`处理分类结果失败: ${handleRes.error}`);
         } catch (err: any) {
-          logger.error(`Issue #${issue.number} 分类失败: ${err.message}`);
+          logger.error(`Issue #${issue.number} 分类执行出错: ${err.message}`);
         } finally {
           recoveringIssues.delete(key);
         }

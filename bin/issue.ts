@@ -19,14 +19,13 @@ export class Issue {
    */
   async load(): Promise<Result<GitHubIssue>> {
     const clientRes = await get_gh_client();
-    if (!clientRes.success) return failure(clientRes.error);
+    if (!clientRes.success) return clientRes;
     
-    try {
-      this.data = await clientRes.data.getIssue(this.taskNo);
-      return success(this.data);
-    } catch (e: any) {
-      return failure(`无法从 GitHub 获取编号为 #${this.taskNo} 的内容: ${e.message}`);
-    }
+    const issueRes = await clientRes.data.getIssue(this.taskNo);
+    if (!issueRes.success) return issueRes;
+
+    this.data = issueRes.data;
+    return success(this.data);
   }
 
   /**

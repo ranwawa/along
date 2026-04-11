@@ -37,28 +37,32 @@ interface GcCandidate {
 
 /** 扫描 sessions（从 SQLite 数据库），收集所有 session 信息 */
 function scanSessions(): GcSessionInfo[] {
-  const allSessions = findAllSessions();
+  const allRes = findAllSessions();
+  if (!allRes.success) {
+    logger.warn(`获取所有 Session 失败: ${allRes.error}`);
+    return [];
+  }
+  const allSessions = allRes.data;
   const results: GcSessionInfo[] = [];
 
   for (const session of allSessions) {
-    try {
-      const data = readSession(session.owner, session.repo, session.issueNumber);
-      if (!data) continue;
+    const res = readSession(session.owner, session.repo, session.issueNumber);
+    if (!res.success || !res.data) continue;
+    const data = res.data;
 
-      const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
-      const worktreePath = paths.getWorktreeDir();
-      const branchName = data.branchName || "";
+    const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
+    const worktreePath = paths.getWorktreeDir();
+    const branchName = data.branchName || "";
 
-      results.push({
-        type: "issue",
-        number: String(session.issueNumber),
-        owner: session.owner,
-        repo: session.repo,
-        worktreePath,
-        branchName,
-        data,
-      });
-    } catch {}
+    results.push({
+      type: "issue",
+      number: String(session.issueNumber),
+      owner: session.owner,
+      repo: session.repo,
+      worktreePath,
+      branchName,
+      data,
+    });
   }
 
   return results;
@@ -83,15 +87,17 @@ async function checkIssueSession(client: GitHubClient, session: GcSessionInfo): 
   }
 
   // 回退：检查 issue 本身状态
-  try {
-    const issue = await client.getIssue(session.number);
-    if (issue.state === "closed") return `Issue #${session.number} 已关闭`;
-    return null;
-  } catch (e: any) {
-    if (isNotFoundError(e)) return `Issue #${session.number} 不存在`;
-    logger.warn(`检查 Issue #${session.number} 失败: ${e.message}`);
+  const issueRes = await client.getIssue(session.number);
+  if (!issueRes.success) {
+    // getIssue 内部已处理 NotFound 映射到 failure，这里简单判断
+    if (issueRes.error.includes("Not Found")) return `Issue #${session.number} 不存在`;
+    logger.warn(`检查 Issue #${session.number} 失败: ${issueRes.error}`);
     return null;
   }
+
+  const issue = issueRes.data;
+  if (issue.state === "closed") return `Issue #${session.number} 已关闭`;
+  return null;
 }
 
 
@@ -184,7 +190,10 @@ export async function runGc(options: { dryRun?: boolean; force?: boolean; silent
   // 执行清理
   for (const { session, reason } of candidates) {
     if (!options.silent) logger.info(`清理 ${session.type} #${session.number}（${reason}）`);
-    await cleanupIssue(session.number, { reason: "gc", silent: options.silent }, session.owner, session.repo);
+    const cleanRes = await cleanupIssue(session.number, { reason: "gc", silent: options.silent }, session.owner, session.repo);
+    if (!cleanRes.success && !options.silent) {
+       logger.warn(`清理 #${session.number} 失败: ${cleanRes.error}`);
+    }
   }
 
   // 最终 prune
