@@ -172,5 +172,8 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
     editor: currentEditor.name,
     mappingCount: currentEditor.mappings.length,
   });
-  return success(undefined);
+  } catch (e: any) {
+    logger.error(`初始化会话文件失败: ${e.message}`);
+    return failure(`初始化会话文件失败: ${e.message}`);
+  }
 }
