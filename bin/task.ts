@@ -1,5 +1,6 @@
 import fs from "fs";
-import { failure, success, Result } from "./common";
+import { failure, success } from "./common";
+import type { Result } from "./common";
 import { SessionPathManager } from "./session-paths";
 import { readSession } from "./db";
 

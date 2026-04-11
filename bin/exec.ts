@@ -1,5 +1,6 @@
 import { execSync, spawnSync } from "child_process";
-import { success, failure, Result } from "./common";
+import { success, failure } from "./common";
+import type { Result } from "./common";
 
 export function runCommand(command: string): Result<string> {
   try {

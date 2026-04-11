@@ -4,7 +4,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-import { Result, success, failure } from "./common";
+import { success, failure } from "./common";
+import type { Result } from "./common";
 
 const logger = consola.withTag("analyze-error");
 

@@ -1,7 +1,8 @@
 import path from "path";
 import fs from "fs";
 import { config } from "./config";
-import { Result, success, failure } from "./result";
+import { success, failure } from "./result";
+import type { Result } from "./result";
 
 /**
  * 统一管理所有 session 相关的路径生成
@@ -57,15 +58,15 @@ export class SessionPathManager {
   }
 
   getLogFile(): string {
-    return path.join(this.getIssueDir(), "session.log");
+    return path.join(this.getIssueDir(), "system.log");
   }
 
-  getTmuxLogFile(): string {
-    return path.join(this.getIssueDir(), "tmux.log");
+  getAgentLogFile(): string {
+    return path.join(this.getIssueDir(), "agent.log");
   }
 
-  getPrReviewTmuxLogFile(): string {
-    return path.join(this.getIssueDir(), "pr-review-tmux.log");
+  getPrReviewAgentLogFile(): string {
+    return path.join(this.getIssueDir(), "pr-review-agent.log");
   }
 
   getReviewDiffFile(): string {
@@ -76,12 +77,8 @@ export class SessionPathManager {
     return path.join(this.getIssueDir(), "worktree");
   }
 
-  getAgentSessionExport(): string {
-    return path.join(this.getIssueDir(), "agent-session.jsonl");
-  }
-
-  getEventLogFile(): string {
-    return path.join(this.getIssueDir(), "events.jsonl");
+  getAgentDataExportDir(): string {
+    return path.join(this.getIssueDir(), "agent-data");
   }
 
   getOwner(): string {

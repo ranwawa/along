@@ -14,11 +14,11 @@ import {
   iso_timestamp,
   ensureEditorPermissions,
   git,
-  Result,
   success,
   failure,
   check_process_running,
 } from "./common";
+import type { Result } from "./common";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
@@ -182,7 +182,7 @@ export async function execTmux(
   }
 
   // 日志文件路径
-  const logFile = paths.getTmuxLogFile();
+  const logFile = paths.getAgentLogFile();
   const owner = paths.getOwner();
   const repo = paths.getRepo();
 
@@ -378,7 +378,7 @@ export async function launchIssueAgent(
   }
 
   try {
-    const logFile = paths.getTmuxLogFile();
+    const logFile = paths.getAgentLogFile();
     const agentRes = await execAgent(
       worktreePath,
       issueNumber,

@@ -1,5 +1,6 @@
 import { get_gh_client, GitHubIssue } from "./github-client";
-import { failure, success, Result } from "./common";
+import { failure, success } from "./common";
+import type { Result } from "./common";
 
 /**
  * Issue 类，用于管理 GitHub Issue 数据和健康状态检查

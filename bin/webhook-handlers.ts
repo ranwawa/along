@@ -9,7 +9,8 @@
 
 import fs from "fs";
 import { consola } from "consola";
-import { iso_timestamp, Result, success, failure } from "./common";
+import { iso_timestamp, success, failure } from "./common";
+import type { Result } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { SessionManager } from "./session-manager";

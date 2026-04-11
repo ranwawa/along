@@ -70,26 +70,22 @@ describe("session-paths.ts", () => {
       );
     });
 
-    it("getLogFile() 返回 session.log", () => {
-      expect(pm.getLogFile()).toBe(path.join(issueDir, "session.log"));
+    it("getLogFile() 返回 system.log", () => {
+      expect(pm.getLogFile()).toBe(path.join(issueDir, "system.log"));
     });
 
-    it("getTmuxLogFile() 返回 tmux.log", () => {
-      expect(pm.getTmuxLogFile()).toBe(path.join(issueDir, "tmux.log"));
+    it("getAgentLogFile() 返回 agent.log", () => {
+      expect(pm.getAgentLogFile()).toBe(path.join(issueDir, "agent.log"));
     });
 
     it("getWorktreeDir() 返回 worktree 目录", () => {
       expect(pm.getWorktreeDir()).toBe(path.join(issueDir, "worktree"));
     });
 
-    it("getAgentSessionExport() 返回 agent-session.jsonl", () => {
-      expect(pm.getAgentSessionExport()).toBe(
-        path.join(issueDir, "agent-session.jsonl")
+    it("getAgentDataExportDir() 返回 agent-data", () => {
+      expect(pm.getAgentDataExportDir()).toBe(
+        path.join(issueDir, "agent-data")
       );
-    });
-
-    it("getEventLogFile() 返回 events.jsonl", () => {
-      expect(pm.getEventLogFile()).toBe(path.join(issueDir, "events.jsonl"));
     });
   });
 

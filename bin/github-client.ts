@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { Octokit, RestEndpointMethodTypes } from "@octokit/rest";
-import { success, failure, Result, git } from "./common";
+import { success, failure, git } from "./common";
+import type { Result } from "./common";
 import { resolveAgentToken } from "./agent-config";
 import { consola } from "consola";
 

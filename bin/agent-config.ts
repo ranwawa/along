@@ -2,7 +2,8 @@ import path from "path";
 import fs from "fs";
 import { consola } from "consola";
 import { config } from "./config";
-import { Result, success, failure } from "./result";
+import { success, failure } from "./result";
+import type { Result } from "./result";
 
 const logger = consola.withTag("agent-config");
 

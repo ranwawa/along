@@ -1,5 +1,6 @@
 import fs from "fs";
-import { iso_timestamp, Result, success, failure } from "./common";
+import { iso_timestamp, success, failure } from "./common";
+import type { Result } from "./common";
 import { SessionPathManager } from "./session-paths";
 import { readSession, upsertSession } from "./db";
 

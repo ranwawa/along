@@ -72,16 +72,16 @@ function stripAnsi(text: string): string {
 }
 
 /**
- * 清理 tmux.log：去除 ANSI 转义码，生成可读的纯文本版本
+ * 清理 agent.log：去除 ANSI 转义码，生成可读的纯文本版本
  */
-function cleanTmuxLog(paths: SessionPathManager): { cleaned: boolean; outputFile: string } {
-  const tmuxLog = paths.getTmuxLogFile();
-  const cleanLog = path.join(path.dirname(tmuxLog), "tmux-clean.log");
+function cleanAgentLog(paths: SessionPathManager): { cleaned: boolean; outputFile: string } {
+  const agentLog = paths.getAgentLogFile();
+  const cleanLog = path.join(path.dirname(agentLog), "agent-clean.log");
 
-  if (!fs.existsSync(tmuxLog)) return { cleaned: false, outputFile: cleanLog };
+  if (!fs.existsSync(agentLog)) return { cleaned: false, outputFile: cleanLog };
 
   try {
-    const raw = fs.readFileSync(tmuxLog, "utf-8");
+    const raw = fs.readFileSync(agentLog, "utf-8");
     const clean = stripAnsi(raw);
     fs.writeFileSync(cleanLog, clean);
     return { cleaned: true, outputFile: cleanLog };
@@ -134,7 +134,7 @@ export async function exportAgentSession(
 
   result.agentType = agentType;
   const sessionDirs = AGENT_SESSION_DIRS[agentType] || [];
-  const exportBase = path.join(path.dirname(paths.getAgentSessionExport()), "agent-data", agentType);
+  const exportBase = path.join(paths.getAgentDataExportDir(), agentType);
 
   for (const relDir of sessionDirs) {
     const srcDir = path.join(worktreePath, relDir);
@@ -150,8 +150,8 @@ export async function exportAgentSession(
     }
   }
 
-  // 清理 tmux.log 生成纯文本版本
-  const tmuxClean = cleanTmuxLog(paths);
+  // 清理 agent.log 生成纯文本版本
+  const agentClean = cleanAgentLog(paths);
 
   if (result.fileCount > 0) {
     result.exported = true;
@@ -163,7 +163,7 @@ export async function exportAgentSession(
       fileCount: result.fileCount,
       totalSizeBytes: result.totalSize,
       exportDir: exportBase,
-      tmuxLogCleaned: tmuxClean.cleaned,
+      agentLogCleaned: agentClean.cleaned,
     });
   }
 
