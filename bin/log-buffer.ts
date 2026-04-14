@@ -1,5 +1,11 @@
 import { consola } from "consola";
-import type { LogEntry } from "./types";
+
+export interface LogEntry {
+  timestamp: Date;
+  level: string;
+  tag: string;
+  message: string;
+}
 
 const MAX_LOG_ENTRIES = 200;
 const logEntries: LogEntry[] = [];

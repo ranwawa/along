@@ -17,6 +17,11 @@ import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { launchIssueAgent, setDashboardMode } from "./issue-agent";
 import { readGithubToken, GitHubClient, readRepoInfo } from "./github-client";
 import { recoverSessions, recoverMissedIssues, startPeriodicHealthCheck, stopPeriodicHealthCheck } from "./recovery";
+import { findAllSessions, readSession } from "./db";
+import { check_process_running, calculate_runtime } from "./common";
+import { setupLogInterceptor, getLogEntries } from "./log-buffer";
+import path from "path";
+import fs from "fs";
 
 const logger = consola.withTag("webhook-server");
 
@@ -236,6 +241,10 @@ async function main() {
   const host = opts.host;
   const useDashboard = opts.dashboard !== false;
 
+  if (useDashboard) {
+    setupLogInterceptor();
+  }
+
   if (!secret) {
     logger.warn("未设置 webhook secret，将接受所有请求（不推荐用于生产环境）");
   }
@@ -305,6 +314,70 @@ async function main() {
         });
       }
 
+      // ── API: /api/sessions ──
+      if (url.pathname === "/api/sessions" && req.method === "GET") {
+        const allRes = findAllSessions();
+        if (!allRes.success) {
+          return new Response(JSON.stringify({ error: "Failed to load sessions" }), { status: 500 });
+        }
+        const sessions = [];
+        for (const info of allRes.data) {
+          const res = readSession(info.owner, info.repo, info.issueNumber);
+          if (res.success && res.data) {
+             let displayStatus = res.data.status;
+             if (displayStatus === "running" && res.data.pid) {
+                const alive = await check_process_running(res.data.pid);
+                if (!alive) displayStatus = "zombie";
+             }
+             sessions.push({ ...res.data, status: displayStatus, owner: info.owner, repo: info.repo, runtime: calculate_runtime(res.data.startTime) });
+          }
+        }
+        return new Response(JSON.stringify(sessions), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      }
+
+      // ── API: /api/logs (SSE) ──
+      if (url.pathname === "/api/logs" && req.method === "GET") {
+         return new Response(new ReadableStream({
+             start(controller) {
+                 const id = setInterval(() => {
+                     const logs = getLogEntries();
+                     controller.enqueue(`data: ${JSON.stringify(logs)}\n\n`);
+                 }, 2000);
+                 req.signal.addEventListener("abort", () => {
+                     clearInterval(id);
+                 });
+             }
+         }), {
+             headers: {
+                 "Content-Type": "text/event-stream",
+                 "Cache-Control": "no-cache",
+                 "Connection": "keep-alive",
+                 "Access-Control-Allow-Origin": "*"
+             }
+         });
+      }
+
+      // ── Static Web UI ──
+      if (req.method === "GET" && useDashboard) {
+         try {
+             const webDist = path.join(import.meta.dir, "..", "web", "dist");
+             const reqPath = url.pathname === "/" ? "/index.html" : url.pathname;
+             const filePath = path.join(webDist, reqPath);
+             
+             // Check if it's a regular file that exists
+             const file = Bun.file(filePath);
+             if (await file.exists()) {
+                 return new Response(file);
+             }
+             
+             // Fallback to index.html for SPA routing
+             const fallbackFile = Bun.file(path.join(webDist, "index.html"));
+             if (await fallbackFile.exists()) {
+                 return new Response(fallbackFile);
+             }
+         } catch(e) {}
+      }
+
       return new Response("Not Found", { status: 404 });
     },
   });
@@ -355,9 +428,13 @@ async function main() {
   // ── Dashboard 模式 ──
   if (useDashboard) {
     setDashboardMode(true);
-    const { startDashboard } = await import("./dashboard/index");
-    await startDashboard({ port, host });
-    // startDashboard 内部 waitUntilExit 后会 process.exit(0)
+    const dashboardUrl = `http://localhost:${port}`;
+    logger.info(`Web Dashboard 正在运行: ${dashboardUrl}`);
+    try {
+      // 尝试自动打开浏览器
+      const { exec } = await import("child_process");
+      exec(`start ${dashboardUrl}`);
+    } catch(e) {}
   } else {
     logger.info("按 Ctrl+C 停止服务器");
   }
