@@ -55,7 +55,12 @@ export async function setupWorktree(worktreePath: string, session?: SessionManag
 
   logger.info("创建 worktree...");
   try {
-    await git.raw(["worktree", "add", "--detach", worktreePath, `origin/${defaultBranch}`]);
+    // 尝试清理已失效的 worktree 记录
+    try {
+      await git.raw(["worktree", "prune"]);
+    } catch (e) {}
+
+    await git.raw(["worktree", "add", "-f", "--detach", worktreePath, `origin/${defaultBranch}`]);
   } catch (e: any) {
     session?.log(`创建 worktree 失败: ${e.message}\n${e.stack || ""}`, "error");
     return failure(`创建 worktree 失败: ${e.message}`);

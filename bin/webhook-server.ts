@@ -20,6 +20,7 @@ import { recoverSessions, recoverMissedIssues, startPeriodicHealthCheck, stopPer
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
+import { SessionPathManager } from "./session-paths";
 import path from "path";
 import fs from "fs";
 
@@ -314,6 +315,18 @@ async function main() {
         });
       }
 
+      // ── CORS preflight ──
+      if (req.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+          },
+        });
+      }
+
       // ── API: /api/sessions ──
       if (url.pathname === "/api/sessions" && req.method === "GET") {
         const allRes = findAllSessions();
@@ -333,6 +346,56 @@ async function main() {
           }
         }
         return new Response(JSON.stringify(sessions), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      }
+
+      // ── API: /api/restart ──
+      if (url.pathname === "/api/restart" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const { owner, repo, issueNumber } = body;
+          if (!owner || !repo || !issueNumber) {
+            return new Response(JSON.stringify({ error: "Missing owner, repo, or issueNumber" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            });
+          }
+          logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
+          fireAndForget(async () => {
+            const res = await launchIssueAgent(owner, repo, issueNumber, "phase1", { taskData: { title: `Issue #${issueNumber}` } });
+            if (!res.success) logger.error(`手动重启 Issue #${issueNumber} 失败: ${res.error}`);
+          });
+          return new Response(JSON.stringify({ message: `已触发重启 Issue #${issueNumber}` }), {
+            status: 202,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        } catch (e: any) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+      }
+
+      // ── API: /api/agent-logs ──
+      if (url.pathname === "/api/agent-logs" && req.method === "GET") {
+        const owner = url.searchParams.get("owner");
+        const repo = url.searchParams.get("repo");
+        const issueNumber = url.searchParams.get("issueNumber");
+        if (!owner || !repo || !issueNumber) {
+          return new Response("Missing parameters", { status: 400 });
+        }
+        try {
+          const paths = new SessionPathManager(owner, repo, Number(issueNumber));
+          const logFile = paths.getAgentLogFile();
+          if (fs.existsSync(logFile)) {
+            const content = fs.readFileSync(logFile, "utf-8");
+            return new Response(content, { headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" } });
+          } else {
+            return new Response("No logs found.", { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
+          }
+        } catch (e: any) {
+          return new Response(e.message, { status: 500 });
+        }
       }
 
       // ── API: /api/logs (SSE) ──
@@ -389,24 +452,23 @@ async function main() {
     logger.info("签名验证: 已启用");
   }
 
-  // ── 启动恢复：扫描孤立/崩溃会话 + 遗漏 Issue ──
+  // ── 启动扫描：仅记录孤立/崩溃会话，不自动重启（由 Dashboard 手动触发） ──
   fireAndForget(async () => {
-    logger.info("启动恢复：扫描孤立/崩溃会话...");
-    const sessionReport = await recoverSessions();
+    logger.info("启动扫描：检查孤立/崩溃会话（不自动重启）...");
+    const sessionReport = await recoverSessions(true); // dryRun=true
     logger.info(
-      `会话恢复完成: 扫描 ${sessionReport.scannedSessions} 个, ` +
+      `会话扫描完成: 扫描 ${sessionReport.scannedSessions} 个, ` +
       `孤立 ${sessionReport.orphanedFound}, 崩溃 ${sessionReport.crashedFound}, ` +
-      `重启 ${sessionReport.restarted}, 跳过(上限) ${sessionReport.skippedMaxRetries}`
+      `可恢复 ${sessionReport.restarted}, 跳过(上限) ${sessionReport.skippedMaxRetries}`
     );
 
-    // 检查遗漏的 Issue（需要 repo 信息）
+    // 检查遗漏的 Issue（仅扫描，不自动启动）
     const repoRes = await readRepoInfo();
     if (repoRes.success) {
-      logger.info("检查 GitHub 上遗漏的 Issue...");
-      const missedReport = await recoverMissedIssues(repoRes.data.owner, repoRes.data.repo);
+      logger.info("检查 GitHub 上遗漏的 Issue（仅扫描）...");
+      const missedReport = await recoverMissedIssues(repoRes.data.owner, repoRes.data.repo, true); // dryRun=true
       logger.info(
-        `遗漏 Issue 恢复完成: 发现 ${missedReport.missedIssuesFound} 个, ` +
-        `已启动 ${missedReport.missedIssuesLaunched} 个`
+        `遗漏 Issue 扫描完成: 发现 ${missedReport.missedIssuesFound} 个（需手动在 Dashboard 重启）`
       );
     } else {
       logger.warn(`无法获取仓库信息，跳过遗漏 Issue 检查: ${repoRes.error}`);

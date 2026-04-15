@@ -393,7 +393,14 @@ export async function launchIssueAgent(
     const exitCode = agentRes.data;
 
     if (exitCode !== 0) {
-      session.markAsError(`Agent 退出码: ${exitCode}`, exitCode);
+      let crashLog = "";
+      try {
+        if (fs.existsSync(logFile)) {
+          const content = fs.readFileSync(logFile, "utf-8");
+          crashLog = content.length > 3000 ? "..." + content.slice(-3000) : content;
+        }
+      } catch (e) {}
+      session.markAsCrashed(`Agent 意外退出 (退出码: ${exitCode})`, crashLog || "无法获取日志文件内容", exitCode);
     } else {
       session.markAsCompleted();
     }

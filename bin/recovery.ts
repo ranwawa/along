@@ -289,8 +289,9 @@ export async function recoverMissedIssues(
 
   // ── 类别 A: 有 WIP 标签但无活跃 session ──
   try {
-    const wipIssues = await client.listIssues({ labels: "WIP", state: "open" });
-    for (const issue of wipIssues) {
+    const wipIssuesRes = await client.listIssues({ labels: "WIP", state: "open" });
+    if (!wipIssuesRes.success) throw new Error(wipIssuesRes.error);
+    for (const issue of wipIssuesRes.data) {
       const key = issueKey(owner, repo, issue.number);
 
       // 检查是否有活跃的本地 session
@@ -333,8 +334,9 @@ export async function recoverMissedIssues(
   // ── 类别 B: 有 bug/enhancement 标签但无 WIP（分类完成但未启动） ──
   for (const label of ["bug", "enhancement"]) {
     try {
-      const issues = await client.listIssues({ labels: label, state: "open", since: sinceDate });
-      for (const issue of issues) {
+      const issuesRes = await client.listIssues({ labels: label, state: "open", since: sinceDate });
+      if (!issuesRes.success) throw new Error(issuesRes.error);
+      for (const issue of issuesRes.data) {
         const labels = (issue.labels || []).map((l: any) => (typeof l === "string" ? l : l.name));
         if (labels.includes("WIP")) continue; // 已有 WIP，类别 A 已处理
 
@@ -384,8 +386,9 @@ export async function recoverMissedIssues(
 
   // ── 类别 C: 无标签的新 Issue（从未被分类） ──
   try {
-    const recentIssues = await client.listIssues({ state: "open", since: sinceDate });
-    for (const issue of recentIssues) {
+    const recentIssuesRes = await client.listIssues({ state: "open", since: sinceDate });
+    if (!recentIssuesRes.success) throw new Error(recentIssuesRes.error);
+    for (const issue of recentIssuesRes.data) {
       // 跳过 Bot 创建的 Issue
       if ((issue.user as any)?.type === "Bot") continue;
 
