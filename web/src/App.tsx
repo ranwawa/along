@@ -7,6 +7,7 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] = useState<DashboardSession | null>(null);
+  const [restartingIssues, setRestartingIssues] = useState<Set<string>>(new Set());
 
   // Poll sessions
   useEffect(() => {
@@ -51,6 +52,26 @@ function App() {
     return () => evtSource.close();
   }, []);
 
+  const [viewingLogSession, setViewingLogSession] = useState<DashboardSession | null>(null);
+  const [agentLogContent, setAgentLogContent] = useState<string>('');
+  const [sysLogExpanded, setSysLogExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!viewingLogSession) return;
+    let active = true;
+    const fetchLog = async () => {
+       try {
+         const res = await fetch(`/api/agent-logs?owner=${encodeURIComponent(viewingLogSession.owner)}&repo=${encodeURIComponent(viewingLogSession.repo)}&issueNumber=${viewingLogSession.issueNumber}`);
+         if (res.ok && active) {
+            setAgentLogContent(await res.text());
+         }
+       } catch (e) {}
+    };
+    fetchLog();
+    const timer = setInterval(fetchLog, 3000);
+    return () => { active = false; clearInterval(timer); };
+  }, [viewingLogSession]);
+
   const counts = useMemo<StatusCounts>(() => {
     const defaultCounts: StatusCounts = { running: 0, completed: 0, error: 0, crashed: 0, zombie: 0, total: sessions.length };
     for (const s of sessions) {
@@ -65,6 +86,38 @@ function App() {
     if (currentFilter === 'all') return sessions;
     return sessions.filter(s => s.status === currentFilter);
   }, [sessions, currentFilter]);
+
+  const isFailedStatus = (status: string) => ['error', 'crashed', 'zombie'].includes(status);
+
+  const restartSession = async (session: DashboardSession, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const key = `${session.owner}/${session.repo}#${session.issueNumber}`;
+    if (restartingIssues.has(key)) return;
+
+    setRestartingIssues(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch('/api/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner: session.owner, repo: session.repo, issueNumber: session.issueNumber }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        console.error('Restart failed:', data.error);
+      }
+    } catch (e) {
+      console.error('Restart request failed:', e);
+    } finally {
+      // Keep spinner for a bit, then clear
+      setTimeout(() => {
+        setRestartingIssues(prev => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }, 3000);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch(status) {
@@ -140,12 +193,13 @@ function App() {
                   <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Status</th>
                   <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Runtime</th>
                   <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Step</th>
+                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10 w-16">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredSessions.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center text-text-muted px-6 py-4">No tasks found.</td>
+                    <td colSpan={6} className="text-center text-text-muted px-6 py-4">No tasks found.</td>
                   </tr>
                 ) : null}
                 {filteredSessions.map(session => (
@@ -165,6 +219,29 @@ function App() {
                      <td className="px-6 py-4 border-b border-white/5 text-sm max-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
                         {session.currentStep || '-'}
                      </td>
+                     <td className="px-6 py-4 border-b border-white/5 text-sm flex gap-2" onClick={e => e.stopPropagation()}>
+                       {isFailedStatus(session.status) && (
+                         <button
+                           className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
+                             restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)
+                               ? 'bg-blue-500/20 text-status-running animate-spin'
+                               : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running hover:border-blue-500/30'
+                           }`}
+                           title="重启此任务"
+                           onClick={(e) => restartSession(session, e)}
+                           disabled={restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)}
+                         >
+                           🔄
+                         </button>
+                       )}
+                       <button
+                         className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer bg-white/5 text-text-secondary hover:bg-white/20 hover:text-white"
+                         title="查看 Agent 完整日志"
+                         onClick={(e) => { e.stopPropagation(); setViewingLogSession(session); }}
+                       >
+                         📄
+                       </button>
+                     </td>
                    </tr>
                 ))}
               </tbody>
@@ -173,7 +250,10 @@ function App() {
         </div>
 
         <div className="flex-1 bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden">
-          <div className="px-6 py-5 border-b border-border-color font-semibold border-l-4 border-l-brand">System Logs</div>
+          <div className="px-6 py-5 border-b border-border-color font-semibold border-l-4 border-l-brand flex justify-between items-center">
+             <span>System Logs</span>
+             <button title="全屏显示" className="bg-transparent text-text-secondary cursor-pointer hover:text-white" onClick={() => setSysLogExpanded(true)}>⛶</button>
+          </div>
           <div className="flex-1 overflow-y-auto p-4 font-mono text-[13px] flex flex-col gap-1.5">
             {logs.map((log, i) => (
               <div key={i} className="p-1.5 rounded break-all hover:bg-white/5">
@@ -213,10 +293,23 @@ function App() {
                  </div>
                  <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
                     <span className="text-text-secondary font-medium text-sm">Status</span>
-                    <div>
+                    <div className="flex items-center gap-3">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.status)}`}>
                         {selectedSession.status}
                       </span>
+                      {isFailedStatus(selectedSession.status) && (
+                        <button
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                            restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
+                              ? 'bg-blue-500/20 text-status-running border-blue-500/30 cursor-wait'
+                              : 'bg-blue-500/10 text-status-running border-blue-500/30 hover:bg-blue-500/25'
+                          }`}
+                          onClick={() => restartSession(selectedSession)}
+                          disabled={restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
+                        >
+                          🔄 {restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '重启中...' : '重启'}
+                        </button>
+                      )}
                     </div>
                  </div>
                  <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
@@ -253,6 +346,45 @@ function App() {
            </div>
         </div>
       )}
+
+      {viewingLogSession && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewingLogSession(null)}>
+           <div className="bg-bg-secondary border border-border-color rounded-2xl w-full max-w-[1200px] h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
+                 <h2 className="text-lg font-bold flex items-center gap-3">
+                   📄 Agent Logs: {viewingLogSession.owner}/{viewingLogSession.repo} #{viewingLogSession.issueNumber}
+                   {viewingLogSession.status === 'running' && <span className="text-xs bg-status-running/20 text-status-running px-2 py-1 rounded">Live</span>}
+                 </h2>
+                 <button className="text-text-secondary hover:text-white bg-transparent text-xl cursor-pointer p-2" onClick={() => setViewingLogSession(null)}>✕</button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 bg-black font-mono text-[13px] text-gray-300">
+                <pre className="whitespace-pre-wrap break-words m-0">{agentLogContent || 'Loading or missing logs...'}</pre>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {sysLogExpanded && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSysLogExpanded(false)}>
+           <div className="bg-bg-secondary border border-border-color rounded-2xl w-full max-w-[1200px] h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
+                 <h2 className="text-lg font-bold flex items-center gap-3">💻 Full System Logs (Live)</h2>
+                 <button className="text-text-secondary hover:text-white bg-transparent text-xl cursor-pointer p-2" onClick={() => setSysLogExpanded(false)}>✕</button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 bg-black font-mono text-[13px] text-gray-300 flex flex-col gap-1.5 flex-col-reverse">
+                {[...logs].reverse().map((log, i) => (
+                  <div key={i} className="p-1 break-all hover:bg-white/5 whitespace-pre-wrap">
+                     <span className="text-text-muted mr-2">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
+                     <span className={`font-semibold mr-2 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
+                     {log.tag && <span className="text-text-muted mr-2">({log.tag})</span>}
+                     <span>{log.message}</span>
+                  </div>
+                ))}
+              </div>
+           </div>
+        </div>
+      )}
+
     </div>
   );
 }
