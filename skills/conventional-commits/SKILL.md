@@ -53,3 +53,20 @@ description: 详细指导如何编写符合规范的 Git 提交信息（Conventi
 - `Fixed a bug in login` (未使用中文，也没有说明解决了什么具体问题)
 - `feat: 加了优惠券` (极其简短，未采用用户故事形式说明解决了什么问题)
 - `update docs` (没有 type 约束)
+
+## 提交与推送
+
+**禁止**直接使用 `git add`、`git commit`、`git push` 命令。所有代码提交必须通过统一命令完成：
+
+- 单次提交：
+  ```bash
+  along commit-push --message "<type>(<scope>): <description>" --files file1.ts file2.ts
+  ```
+- 多次原子化提交：
+  ```bash
+  along commit-push --json '[{"message":"feat: first","files":["a.ts"]},{"message":"feat: second","files":["b.ts"]}]'
+  ```
+
+该命令会自动完成：暂存 → 提交 → rebase origin/master → 推送 → 更新 session 状态。
+
+如果提交失败（lint、tsc、test 等 git hooks 报错），根据错误信息修复后重试，直到通过。
