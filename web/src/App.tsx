@@ -139,18 +139,18 @@ function App() {
   };
 
   return (
-    <div className="max-w-[1400px] mx-auto p-8 flex flex-col gap-8 h-screen">
-      <header className="flex justify-between items-center pb-6 border-b border-border-color">
-        <h1 className="font-semibold text-2xl tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+    <div className="max-w-[1400px] mx-auto p-4 md:p-6 lg:p-8 flex flex-col gap-4 md:gap-6 lg:gap-8 h-screen">
+      <header className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center pb-4 md:pb-6 border-b border-border-color">
+        <h1 className="font-semibold text-xl md:text-2xl tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
           🚀 ALONG Dashboard
         </h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-1.5 md:gap-2">
           {['all', 'running', 'completed', 'error', 'crashed', 'zombie'].map(filter => (
-            <button 
-              key={filter} 
-              className={`px-3 py-1.5 rounded-md cursor-pointer text-sm transition-all border ${
-                currentFilter === filter 
-                  ? 'bg-white/10 text-white border-border-color' 
+            <button
+              key={filter}
+              className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer text-xs md:text-sm transition-all border ${
+                currentFilter === filter
+                  ? 'bg-white/10 text-white border-border-color'
                   : 'bg-transparent border-transparent text-text-secondary hover:bg-white/5'
               }`}
               onClick={() => setCurrentFilter(filter)}
@@ -162,30 +162,83 @@ function App() {
         </div>
       </header>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-6 flex flex-col gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-text-secondary text-sm font-medium uppercase tracking-wider">Total Tasks</span>
-          <span className="text-3xl font-bold">{counts.total}</span>
+      <div className="grid grid-cols-2 md:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 md:gap-4">
+        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
+          <span className="text-text-secondary text-xs md:text-sm font-medium uppercase tracking-wider">Total Tasks</span>
+          <span className="text-2xl md:text-3xl font-bold">{counts.total}</span>
         </div>
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-6 flex flex-col gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-status-running text-sm font-medium uppercase tracking-wider">Running</span>
-          <span className="text-3xl font-bold">{counts.running}</span>
+        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
+          <span className="text-status-running text-xs md:text-sm font-medium uppercase tracking-wider">Running</span>
+          <span className="text-2xl md:text-3xl font-bold">{counts.running}</span>
         </div>
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-6 flex flex-col gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-status-completed text-sm font-medium uppercase tracking-wider">Completed</span>
-          <span className="text-3xl font-bold">{counts.completed}</span>
+        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
+          <span className="text-status-completed text-xs md:text-sm font-medium uppercase tracking-wider">Completed</span>
+          <span className="text-2xl md:text-3xl font-bold">{counts.completed}</span>
         </div>
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-6 flex flex-col gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-status-error text-sm font-medium uppercase tracking-wider">Exceptions</span>
-          <span className="text-3xl font-bold">{counts.error + counts.crashed + counts.zombie}</span>
+        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
+          <span className="text-status-error text-xs md:text-sm font-medium uppercase tracking-wider">Exceptions</span>
+          <span className="text-2xl md:text-3xl font-bold">{counts.error + counts.crashed + counts.zombie}</span>
         </div>
       </div>
 
-      <div className="flex gap-8 flex-1 min-h-0">
-        <div className="flex-[2] bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden">
-          <div className="px-6 py-5 border-b border-border-color font-semibold">Recent Tasks</div>
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 flex-1 min-h-0">
+        <div className="flex-1 lg:flex-[2] bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
+          <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold text-sm md:text-base">Recent Tasks</div>
           <div className="flex-1 overflow-auto">
-            <table className="w-full border-collapse text-left">
+            {/* Mobile card list */}
+            <div className="lg:hidden flex flex-col">
+              {filteredSessions.length === 0 ? (
+                <div className="text-center text-text-muted px-4 py-8">No tasks found.</div>
+              ) : null}
+              {filteredSessions.map(session => (
+                <div
+                  key={`m-${session.owner}-${session.repo}-${session.issueNumber}`}
+                  onClick={() => setSelectedSession(session)}
+                  className="flex items-center gap-3 px-4 py-3 border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium truncate">{session.owner}/{session.repo}</span>
+                      <span className="text-text-secondary text-sm">#{session.issueNumber}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.status)}`}>
+                        {session.status}
+                      </span>
+                      <span className="text-text-muted text-xs">{session.runtime}</span>
+                      {session.currentStep && (
+                        <span className="text-text-muted text-xs truncate">{session.currentStep}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                    {isFailedStatus(session.status) && (
+                      <button
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
+                          restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)
+                            ? 'bg-blue-500/20 text-status-running animate-spin'
+                            : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running'
+                        }`}
+                        title="重启此任务"
+                        onClick={(e) => restartSession(session, e)}
+                        disabled={restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)}
+                      >
+                        🔄
+                      </button>
+                    )}
+                    <button
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer bg-white/5 text-text-secondary hover:bg-white/20 hover:text-white"
+                      title="查看 Agent 完整日志"
+                      onClick={(e) => { e.stopPropagation(); setViewingLogSession(session); }}
+                    >
+                      📄
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Desktop table */}
+            <table className="hidden lg:table w-full border-collapse text-left">
               <thead>
                 <tr>
                   <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Repo</th>
@@ -203,8 +256,8 @@ function App() {
                   </tr>
                 ) : null}
                 {filteredSessions.map(session => (
-                   <tr 
-                     key={`${session.owner}-${session.repo}-${session.issueNumber}`} 
+                   <tr
+                     key={`${session.owner}-${session.repo}-${session.issueNumber}`}
                      onClick={() => setSelectedSession(session)}
                      className="transition-colors cursor-pointer hover:bg-white/5"
                    >
@@ -249,17 +302,17 @@ function App() {
           </div>
         </div>
 
-        <div className="flex-1 bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden">
-          <div className="px-6 py-5 border-b border-border-color font-semibold border-l-4 border-l-brand flex justify-between items-center">
+        <div className="max-h-[300px] lg:max-h-none lg:flex-1 bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden">
+          <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold border-l-4 border-l-brand flex justify-between items-center text-sm md:text-base">
              <span>System Logs</span>
              <button title="全屏显示" className="bg-transparent text-text-secondary cursor-pointer hover:text-white" onClick={() => setSysLogExpanded(true)}>⛶</button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 font-mono text-[13px] flex flex-col gap-1.5">
+          <div className="flex-1 overflow-y-auto p-3 md:p-4 font-mono text-xs md:text-[13px] flex flex-col gap-1.5">
             {logs.map((log, i) => (
               <div key={i} className="p-1.5 rounded break-all hover:bg-white/5">
-                 <span className="text-text-muted mr-2">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
-                 <span className={`font-semibold mr-2 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
-                 {log.tag && <span className="text-text-muted mr-2">({log.tag})</span>}
+                 <span className="text-text-muted mr-1.5 md:mr-2">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
+                 <span className={`font-semibold mr-1.5 md:mr-2 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
+                 {log.tag && <span className="text-text-muted mr-1.5 md:mr-2">({log.tag})</span>}
                  <span>{log.message}</span>
               </div>
             ))}
@@ -269,30 +322,30 @@ function App() {
       </div>
 
       {selectedSession && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-8 animate-[fadeIn_0.2s_ease]" 
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-8 animate-[fadeIn_0.2s_ease]"
           onClick={() => setSelectedSession(null)}
         >
-           <div 
-             className="bg-bg-secondary border border-border-color rounded-2xl w-full max-w-[800px] max-h-[90vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]" 
+           <div
+             className="bg-bg-secondary border border-border-color rounded-t-2xl md:rounded-2xl w-full max-w-[800px] max-h-[85vh] md:max-h-[90vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]"
              onClick={e => e.stopPropagation()}
            >
-              <div className="p-6 border-b border-border-color flex justify-between items-center">
-                 <h2 className="text-xl font-bold">{selectedSession.owner}/{selectedSession.repo} #{selectedSession.issueNumber}</h2>
-                 <button 
-                   className="bg-transparent border-none text-text-secondary cursor-pointer p-2 rounded-lg transition-colors hover:bg-white/10 hover:text-white" 
+              <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center">
+                 <h2 className="text-base md:text-xl font-bold truncate mr-2">{selectedSession.owner}/{selectedSession.repo} #{selectedSession.issueNumber}</h2>
+                 <button
+                   className="bg-transparent border-none text-text-secondary cursor-pointer p-2 rounded-lg transition-colors hover:bg-white/10 hover:text-white shrink-0"
                    onClick={() => setSelectedSession(null)}
                  >
                    ✕
                  </button>
               </div>
-              <div className="p-6 overflow-y-auto flex flex-col gap-6">
-                 <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
-                    <span className="text-text-secondary font-medium text-sm">Title</span>
-                    <span>{selectedSession.title}</span>
+              <div className="p-4 md:p-6 overflow-y-auto flex flex-col gap-4 md:gap-6">
+                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                    <span className="text-text-secondary font-medium text-xs md:text-sm">Title</span>
+                    <span className="text-sm md:text-base">{selectedSession.title}</span>
                  </div>
-                 <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
-                    <span className="text-text-secondary font-medium text-sm">Status</span>
+                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                    <span className="text-text-secondary font-medium text-xs md:text-sm">Status</span>
                     <div className="flex items-center gap-3">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.status)}`}>
                         {selectedSession.status}
@@ -312,32 +365,32 @@ function App() {
                       )}
                     </div>
                  </div>
-                 <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
-                    <span className="text-text-secondary font-medium text-sm">Runtime</span>
-                    <span>{selectedSession.runtime}</span>
+                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                    <span className="text-text-secondary font-medium text-xs md:text-sm">Runtime</span>
+                    <span className="text-sm md:text-base">{selectedSession.runtime}</span>
                  </div>
-                 <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
-                    <span className="text-text-secondary font-medium text-sm">Current Step</span>
-                    <span>{selectedSession.currentStep || 'N/A'}</span>
+                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                    <span className="text-text-secondary font-medium text-xs md:text-sm">Current Step</span>
+                    <span className="text-sm md:text-base">{selectedSession.currentStep || 'N/A'}</span>
                  </div>
-                 <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
-                    <span className="text-text-secondary font-medium text-sm">Last Message</span>
-                    <span>{selectedSession.lastMessage || 'N/A'}</span>
+                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                    <span className="text-text-secondary font-medium text-xs md:text-sm">Last Message</span>
+                    <span className="text-sm md:text-base">{selectedSession.lastMessage || 'N/A'}</span>
                  </div>
-                 
+
                  {selectedSession.errorMessage && (
-                    <div className="grid grid-cols-[140px_1fr] items-start gap-4">
-                       <span className="text-text-secondary font-medium text-sm">Error</span>
-                       <div className="bg-black border border-border-color rounded-lg p-4 font-mono text-[13px] whitespace-pre-wrap text-status-error">
+                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
+                       <span className="text-text-secondary font-medium text-xs md:text-sm">Error</span>
+                       <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-status-error overflow-x-auto">
                          {selectedSession.errorMessage}
                        </div>
                     </div>
                  )}
 
                  {selectedSession.crashLog && (
-                    <div className="grid grid-cols-[140px_1fr] items-start gap-4">
-                       <span className="text-text-secondary font-medium text-sm">Crash Log</span>
-                       <div className="bg-black border border-border-color rounded-lg p-4 font-mono text-[13px] whitespace-pre-wrap text-white">
+                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
+                       <span className="text-text-secondary font-medium text-xs md:text-sm">Crash Log</span>
+                       <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-white overflow-x-auto">
                          {selectedSession.crashLog}
                        </div>
                     </div>
@@ -348,16 +401,16 @@ function App() {
       )}
 
       {viewingLogSession && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewingLogSession(null)}>
-           <div className="bg-bg-secondary border border-border-color rounded-2xl w-full max-w-[1200px] h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
-                 <h2 className="text-lg font-bold flex items-center gap-3">
-                   📄 Agent Logs: {viewingLogSession.owner}/{viewingLogSession.repo} #{viewingLogSession.issueNumber}
-                   {viewingLogSession.status === 'running' && <span className="text-xs bg-status-running/20 text-status-running px-2 py-1 rounded">Live</span>}
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4" onClick={() => setViewingLogSession(null)}>
+           <div className="bg-bg-secondary border border-border-color rounded-t-2xl md:rounded-2xl w-full max-w-[1200px] h-[85vh] md:h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="p-3 md:p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
+                 <h2 className="text-sm md:text-lg font-bold flex items-center gap-2 md:gap-3 truncate mr-2">
+                   📄 <span className="hidden md:inline">Agent Logs:</span><span className="md:hidden">Logs:</span> {viewingLogSession.owner}/{viewingLogSession.repo} #{viewingLogSession.issueNumber}
+                   {viewingLogSession.status === 'running' && <span className="text-xs bg-status-running/20 text-status-running px-2 py-1 rounded shrink-0">Live</span>}
                  </h2>
-                 <button className="text-text-secondary hover:text-white bg-transparent text-xl cursor-pointer p-2" onClick={() => setViewingLogSession(null)}>✕</button>
+                 <button className="text-text-secondary hover:text-white bg-transparent text-xl cursor-pointer p-2 shrink-0" onClick={() => setViewingLogSession(null)}>✕</button>
               </div>
-              <div className="flex-1 overflow-auto p-4 bg-black font-mono text-[13px] text-gray-300">
+              <div className="flex-1 overflow-auto p-3 md:p-4 bg-black font-mono text-xs md:text-[13px] text-gray-300">
                 <pre className="whitespace-pre-wrap break-words m-0">{agentLogContent || 'Loading or missing logs...'}</pre>
               </div>
            </div>
@@ -365,18 +418,18 @@ function App() {
       )}
 
       {sysLogExpanded && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSysLogExpanded(false)}>
-           <div className="bg-bg-secondary border border-border-color rounded-2xl w-full max-w-[1200px] h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
-                 <h2 className="text-lg font-bold flex items-center gap-3">💻 Full System Logs (Live)</h2>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4" onClick={() => setSysLogExpanded(false)}>
+           <div className="bg-bg-secondary border border-border-color rounded-t-2xl md:rounded-2xl w-full max-w-[1200px] h-[85vh] md:h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="p-3 md:p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
+                 <h2 className="text-sm md:text-lg font-bold flex items-center gap-2 md:gap-3">💻 Full System Logs (Live)</h2>
                  <button className="text-text-secondary hover:text-white bg-transparent text-xl cursor-pointer p-2" onClick={() => setSysLogExpanded(false)}>✕</button>
               </div>
-              <div className="flex-1 overflow-auto p-4 bg-black font-mono text-[13px] text-gray-300 flex flex-col gap-1.5 flex-col-reverse">
+              <div className="flex-1 overflow-auto p-3 md:p-4 bg-black font-mono text-xs md:text-[13px] text-gray-300 flex flex-col gap-1.5 flex-col-reverse">
                 {[...logs].reverse().map((log, i) => (
                   <div key={i} className="p-1 break-all hover:bg-white/5 whitespace-pre-wrap">
-                     <span className="text-text-muted mr-2">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
-                     <span className={`font-semibold mr-2 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
-                     {log.tag && <span className="text-text-muted mr-2">({log.tag})</span>}
+                     <span className="text-text-muted mr-1.5 md:mr-2">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
+                     <span className={`font-semibold mr-1.5 md:mr-2 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
+                     {log.tag && <span className="text-text-muted mr-1.5 md:mr-2">({log.tag})</span>}
                      <span>{log.message}</span>
                   </div>
                 ))}
