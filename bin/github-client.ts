@@ -60,7 +60,9 @@ export class GitHubClient {
         this.stats.failed++;
         this.stats.totalMs += duration;
 
-        apiLogger.warn(
+        // 404/410 是预期的"资源不存在"响应，降级为 debug
+        const logLevel = (error.status === 404 || error.status === 410) ? "debug" : "warn";
+        apiLogger[logLevel](
           `${method} ${url} → ${error.status || "ERR"} (${duration}ms): ${error.message}`
         );
         throw error;
@@ -88,6 +90,9 @@ export class GitHubClient {
       });
       return success(data);
     } catch (e: any) {
+      if (e.status === 404 || e.status === 410) {
+        return failure(`获取 Issue #${number} 失败: Not Found`);
+      }
       return failure(`获取 Issue #${number} 失败: ${e.message}`);
     }
   }
@@ -334,12 +339,12 @@ export class GitHubClient {
 export function isNotFoundError(e: any): boolean {
   if (!e) return false;
 
-  // Octokit 典型的 status 属性
-  if (e.status === 404) return true;
+  // Octokit 典型的 status 属性（404 Not Found / 410 Gone）
+  if (e.status === 404 || e.status === 410) return true;
 
   // 备选方案：检查消息内容
   const message = e.message?.toLowerCase() || "";
-  return message.includes("404") || message.includes("not found");
+  return message.includes("404") || message.includes("not found") || message.includes("410") || message.includes("gone");
 }
 
 // 默认 token 缓存

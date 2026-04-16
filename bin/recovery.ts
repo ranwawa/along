@@ -198,6 +198,13 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
             const client = new GitHubClient(tokenRes.data, owner, repo);
             const issueRes = await client.getIssue(issueNumber);
             if (!issueRes.success) {
+              // Issue 已被删除（410 Gone）或不存在（404），标记 session 为 error 避免重复尝试
+              if (issueRes.error.includes("Not Found") || issueRes.error.includes("Gone")) {
+                report.skippedClosed++;
+                logger.info(`${key} 对应的 Issue 已不存在（已删除），标记为 error`);
+                session.markAsError("Issue 已被删除");
+                continue;
+              }
               report.errors.push({ issueKey: key, error: `获取 Issue 失败: ${issueRes.error}` });
               continue;
             }

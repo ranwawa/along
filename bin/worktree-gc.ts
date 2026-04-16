@@ -90,7 +90,7 @@ async function checkIssueSession(client: GitHubClient, session: GcSessionInfo): 
   const issueRes = await client.getIssue(session.number);
   if (!issueRes.success) {
     // getIssue 内部已处理 NotFound 映射到 failure，这里简单判断
-    if (issueRes.error.includes("Not Found")) return `Issue #${session.number} 不存在`;
+    if (issueRes.error.includes("Not Found") || issueRes.error.includes("Gone")) return `Issue #${session.number} 不存在`;
     logger.warn(`检查 Issue #${session.number} 失败: ${issueRes.error}`);
     return null;
   }
