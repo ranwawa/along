@@ -154,7 +154,7 @@ export async function cleanupIssue(
   const processCheck = await checkAndKillProcess(owner, repo, Number(issueNumber), options);
   if (!processCheck.canProceed) {
     if (processCheck.error) logger.error(processCheck.error);
-    return;
+    return failure(processCheck.error || "进程检查失败，无法继续清理");
   }
 
   // PR 合并时兜底移除 WIP 标签

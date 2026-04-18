@@ -11,7 +11,7 @@ Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding ag
 - **Runtime**: Bun (all scripts use `#!/usr/bin/env bun` shebangs and Bun APIs like `$`, `Bun.spawn`, `Bun.write`)
 - **Language**: TypeScript (ESM, `"type": "module"`)
 - **No build step**: Scripts are executed directly via Bun
-- **No test framework configured**: `package.json` references jest but no test files exist
+- **Test framework**: Vitest (`vitest run`)
 
 ## CLI Entry Point
 
@@ -55,7 +55,7 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Key Abstractions
 
-- **`Result<T>`** (`common.ts`): Discriminated union `{success: true, data: T} | {success: false, error: string}` used throughout for error handling. Use `success()` / `failure()` constructors.
+- **`Result<T>`** (`result.ts`, re-exported from `common.ts`): Discriminated union `{success: true, data: T} | {success: false, error: string}` used throughout for error handling. Use `success()` / `failure()` constructors.
 - **`config`** (`config.ts`): Singleton with path constants. Base data directory is `~/.along/`. Per-issue artifacts live under `~/.along/{owner}/{repo}/{issueNumber}/`. Source resources live under the repo's own directory.
 - **`db`** (`db.ts`): SQLite database module (`~/.along/along.db`) providing ACID transactions for session state. Key functions: `readSession()`, `upsertSession()`, `findAllSessions()`, `findSessionByPr()`, `findSessionByBranch()`.
 - **`SessionManager`** (`session-manager.ts`): High-level session lifecycle manager (running → completed/error/crashed). Delegates to `db.ts` for persistence. Constructor: `(owner, repo, issueNumber)`.

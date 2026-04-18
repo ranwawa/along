@@ -366,6 +366,63 @@ export function findSessionByBranch(
 }
 
 /**
+ * 在 SQLite 事务中执行 read-modify-write 操作
+ * 防止并发 webhook handler 导致的竞态条件
+ */
+export function transactSession(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  modifier: (current: SessionStatus | null) => Partial<SessionStatus>,
+): Result<void> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
+
+  try {
+    const txn = db.transaction(() => {
+      const row = db.prepare(
+        "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?"
+      ).get(owner, repo, issueNumber) as any;
+
+      const current = row ? rowToSessionStatus(row) : null;
+      const updates = modifier(current);
+
+      // 委托给 upsertSession 的内部逻辑
+      if (!row) {
+        const columns = statusToColumns(updates);
+        columns.owner = columns.owner || owner;
+        columns.repo = columns.repo || repo;
+        columns.issue_number = issueNumber;
+        if (!columns.start_time) columns.start_time = new Date().toISOString();
+        if (!columns.status) columns.status = "running";
+
+        const keys = Object.keys(columns);
+        const placeholders = keys.map(() => "?").join(", ");
+        const sql = `INSERT INTO sessions (${keys.join(", ")}) VALUES (${placeholders})`;
+        db.prepare(sql).run(...keys.map(k => columns[k]));
+      } else {
+        const columns = statusToColumns(updates);
+        delete columns.owner;
+        delete columns.repo;
+        delete columns.issue_number;
+
+        if (Object.keys(columns).length === 0) return;
+
+        const setClauses = Object.keys(columns).map(k => `${k} = ?`).join(", ");
+        const sql = `UPDATE sessions SET ${setClauses} WHERE owner = ? AND repo = ? AND issue_number = ?`;
+        db.prepare(sql).run(...Object.values(columns), owner, repo, issueNumber);
+      }
+    });
+
+    txn();
+    return success(undefined);
+  } catch (e: any) {
+    return failure(`事务执行失败: ${e.message}`);
+  }
+}
+
+/**
  * 彻底删除指定 session 的记录
  */
 export function deleteSession(owner: string, repo: string, issueNumber: number): Result<void> {

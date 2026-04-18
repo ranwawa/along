@@ -28,6 +28,14 @@ import { readGithubToken, get_gh_client } from "./github-client";
 import { readSession } from "./db";
 import { $ } from "bun";
 
+/**
+ * 对字符串进行 shell 转义，防止注入
+ * 使用单引号包裹，并转义内部的单引号
+ */
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
 /** 是否启用 Dashboard 模式（启用时 agent 输出写入日志文件而非 stdout） */
 let _dashboardMode = false;
 export function setDashboardMode(enabled: boolean): void {
@@ -174,11 +182,11 @@ export async function execTmux(
   const envExports: string[] = [];
   const agentRole = getAgentRole();
   if (agentRole) {
-    envExports.push(`export ALONG_AGENT_ROLE='${agentRole}'`);
+    envExports.push(`export ALONG_AGENT_ROLE=${shellEscape(agentRole)}`);
   }
   const tokenRes = await readGithubToken();
   if (tokenRes.success) {
-    envExports.push(`export GH_TOKEN='${tokenRes.data}'`);
+    envExports.push(`export GH_TOKEN=${shellEscape(tokenRes.data)}`);
   }
 
   // 日志文件路径
@@ -193,38 +201,54 @@ export async function execTmux(
     .replace("{workflow}", options.workflow)
     .replace("{num}", num);
 
+  // 对路径和参数进行 shell 转义
+  const esc = {
+    logFile: shellEscape(logFile),
+    worktreePath: shellEscape(worktreePath),
+    owner: shellEscape(owner),
+    repo: shellEscape(repo),
+    num: shellEscape(num),
+  };
+
   // Agent 完成后导出会话数据
-  const exportBinPath = path.join(config.BIN_DIR, "agent-session-export.ts");
+  const exportBinPath = shellEscape(path.join(config.BIN_DIR, "agent-session-export.ts"));
+  const sessionPathsPath = shellEscape(path.join(config.BIN_DIR, "session-paths.ts"));
   const exportSessionScript = `
+ALONG_EXPORT_BIN=${exportBinPath} \
+ALONG_PATHS_BIN=${sessionPathsPath} \
+ALONG_OWNER=${esc.owner} \
+ALONG_REPO=${esc.repo} \
+ALONG_NUM=${num} \
+ALONG_WORKTREE=${esc.worktreePath} \
 bun -e "
-  const { exportAgentSession } = require('${exportBinPath}');
-  const { SessionPathManager } = require('${path.join(config.BIN_DIR, "session-paths.ts")}');
-  const paths = new SessionPathManager('${owner}', '${repo}', ${num});
-  exportAgentSession(paths, '${worktreePath}').catch(() => {});
+  const { exportAgentSession } = require(process.env.ALONG_EXPORT_BIN);
+  const { SessionPathManager } = require(process.env.ALONG_PATHS_BIN);
+  const paths = new SessionPathManager(process.env.ALONG_OWNER, process.env.ALONG_REPO, Number(process.env.ALONG_NUM));
+  exportAgentSession(paths, process.env.ALONG_WORKTREE).catch(() => {});
 " 2>/dev/null || true
   `.trim();
 
   // Agent 完成后更新数据库
-  const finalizeBinPath = path.join(config.BIN_DIR, "session-finalize.ts");
-  const updateStatusScript = `bun ${finalizeBinPath} '${owner}' '${repo}' ${issueNumber} \${EXIT_CODE} '${logFile}' 2>/dev/null || true`;
+  const finalizeBinPath = shellEscape(path.join(config.BIN_DIR, "session-finalize.ts"));
+  const updateStatusScript = `bun ${finalizeBinPath} ${esc.owner} ${esc.repo} ${issueNumber} \${EXIT_CODE} ${esc.logFile} 2>/dev/null || true`;
 
   // 启动时将 shell PID 写入数据库
-  const pidBinPath = path.join(config.BIN_DIR, "session-update-pid.ts");
-  const writePidScript = `bun ${pidBinPath} '${owner}' '${repo}' ${issueNumber} $$ 2>/dev/null || true`;
+  const pidBinPath = shellEscape(path.join(config.BIN_DIR, "session-update-pid.ts"));
+  const writePidScript = `bun ${pidBinPath} ${esc.owner} ${esc.repo} ${issueNumber} $$ 2>/dev/null || true`;
 
   const scriptContent = `#!/bin/bash
 ${envExports.join("\n")}
-echo "Starting at $(date)" > ${logFile}
+echo "Starting at $(date)" > ${esc.logFile}
 ${writePidScript}
-cd ${worktreePath} && ${cmd} 2>&1 | tee -a ${logFile}
+cd ${esc.worktreePath} && ${cmd} 2>&1 | tee -a ${esc.logFile}
 EXIT_CODE=\${PIPESTATUS[0]}
 ${exportSessionScript}
 ${updateStatusScript}
 if [ \${EXIT_CODE} -ne 0 ]; then
   echo ""
   echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
-  echo "日志已保存到: ${logFile}"
-  osascript -e "display notification \\"Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${num}\\"" 2>/dev/null || true
+  echo "日志已保存到: ${esc.logFile}"
+  osascript -e "display notification \\"Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${esc.num}\\"" 2>/dev/null || true
   printf "\\a" 2>/dev/null || true
   echo "按 Enter 键关闭当前窗口..."
   read

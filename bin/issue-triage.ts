@@ -79,7 +79,7 @@ export async function triageIssue(
   issueLabels: string[],
 ): Promise<Result<TriageResult>> {
   const claudeEnv = readClaudeSettings();
-  const apiKey = process.env.DEEPSEEK_API_KEY || claudeEnv.DEEPSEEK_API_KEY || "sk-099e5ef9e54d4a1f8760dd9e541cf5fd";
+  const apiKey = process.env.DEEPSEEK_API_KEY || claudeEnv.DEEPSEEK_API_KEY;
 
   if (!apiKey) {
     logger.warn("未设置 DEEPSEEK_API_KEY，跳过分类，默认为 bug");

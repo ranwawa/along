@@ -24,10 +24,56 @@ import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { SessionPathManager } from "./session-paths";
-import path from "path";
-import fs from "fs";
 
 const logger = consola.withTag("webhook-server");
+
+// ── Agent 并发限制（防止同时启动过多 agent 耗尽资源） ──
+const MAX_CONCURRENT_AGENTS = parseInt(process.env.ALONG_MAX_CONCURRENT_AGENTS || "3", 10);
+let runningAgents = 0;
+const agentQueue: Array<{ fn: () => Promise<any>; label: string }> = [];
+
+function enqueueAgent(label: string, fn: () => Promise<any>) {
+  if (runningAgents < MAX_CONCURRENT_AGENTS) {
+    runAgent(label, fn);
+  } else {
+    logger.info(`[并发限制] ${label} 已排队（当前 ${runningAgents}/${MAX_CONCURRENT_AGENTS} 运行中，队列 ${agentQueue.length} 个）`);
+    agentQueue.push({ fn, label });
+  }
+}
+
+function runAgent(label: string, fn: () => Promise<any>) {
+  runningAgents++;
+  logger.info(`[并发限制] ${label} 开始执行（${runningAgents}/${MAX_CONCURRENT_AGENTS}）`);
+  fn()
+    .catch((err) => {
+      logger.error(`[并发限制] ${label} 执行异常: ${err.message}`);
+    })
+    .finally(() => {
+      runningAgents--;
+      logger.info(`[并发限制] ${label} 执行完毕（${runningAgents}/${MAX_CONCURRENT_AGENTS}，队列 ${agentQueue.length} 个）`);
+      // 从队列中取出下一个任务
+      const next = agentQueue.shift();
+      if (next) {
+        runAgent(next.label, next.fn);
+      }
+    });
+}
+
+// ── Webhook 事件去重（防止 GitHub 超时重发） ──
+const DEDUP_MAX_SIZE = 1000;
+const processedDeliveries = new Set<string>();
+
+function isDuplicateDelivery(deliveryId: string): boolean {
+  if (!deliveryId || deliveryId === "-") return false;
+  if (processedDeliveries.has(deliveryId)) return true;
+  processedDeliveries.add(deliveryId);
+  // 超过上限时清理最早的条目
+  if (processedDeliveries.size > DEDUP_MAX_SIZE) {
+    const first = processedDeliveries.values().next().value;
+    if (first) processedDeliveries.delete(first);
+  }
+  return false;
+}
 
 /**
  * 验证 GitHub webhook HMAC-SHA256 签名
@@ -126,7 +172,7 @@ async function handleEvent(
         );
 
         logger.info(`Issue #${issueNumber} 已创建，开始分类...`);
-        fireAndForget(async () => {
+        enqueueAgent(`Issue #${issueNumber} 分类+处理`, async () => {
           const triageRes = await triageIssue(issueTitle, issueBody, issueLabels);
           if (!triageRes.success) {
             logger.error(`Issue #${issueNumber} 分类失败，回退到 phase1: ${triageRes.error}`);
@@ -160,7 +206,7 @@ async function handleEvent(
         }
 
         logger.info(`Issue #${issueNumber} 已审批，启动 Phase 2...`);
-        fireAndForget(async () => {
+        enqueueAgent(`Issue #${issueNumber} Phase 2`, async () => {
           const res = await launchIssueAgent(owner, repo, issueNumber, "phase2", { taskData: { title: `Issue #${issueNumber}` } });
           if (!res.success) logger.error(`启动 Phase 2 失败: ${res.error}`);
         });
@@ -229,7 +275,7 @@ async function handleEvent(
 
       if (action === "submitted") {
         logger.info(`PR #${prNumber} 收到 review，启动评论处理...`);
-        fireAndForget(async () => {
+        enqueueAgent(`PR #${prNumber} review 处理`, async () => {
           const res = await resolveReview(owner, repo, prNumber);
           if (!res.success) logger.error(`评论处理失败: ${res.error}`);
         });
@@ -253,7 +299,7 @@ async function handleEvent(
       }
       const prNumber = pullRequests[0].number;
       logger.info(`PR #${prNumber} CI 失败，启动修复...`);
-      fireAndForget(async () => {
+      enqueueAgent(`PR #${prNumber} CI 修复`, async () => {
         const res = await resolveCi(owner, repo, prNumber);
         if (!res.success) logger.error(`CI 修复失败: ${res.error}`);
       });
@@ -331,6 +377,15 @@ async function main() {
         const githubEvent = req.headers.get("X-GitHub-Event") || "";
         const deliveryId = req.headers.get("X-GitHub-Delivery") || "-";
 
+        // 事件去重：防止 GitHub 超时重发导致重复处理
+        if (isDuplicateDelivery(deliveryId)) {
+          logger.debug(`[${deliveryId}] 重复事件，跳过`);
+          return new Response(JSON.stringify({ message: "重复事件，已忽略" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
         // 持久化记录所有收到的事件（异步）
         logWebhookEvent(deliveryId, githubEvent, payload);
 
@@ -402,7 +457,7 @@ async function main() {
             });
           }
           logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
-          fireAndForget(async () => {
+          enqueueAgent(`Issue #${issueNumber} 手动重启`, async () => {
             const res = await launchIssueAgent(owner, repo, issueNumber, "phase1", { taskData: { title: `Issue #${issueNumber}` } });
             if (!res.success) logger.error(`手动重启 Issue #${issueNumber} 失败: ${res.error}`);
           });

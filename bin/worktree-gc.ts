@@ -80,7 +80,14 @@ async function checkIssueSession(client: GitHubClient, session: GcSessionInfo): 
   // 优先通过分支名查找关联 PR
   if (session.branchName) {
     try {
-      const prs = []; // listPullRequestsByHead 已被删除，暂时设为空
+      const prsRes = await client.listPullRequestsByHead(session.branchName);
+      if (prsRes.success && prsRes.data.length > 0) {
+        const pr = prsRes.data[0];
+        if (pr.merged_at) return `PR #${pr.number} 已合并`;
+        if (pr.state === "closed") return `PR #${pr.number} 已关闭`;
+        // PR 仍 open，不清理
+        return null;
+      }
     } catch (e: any) {
       logger.warn(`查找 Issue #${session.number} 关联 PR 失败: ${e.message}`);
     }

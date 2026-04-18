@@ -144,10 +144,12 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
         if (status.cleanupTime) continue;
 
         // 检测孤立会话：status=running 但进程已死
+        let thisSessionOrphaned = false;
         if (status.status === "running") {
           const pidAlive = status.pid ? await check_process_running(status.pid) : false;
           if (pidAlive) continue; // 进程仍在运行，跳过
 
+          thisSessionOrphaned = true;
           report.orphanedFound++;
           logger.warn(`发现孤立会话: ${key} (PID: ${status.pid || "无"}, 进程已死)`);
 
@@ -158,7 +160,7 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
         }
 
         // 崩溃会话恢复
-        if (status.status === "crashed" || report.orphanedFound > 0) {
+        if (status.status === "crashed" || thisSessionOrphaned) {
           report.crashedFound++;
 
           // 重新读取状态（可能刚被标记为 crashed）
@@ -325,7 +327,7 @@ export async function recoverMissedIssues(
       recoveringIssues.add(key);
       fireAndForget(async () => {
         try {
-          const res = await launchIssueAgent(owner, repo, issue.number, "phase1", { title: issue.title });
+          const res = await launchIssueAgent(owner, repo, issue.number, "phase1", { taskData: { title: issue.title } });
           if (!res.success) logger.error(`恢复 Issue #${issue.number} 失败: ${res.error}`);
         } finally {
           recoveringIssues.delete(key);

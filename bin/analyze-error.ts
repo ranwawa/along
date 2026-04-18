@@ -28,10 +28,10 @@ const SYSTEM_PROMPT = `你是一个资深的研发工程师。你的任务是分
 
 export async function analyzeErrorLog(logContent: string): Promise<Result<string>> {
   const claudeEnv = readClaudeSettings();
-  const apiKey = process.env.DEEPSEEK_API_KEY || claudeEnv.DEEPSEEK_API_KEY || "sk-099e5ef9e54d4a1f8760dd9e541cf5fd";
+  const apiKey = process.env.DEEPSEEK_API_KEY || claudeEnv.DEEPSEEK_API_KEY;
 
   if (!apiKey) {
-    return failure("无法进行 AI 分析：未找到 DEEPSEEK_API_KEY。");
+    return failure("无法进行 AI 分析：未设置 DEEPSEEK_API_KEY 环境变量。请在环境变量或 ~/.claude/settings.json 的 env 中配置。");
   }
 
   const modelName = process.env.ALONG_TRIAGE_MODEL || "deepseek-chat";
