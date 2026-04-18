@@ -7,6 +7,7 @@ import { Command } from "commander";
 import { $ } from "bun";
 import { consola } from "consola";
 import { git, iso_timestamp } from "./common";
+import { getDefaultBranch } from "./worktree-init";
 
 const logger = consola.withTag("commit-push");
 import { runCommand } from "./exec";
@@ -100,6 +101,50 @@ async function main() {
     if (!status) {
        logger.info("未检测到任何待提交的变更");
     } else {
+      // ── 质量门禁：提交前自动运行目标项目的 typecheck 和 test ──
+      const pkgPath = path.join(process.cwd(), "package.json");
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+          const scripts = pkg.scripts || {};
+
+          // TypeScript 类型检查
+          const tscScriptName = scripts["typecheck"] ? "typecheck" : scripts["type-check"] ? "type-check" : scripts["tsc"] ? "tsc" : null;
+          if (tscScriptName) {
+            logger.info(`运行类型检查 (npm run ${tscScriptName})...`);
+            const tscRes = runCommand(`npm run ${tscScriptName}`);
+            if (!tscRes.success) {
+              logger.error(`类型检查未通过，请修复后重试:\n${tscRes.error}`);
+              process.exit(1);
+            }
+            logger.success("类型检查通过");
+          } else if (fs.existsSync(path.join(process.cwd(), "tsconfig.json"))) {
+            logger.info("检测到 tsconfig.json，运行 tsc --noEmit...");
+            const tscRes = runCommand("npx tsc --noEmit");
+            if (!tscRes.success) {
+              logger.error(`类型检查未通过，请修复后重试:\n${tscRes.error}`);
+              process.exit(1);
+            }
+            logger.success("类型检查通过");
+          }
+
+          // 测试
+          const testScript = scripts["test"];
+          if (testScript && !testScript.includes("no test specified")) {
+            logger.info("运行测试...");
+            const testRes = runCommand("npm test");
+            if (!testRes.success) {
+              logger.error(`测试未通过，请修复后重试:\n${testRes.error}`);
+              process.exit(1);
+            }
+            logger.success("测试通过");
+          }
+        } catch (e: any) {
+          logger.warn(`质量门禁检查出错（不阻断提交）: ${e.message}`);
+        }
+      }
+      // ── 质量门禁结束 ──
+
       for (const commit of commits) {
         if (!commit.files || commit.files.length === 0) continue;
 
@@ -125,20 +170,26 @@ async function main() {
 
     // 2. 检查是否还有未提交的变更
     const remainingStatus = runCommand("git status --porcelain");
-    if (remainingStatus) {
+    if (remainingStatus.success && remainingStatus.data?.trim()) {
         logger.error(
-            `检测到尚有未提交的变更 (Uncommitted changes detected):\n${remainingStatus}\n\n` +
+            `检测到尚有未提交的变更 (Uncommitted changes detected):\n${remainingStatus.data}\n\n` +
             `[🚨 警告] 如果这些是你在处理任务时生成的临时脚本、测试文件或备注日志（如 .sh, .py, .txt 等），请使用 rm 命令将它们删除！绝对不要将它们提交到代码库中。\n` +
             `如果这些是业务需要的常规代码变更，请将其加入提交列表后再次执行。`
         );
         process.exit(1);
     }
 
-    // 3. rebase 最新 origin/master，避免 PR 时代码冲突
-    logger.info("正在获取并同步 origin/master...");
-    await git.fetch("origin", "master");
+    // 3. rebase 最新默认分支，避免 PR 时代码冲突
+    const defaultBranchRes = await getDefaultBranch();
+    if (!defaultBranchRes.success) {
+      logger.error(`无法获取默认分支: ${defaultBranchRes.error}`);
+      process.exit(1);
+    }
+    const defaultBranch = defaultBranchRes.data;
+    logger.info(`正在获取并同步 origin/${defaultBranch}...`);
+    await git.fetch("origin", defaultBranch);
     try {
-      await git.rebase(["origin/master"]);
+      await git.rebase([`origin/${defaultBranch}`]);
     } catch (e: any) {
        logger.error(`Rebase 失败，请手动解决冲突:\n${e.message}`);
        process.exit(1);

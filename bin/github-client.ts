@@ -101,9 +101,10 @@ export class GitHubClient {
 
   async getIssueComments(number: string | number): Promise<Result<RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"]>> {
     try {
-      const { data } = await this.octokit.issues.listComments({
+      const data = await this.octokit.paginate(this.octokit.issues.listComments, {
         ...this.repoParams,
         issue_number: Number(number),
+        per_page: 100,
       });
       return success(data);
     } catch (e: any) {
@@ -190,7 +191,7 @@ export class GitHubClient {
 
   async getReviewComments(prNumber: number): Promise<Result<GitHubReviewComment[]>> {
     try {
-      const { data } = await this.octokit.pulls.listReviewComments({
+      const data = await this.octokit.paginate(this.octokit.pulls.listReviewComments, {
         ...this.repoParams,
         pull_number: prNumber,
         per_page: 100,
@@ -262,7 +263,7 @@ export class GitHubClient {
    */
   async listReviews(prNumber: number): Promise<Result<RestEndpointMethodTypes["pulls"]["listReviews"]["response"]["data"]>> {
     try {
-      const { data } = await this.octokit.pulls.listReviews({
+      const data = await this.octokit.paginate(this.octokit.pulls.listReviews, {
         ...this.repoParams,
         pull_number: prNumber,
         per_page: 100,
@@ -278,7 +279,7 @@ export class GitHubClient {
    */
   async getPullRequestFiles(prNumber: number): Promise<Result<RestEndpointMethodTypes["pulls"]["listFiles"]["response"]["data"]>> {
     try {
-      const { data } = await this.octokit.pulls.listFiles({
+      const data = await this.octokit.paginate(this.octokit.pulls.listFiles, {
         ...this.repoParams,
         pull_number: prNumber,
         per_page: 100,
@@ -302,6 +303,26 @@ export class GitHubClient {
       return success(data as unknown as string);
     } catch (e: any) {
       return failure(`获取 PR #${prNumber} Diff 失败: ${e.message}`);
+    }
+  }
+
+  /**
+   * 按 head 分支名列出关联的 Pull Request
+   * head 格式为 "owner:branch" 或 "branch"（同仓库时自动补全 owner）
+   */
+  async listPullRequestsByHead(head: string): Promise<Result<RestEndpointMethodTypes["pulls"]["list"]["response"]["data"]>> {
+    try {
+      // 如果 head 不含 ":"，自动补全为 "owner:branch"
+      const fullHead = head.includes(":") ? head : `${this.owner}:${head}`;
+      const { data } = await this.octokit.pulls.list({
+        ...this.repoParams,
+        head: fullHead,
+        state: "all",
+        per_page: 100,
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`按分支 ${head} 查找 PR 失败: ${e.message}`);
     }
   }
 
@@ -350,7 +371,8 @@ export function isNotFoundError(e: any): boolean {
 // 默认 token 缓存
 let cachedDefaultToken: string | null = null;
 let cachedRepoInfo: { owner: string; repo: string } | null = null;
-let cachedClient: GitHubClient | null = null;
+// 按 owner/repo 键缓存客户端，避免长运行 webhook server 中多仓库串台
+const clientCache = new Map<string, GitHubClient>();
 
 /**
  * 获取 GitHub 认证 Token
@@ -423,22 +445,29 @@ export async function readRepoInfo(): Promise<Result<{ owner: string; repo: stri
 
 /**
  * 获取 GitHub 客户端实例
+ *
+ * 支持两种模式：
+ * 1. 传入 owner/repo（webhook server 场景）：按 owner/repo 缓存，避免多仓库串台
+ * 2. 不传参数（CLI 场景）：从 git remote 自动检测
  */
-export async function get_gh_client(): Promise<Result<GitHubClient>> {
-  if (cachedClient) return success(cachedClient as GitHubClient);
-
+export async function get_gh_client(owner?: string, repo?: string): Promise<Result<GitHubClient>> {
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) return failure(tokenRes.error);
 
-  const repoRes = await readRepoInfo();
-  if (!repoRes.success) return failure(repoRes.error);
+  if (!owner || !repo) {
+    const repoRes = await readRepoInfo();
+    if (!repoRes.success) return failure(repoRes.error);
+    owner = repoRes.data.owner;
+    repo = repoRes.data.repo;
+  }
 
-  cachedClient = new GitHubClient(
-    tokenRes.data,
-    repoRes.data.owner,
-    repoRes.data.repo
-  );
-  return success(cachedClient);
+  const cacheKey = `${owner}/${repo}`;
+  const cached = clientCache.get(cacheKey);
+  if (cached) return success(cached);
+
+  const client = new GitHubClient(tokenRes.data, owner, repo);
+  clientCache.set(cacheKey, client);
+  return success(client);
 }
 
 /**

@@ -2,7 +2,7 @@ import fs from "fs";
 import { iso_timestamp, success, failure } from "./common";
 import type { Result } from "./common";
 import { SessionPathManager } from "./session-paths";
-import { readSession, upsertSession } from "./db";
+import { readSession, upsertSession, transactSession } from "./db";
 
 export interface StepRecord {
   step: string;
@@ -166,29 +166,25 @@ export class SessionManager {
 
   /**
    * 更新当前步骤（同时记录步骤历史）
+   * 使用事务防止并发竞态
    */
   updateStep(step: string, message?: string): Result<void> {
-    const res = this.readStatus();
-    if (!res.success) return res;
-    const current = res.data;
     const now = iso_timestamp();
-
-    // 关闭上一个步骤的 endTime
-    const history = current?.stepHistory || [];
-    if (history.length > 0) {
-      const last = history[history.length - 1];
-      if (!last.endTime) {
-        last.endTime = now;
+    const writeRes = transactSession(this.owner, this.repo, this.issueNumber, (current) => {
+      const history = current?.stepHistory ? [...current.stepHistory] : [];
+      if (history.length > 0) {
+        const last = history[history.length - 1];
+        if (!last.endTime) {
+          history[history.length - 1] = { ...last, endTime: now };
+        }
       }
-    }
-
-    // 添加新步骤
-    history.push({ step, message, startTime: now });
-
-    const writeRes = this.writeStatus({
-      currentStep: step,
-      lastMessage: message,
-      stepHistory: history,
+      history.push({ step, message, startTime: now });
+      return {
+        currentStep: step,
+        lastMessage: message,
+        lastUpdate: now,
+        stepHistory: history,
+      };
     });
     if (message) {
       this.log(`Step: ${step} - ${message}`, "info");
@@ -208,25 +204,25 @@ export class SessionManager {
 
   /**
    * 追加 commit SHA 到 commitShas 列表
+   * 使用事务防止并发竞态
    */
   addCommitSha(sha: string): Result<void> {
-    const res = this.readStatus();
-    if (!res.success) return res;
-    const current = res.data;
-    const shas = current?.commitShas || [];
-    shas.push(sha);
-    return this.writeStatus({ commitShas: shas });
+    return transactSession(this.owner, this.repo, this.issueNumber, (current) => {
+      const shas = current?.commitShas ? [...current.commitShas] : [];
+      shas.push(sha);
+      return { commitShas: shas, lastUpdate: iso_timestamp() };
+    });
   }
 
   /**
    * 递增 retryCount
+   * 使用事务防止并发竞态
    */
   incrementRetry(): Result<void> {
-    const res = this.readStatus();
-    if (!res.success) return res;
-    const current = res.data;
-    const count = (current?.retryCount || 0) + 1;
-    return this.writeStatus({ retryCount: count });
+    return transactSession(this.owner, this.repo, this.issueNumber, (current) => {
+      const count = (current?.retryCount || 0) + 1;
+      return { retryCount: count, lastUpdate: iso_timestamp() };
+    });
   }
 
   /**
