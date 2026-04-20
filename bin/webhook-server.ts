@@ -23,7 +23,7 @@ import { config } from "./config";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
-import { cleanupIssue } from "./cleanup-utils";
+import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
 import { isActiveSessionStatus } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
@@ -497,6 +497,37 @@ async function main() {
             });
           }
           return new Response(JSON.stringify({ message: `已清理 Issue #${issueNumber} 的 worktree` }), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        } catch (e: any) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+      }
+
+      // ── API: /api/delete ──
+      if (url.pathname === "/api/delete" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const { owner, repo, issueNumber } = body;
+          if (!owner || !repo || !issueNumber) {
+            return new Response(JSON.stringify({ error: "Missing owner, repo, or issueNumber" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            });
+          }
+          logger.info(`彻底删除 Issue #${issueNumber} 的本地资产 (${owner}/${repo})...`);
+          const res = await cleanupIssueAssets(String(issueNumber), { force: true, reason: "dashboard-delete", silent: true }, owner, repo);
+          if (!res.success) {
+            return new Response(JSON.stringify({ error: res.error }), {
+              status: 500,
+              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            });
+          }
+          return new Response(JSON.stringify({ message: `已彻底删除 Issue #${issueNumber} 的本地资产` }), {
             status: 200,
             headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });

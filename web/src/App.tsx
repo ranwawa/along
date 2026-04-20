@@ -29,6 +29,7 @@ function App() {
   const [selectedLogsLoading, setSelectedLogsLoading] = useState(false);
   const [restartingIssues, setRestartingIssues] = useState<Set<string>>(new Set());
   const [cleaningIssues, setCleaningIssues] = useState<Set<string>>(new Set());
+  const [deletingIssues, setDeletingIssues] = useState<Set<string>>(new Set());
   const [repoFilter, setRepoFilter] = useState<string>('');
 
   // Poll sessions
@@ -110,7 +111,7 @@ function App() {
         } else {
           setSelectedDiagnostic(null);
         }
-      } catch (e) {
+      } catch {
         if (!active) return;
         setSelectedSystemLogs([]);
         setSelectedAgentLogs([]);
@@ -148,9 +149,7 @@ function App() {
       total: sessions.length,
     };
     for (const s of sessions) {
-      if (s.status in defaultCounts) {
-        (defaultCounts as any)[s.status]++;
-      }
+      defaultCounts[s.status] += 1;
     }
     return defaultCounts;
   }, [sessions]);
@@ -164,6 +163,8 @@ function App() {
   }, [sessions, currentFilter, repoFilter]);
 
   const isFailedStatus = (status: string) => ['error', 'crashed', 'zombie'].includes(status);
+  const getIssueKey = (session: DashboardSession) => `${session.owner}/${session.repo}#${session.issueNumber}`;
+  const getFilterCount = (filter: typeof statusFilters[number]) => filter === 'all' ? counts.total : counts[filter];
 
   const getStatusLabel = (status: string) => {
     switch (status) {
@@ -184,7 +185,7 @@ function App() {
 
   const restartSession = async (session: DashboardSession, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const key = `${session.owner}/${session.repo}#${session.issueNumber}`;
+    const key = getIssueKey(session);
     if (restartingIssues.has(key)) return;
 
     setRestartingIssues(prev => new Set(prev).add(key));
@@ -214,7 +215,7 @@ function App() {
 
   const cleanupWorktree = async (session: DashboardSession, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const key = `${session.owner}/${session.repo}#${session.issueNumber}`;
+    const key = getIssueKey(session);
     if (cleaningIssues.has(key)) return;
 
     setCleaningIssues(prev => new Set(prev).add(key));
@@ -239,6 +240,47 @@ function App() {
       console.error('Cleanup request failed:', e);
     } finally {
       setCleaningIssues(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const deleteSessionAssets = async (session: DashboardSession, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const key = getIssueKey(session);
+    if (deletingIssues.has(key)) return;
+
+    const confirmed = window.confirm(
+      `删除 ${key} 的所有本地数据？\n\n这会移除 SQLite 记录、日志、issue 目录、worktree、本地分支，以及其他和这个 issue 相关的本机数据。`
+    );
+    if (!confirmed) return;
+
+    setDeletingIssues(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch('/api/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner: session.owner, repo: session.repo, issueNumber: session.issueNumber }),
+      });
+      if (res.ok) {
+        setSessions(prev => prev.filter(s =>
+          !(s.owner === session.owner && s.repo === session.repo && s.issueNumber === session.issueNumber)
+        ));
+        setSelectedSession(current =>
+          current && current.owner === session.owner && current.repo === session.repo && current.issueNumber === session.issueNumber
+            ? null
+            : current
+        );
+      } else {
+        const data = await res.json();
+        console.error('Delete failed:', data.error);
+      }
+    } catch (err) {
+      console.error('Delete request failed:', err);
+    } finally {
+      setDeletingIssues(prev => {
         const next = new Set(prev);
         next.delete(key);
         return next;
@@ -324,7 +366,7 @@ function App() {
               onClick={() => setCurrentFilter(filter)}
             >
               {filter === 'all' ? 'All' : getStatusLabel(filter)}
-              {filter !== 'all' && <span className="opacity-60 ml-1.5">{(counts as any)[filter]}</span>}
+              {filter !== 'all' && <span className="opacity-60 ml-1.5">{getFilterCount(filter)}</span>}
             </button>
           ))}
         </div>
@@ -386,17 +428,29 @@ function App() {
                     {isFailedStatus(session.status) && (
                       <button
                         className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
-                          restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)
+                          restartingIssues.has(getIssueKey(session))
                             ? 'bg-blue-500/20 text-status-running animate-spin'
                             : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running'
                         }`}
                         title="重启此任务"
                         onClick={(e) => restartSession(session, e)}
-                        disabled={restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)}
+                        disabled={restartingIssues.has(getIssueKey(session))}
                       >
                         🔄
                       </button>
                     )}
+                    <button
+                      className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
+                        deletingIssues.has(getIssueKey(session))
+                          ? 'bg-red-500/20 text-red-400 cursor-wait'
+                          : 'bg-white/5 text-text-secondary hover:bg-red-500/20 hover:text-red-300'
+                      }`}
+                      title="彻底删除此任务的本地数据"
+                      onClick={(e) => deleteSessionAssets(session, e)}
+                      disabled={deletingIssues.has(getIssueKey(session))}
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
               ))}
@@ -443,17 +497,29 @@ function App() {
                        {isFailedStatus(session.status) && (
                          <button
                            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
-                             restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)
+                             restartingIssues.has(getIssueKey(session))
                                ? 'bg-blue-500/20 text-status-running animate-spin'
                                : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running hover:border-blue-500/30'
                            }`}
                            title="重启此任务"
                            onClick={(e) => restartSession(session, e)}
-                           disabled={restartingIssues.has(`${session.owner}/${session.repo}#${session.issueNumber}`)}
+                           disabled={restartingIssues.has(getIssueKey(session))}
                          >
                            🔄
                          </button>
                        )}
+                       <button
+                         className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
+                           deletingIssues.has(getIssueKey(session))
+                             ? 'bg-red-500/20 text-red-400 cursor-wait'
+                             : 'bg-white/5 text-text-secondary hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/30'
+                         }`}
+                         title="彻底删除此任务的本地数据"
+                         onClick={(e) => deleteSessionAssets(session, e)}
+                         disabled={deletingIssues.has(getIssueKey(session))}
+                       >
+                         🗑️
+                       </button>
                      </td>
                    </tr>
                 ))}
@@ -528,16 +594,27 @@ function App() {
                           {isFailedStatus(selectedSession.status) && (
                             <button
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                                restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
+                                restartingIssues.has(getIssueKey(selectedSession))
                                   ? 'bg-blue-500/20 text-status-running border-blue-500/30 cursor-wait'
                                   : 'bg-blue-500/10 text-status-running border-blue-500/30 hover:bg-blue-500/25'
                               }`}
                               onClick={() => restartSession(selectedSession)}
-                              disabled={restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
+                              disabled={restartingIssues.has(getIssueKey(selectedSession))}
                             >
-                              🔄 {restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '重启中...' : '重启'}
+                              🔄 {restartingIssues.has(getIssueKey(selectedSession)) ? '重启中...' : '重启'}
                             </button>
                           )}
+                          <button
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              deletingIssues.has(getIssueKey(selectedSession))
+                                ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
+                                : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
+                            }`}
+                            onClick={() => deleteSessionAssets(selectedSession)}
+                            disabled={deletingIssues.has(getIssueKey(selectedSession))}
+                          >
+                            🗑️ {deletingIssues.has(getIssueKey(selectedSession)) ? '删除中...' : '彻底删除'}
+                          </button>
                         </div>
                      </div>
                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
@@ -560,14 +637,14 @@ function App() {
                              <span className="text-sm md:text-base opacity-70">📁 存在</span>
                              <button
                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                                 cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
+                                 cleaningIssues.has(getIssueKey(selectedSession))
                                    ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
                                    : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
                                }`}
                                onClick={(e) => cleanupWorktree(selectedSession, e)}
-                               disabled={cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
+                               disabled={cleaningIssues.has(getIssueKey(selectedSession))}
                              >
-                               🗑️ {cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '清理中...' : '删除 Worktree'}
+                               🗑️ {cleaningIssues.has(getIssueKey(selectedSession)) ? '清理中...' : '删除 Worktree'}
                              </button>
                            </div>
                         </div>

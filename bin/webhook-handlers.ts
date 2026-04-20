@@ -9,16 +9,16 @@
 
 import fs from "fs";
 import { consola } from "consola";
-import { iso_timestamp, success, failure } from "./common";
+import { iso_timestamp, failure } from "./common";
 import type { Result } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
-import { findSessionByPr, deleteSession, readSession } from "./db";
+import { findSessionByPr } from "./db";
 import { execAgent } from "./issue-agent";
-import { removeWorktree } from "./worktree-init";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
+import { cleanupIssueAssets } from "./cleanup-utils";
 
 const logger = consola.withTag("webhook-handlers");
 
@@ -466,38 +466,5 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
  */
 export async function cleanupIssueSession(owner: string, repo: string, issueNumber: number): Promise<Result<void>> {
   logger.info(`准备清理 Issue #${issueNumber} 的所有资产...`);
-
-  // 1. 获取 session 信息（为了拿到 worktree 路径）
-  const sessionRes = readSession(owner, repo, issueNumber);
-  if (!sessionRes.success) return sessionRes;
-  const status = sessionRes.data;
-
-  if (status) {
-    // 2. 清理由 git 维护的 worktree
-    if (status.worktreePath) {
-      await removeWorktree(status.worktreePath);
-    }
-  }
-
-  // 3. 删除本地数据目录 (~/.along/owner/repo/num)
-  const paths = new SessionPathManager(owner, repo, issueNumber);
-  const issueDir = paths.getIssueDir();
-  if (fs.existsSync(issueDir)) {
-    try {
-      fs.rmSync(issueDir, { recursive: true, force: true });
-      logger.info(`已删除本地数据目录: ${issueDir}`);
-    } catch (e: any) {
-      logger.warn(`删除本地数据目录失败: ${e.message}`);
-    }
-  }
-
-  // 4. 从数据库抹除记录
-  const dbRes = deleteSession(owner, repo, issueNumber);
-  if (!dbRes.success) {
-    logger.error(`数据库清理失败: ${dbRes.error}`);
-    return dbRes;
-  }
-
-  logger.info(`Issue #${issueNumber} 资产清理完成`);
-  return success(undefined);
+  return cleanupIssueAssets(String(issueNumber), { force: true, reason: "webhook-cleanup", silent: true }, owner, repo);
 }

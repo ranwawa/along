@@ -171,3 +171,68 @@ export async function cleanupIssue(
   session.logEvent("cleanup-completed", { issueNumber, reason, branchName });
   return success(undefined);
 }
+
+/**
+ * 彻底清理一个 Issue 的所有本地资源
+ * 包括：进程、worktree、分支、SQLite 记录、issue 数据目录（日志、诊断、agent 数据等）
+ */
+export async function cleanupIssueAssets(
+  issueNumber: string,
+  options: CleanupOptions = {},
+  owner?: string,
+  repo?: string,
+): Promise<Result<void>> {
+  if (!owner || !repo) {
+    const repoInfoRes = await readRepoInfo();
+    if (!repoInfoRes.success) {
+      logger.error(`无法获取仓库信息: ${repoInfoRes.error}`);
+      return failure(repoInfoRes.error);
+    }
+    owner = repoInfoRes.data.owner;
+    repo = repoInfoRes.data.repo;
+  }
+
+  const issueNumberNum = Number(issueNumber);
+  const paths = new SessionPathManager(owner, repo, issueNumberNum);
+  const session = new SessionManager(owner, repo, issueNumberNum);
+  const reason = options.reason || (options.force ? "force" : "normal");
+  const sessionRes = readSession(owner, repo, issueNumberNum);
+  if (!sessionRes.success) return failure(sessionRes.error);
+
+  session.logEvent("cleanup-started", {
+    issueNumber,
+    reason,
+    force: !!options.force,
+    scope: "all-assets",
+  });
+
+  const processCheck = await checkAndKillProcess(owner, repo, issueNumberNum, options);
+  if (!processCheck.canProceed) {
+    if (processCheck.error) logger.error(processCheck.error);
+    return failure(processCheck.error || "进程检查失败，无法继续清理");
+  }
+
+  const worktreePath = sessionRes.data?.worktreePath || paths.getWorktreeDir();
+  const branchName = sessionRes.data?.branchName || "";
+
+  await cleanupWorktree(worktreePath, options.silent, session);
+  await cleanupBranch(branchName, options.silent, session);
+
+  const issueDir = paths.getIssueDir();
+  if (fs.existsSync(issueDir)) {
+    info(`删除本地数据目录: ${issueDir}`, options.silent);
+    try {
+      fs.rmSync(issueDir, { recursive: true, force: true });
+    } catch (e: any) {
+      return failure(`删除本地数据目录失败: ${e.message}`);
+    }
+  }
+
+  const deleteRes = deleteSession(owner, repo, issueNumberNum);
+  if (!deleteRes.success) {
+    return failure(deleteRes.error);
+  }
+  info(`会话记录已删除: ${owner}/${repo}#${issueNumber}`, options.silent);
+
+  return success(undefined);
+}
