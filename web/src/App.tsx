@@ -8,6 +8,7 @@ function App() {
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] = useState<DashboardSession | null>(null);
   const [restartingIssues, setRestartingIssues] = useState<Set<string>>(new Set());
+  const [cleaningIssues, setCleaningIssues] = useState<Set<string>>(new Set());
   const [repoFilter, setRepoFilter] = useState<string>('');
 
   // Poll sessions
@@ -51,6 +52,7 @@ function App() {
   const [viewingLogSession, setViewingLogSession] = useState<DashboardSession | null>(null);
   const [agentLogContent, setAgentLogContent] = useState<string>('');
   const [sysLogExpanded, setSysLogExpanded] = useState(false);
+  const [issueLogs, setIssueLogs] = useState<LogEntry[]>([]);
 
   useEffect(() => {
     if (!viewingLogSession) return;
@@ -67,6 +69,25 @@ function App() {
     const timer = setInterval(fetchLog, 3000);
     return () => { active = false; clearInterval(timer); };
   }, [viewingLogSession]);
+
+  useEffect(() => {
+    if (!selectedSession) {
+      setIssueLogs([]);
+      return;
+    }
+    let active = true;
+    const fetchIssueLogs = async () => {
+      try {
+        const res = await fetch(`/api/issue-logs?owner=${encodeURIComponent(selectedSession.owner)}&repo=${encodeURIComponent(selectedSession.repo)}&issueNumber=${selectedSession.issueNumber}`);
+        if (res.ok && active) {
+          setIssueLogs(await res.json());
+        }
+      } catch (e) {}
+    };
+    fetchIssueLogs();
+    const timer = setInterval(fetchIssueLogs, 3000);
+    return () => { active = false; clearInterval(timer); };
+  }, [selectedSession]);
 
   const counts = useMemo<StatusCounts>(() => {
     const defaultCounts: StatusCounts = { running: 0, completed: 0, error: 0, crashed: 0, zombie: 0, total: sessions.length };
@@ -115,6 +136,40 @@ function App() {
           return next;
         });
       }, 3000);
+    }
+  };
+
+  const cleanupWorktree = async (session: DashboardSession, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const key = `${session.owner}/${session.repo}#${session.issueNumber}`;
+    if (cleaningIssues.has(key)) return;
+
+    setCleaningIssues(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch('/api/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner: session.owner, repo: session.repo, issueNumber: session.issueNumber }),
+      });
+      if (res.ok) {
+        setSessions(prev => prev.map(s =>
+          s.owner === session.owner && s.repo === session.repo && s.issueNumber === session.issueNumber
+            ? { ...s, hasWorktree: false }
+            : s
+        ));
+        setSelectedSession(null);
+      } else {
+        const data = await res.json();
+        console.error('Cleanup failed:', data.error);
+      }
+    } catch (e) {
+      console.error('Cleanup request failed:', e);
+    } finally {
+      setCleaningIssues(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
   };
 
@@ -385,6 +440,42 @@ function App() {
                     <span className="text-text-secondary font-medium text-xs md:text-sm">Last Message</span>
                     <span className="text-sm md:text-base">{selectedSession.lastMessage || 'N/A'}</span>
                  </div>
+
+                 {selectedSession.hasWorktree && (
+                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                       <span className="text-text-secondary font-medium text-xs md:text-sm">Worktree</span>
+                       <div className="flex items-center gap-3">
+                         <span className="text-sm md:text-base opacity-70">📁 存在</span>
+                         <button
+                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                             cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
+                               ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
+                               : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
+                           }`}
+                           onClick={(e) => cleanupWorktree(selectedSession, e)}
+                           disabled={cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
+                         >
+                           🗑️ {cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '清理中...' : '删除 Worktree'}
+                         </button>
+                       </div>
+                    </div>
+                 )}
+
+                 {issueLogs.length > 0 && (
+                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
+                       <span className="text-text-secondary font-medium text-xs md:text-sm">执行日志</span>
+                       <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] max-h-[300px] overflow-y-auto flex flex-col gap-1">
+                         {issueLogs.map((log, i) => (
+                           <div key={i} className="break-all hover:bg-white/5 p-0.5">
+                             <span className="text-text-muted mr-1.5">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
+                             <span className={`font-semibold mr-1.5 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
+                             {log.tag && <span className="text-text-muted mr-1.5">({log.tag})</span>}
+                             <span className="text-gray-300">{log.message}</span>
+                           </div>
+                         ))}
+                       </div>
+                    </div>
+                 )}
 
                  {selectedSession.errorMessage && (
                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">

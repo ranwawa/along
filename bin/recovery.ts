@@ -175,18 +175,19 @@ export async function recoverSessions(dryRun = false): Promise<RecoveryReport> {
             report.skippedMaxRetries++;
             logger.warn(`${key} 已达到最大重试次数 (${MAX_RETRY_COUNT})，跳过恢复`);
 
-            // 移除 WIP 标签，避免 Issue 永久阻塞
+            // 移除 WIP 标签并标记为 error，避免每次健康检查重复处理
             if (!dryRun) {
               try {
                 const tokenRes = await readGithubToken();
                 if (tokenRes.success) {
                   const client = new GitHubClient(tokenRes.data, owner, repo);
-                  await client.removeIssueLabel(issueNumber, "WIP");
+                  await client.removeIssueLabel(issueNumber, "WIP").catch(() => {});
                   logger.info(`已移除 ${key} 的 WIP 标签`);
                 }
               } catch (e: any) {
                 logger.warn(`移除 WIP 标签失败: ${e.message}`);
               }
+              session.markAsError(`超过最大重试次数 (${MAX_RETRY_COUNT})`);
             }
             continue;
           }

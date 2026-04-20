@@ -8,12 +8,27 @@ export interface LogEntry {
   level: string;
   tag: string;
   message: string;
+  issueKey?: string;
 }
 
-const MAX_LOG_ENTRIES = 200;
+const MAX_LOG_ENTRIES = 500;
 let logEntries: LogEntry[] = [];
 let subscriber: (() => void) | null = null;
 const logFilePath = path.join(os.homedir(), ".along", "webhook.log");
+
+let _currentIssueKey: string | undefined;
+
+export function setCurrentIssueContext(owner: string, repo: string, issueNumber: number): void {
+  _currentIssueKey = `${owner}/${repo}#${issueNumber}`;
+}
+
+export function clearCurrentIssueContext(): void {
+  _currentIssueKey = undefined;
+}
+
+export function getIssueLogs(issueKey: string): LogEntry[] {
+  return logEntries.filter(e => e.issueKey === issueKey);
+}
 
 function loadLogs() {
   try {
@@ -46,11 +61,12 @@ export function setupLogInterceptor(): void {
   consola.setReporters([
     {
       log(logObj: any) {
-        const entry = {
+        const entry: LogEntry = {
           timestamp: logObj.date || new Date(),
           level: logObj.type || "info",
           tag: logObj.tag || "",
           message: logObj.args.map(String).join(" "),
+          issueKey: _currentIssueKey,
         };
         logEntries.push(entry);
         if (logEntries.length > MAX_LOG_ENTRIES) {

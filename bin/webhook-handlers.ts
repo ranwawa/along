@@ -18,6 +18,7 @@ import { SessionPathManager } from "./session-paths";
 import { findSessionByPr, deleteSession, readSession } from "./db";
 import { execAgent } from "./issue-agent";
 import { removeWorktree } from "./worktree-init";
+import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 
 const logger = consola.withTag("webhook-handlers");
 
@@ -115,6 +116,8 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
   if (!found) return;
 
   const { issueNumber, statusData, paths } = found;
+  setCurrentIssueContext(owner, repo, issueNumber);
+  try {
 
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
@@ -173,6 +176,10 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
   session.logEvent("reviewer-agent-completed", { trigger: "webhook" });
 
   logger.info(`PR #${prNumber} 审查完成`);
+
+  } finally {
+    clearCurrentIssueContext();
+  }
 }
 
 // ─── resolveReview ──────────────────────────────────────────
@@ -243,6 +250,8 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   if (!found) return;
 
   const { issueNumber, statusData, paths } = found;
+  setCurrentIssueContext(owner, repo, issueNumber);
+  try {
 
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
@@ -272,7 +281,6 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   }
   const allComments = commentsRes.data;
 
-  // 找出未解决的评论：顶层评论且没有回复
   const repliedToIds = new Set(
     allComments.filter((c) => c.in_reply_to_id).map((c) => c.in_reply_to_id),
   );
@@ -313,6 +321,10 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   session.logEvent("agent-completed", { trigger: "webhook-review" });
 
   logger.info(`PR #${prNumber} 评论处理完成`);
+
+  } finally {
+    clearCurrentIssueContext();
+  }
 }
 
 // ─── resolveCi ──────────────────────────────────────────────
@@ -437,9 +449,11 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   session.updateCiResults(0, failedRuns.length, headSha);
 
   session.logEvent("agent-launched", { trigger: "webhook-ci", failedCount: failedRuns.length, headSha });
+  setCurrentIssueContext(owner, repo, issueNumber);
   const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", (pid) => {
     session.writeStatus({ pid });
   });
+  clearCurrentIssueContext();
 
   if (!agentRes.success) {
     logger.error(`Agent 启动失败: ${agentRes.error}`);

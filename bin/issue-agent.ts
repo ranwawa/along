@@ -26,6 +26,7 @@ import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { getAgentRole } from "./agent-config";
 import { readGithubToken, get_gh_client } from "./github-client";
 import { readSession } from "./db";
+import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import { $ } from "bun";
 
 /**
@@ -314,6 +315,7 @@ export async function launchIssueAgent(
 
   logger.info(`启动 Issue #${issueNumber} Agent (${phase})...`);
   session.logEvent("issue-agent-launch", { phase, issueNumber });
+  setCurrentIssueContext(owner, repo, issueNumber);
 
   // 1. 获取 Issue 数据
   let title = options.taskData?.title || "";
@@ -428,9 +430,11 @@ export async function launchIssueAgent(
     } else {
       session.markAsCompleted();
     }
+    clearCurrentIssueContext();
     return success(undefined);
   } catch (error: any) {
     session.markAsCrashed(error.message, error.stack);
+    clearCurrentIssueContext();
     return failure(error.message, error.stack);
   }
 }
