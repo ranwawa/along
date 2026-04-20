@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { DashboardSession, LogEntry, StatusCounts } from './types';
+import type { SessionDiagnostic, SessionLogEntry, DashboardSession, StatusCounts } from './types';
 import './index.css';
 
 const statusFilters = [
@@ -19,9 +19,14 @@ const statusFilters = [
 
 function App() {
   const [sessions, setSessions] = useState<DashboardSession[]>([]);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] = useState<DashboardSession | null>(null);
+  const [selectedLogTab, setSelectedLogTab] = useState<'system' | 'agent' | 'merged'>('merged');
+  const [selectedSystemLogs, setSelectedSystemLogs] = useState<SessionLogEntry[]>([]);
+  const [selectedAgentLogs, setSelectedAgentLogs] = useState<SessionLogEntry[]>([]);
+  const [selectedMergedLogs, setSelectedMergedLogs] = useState<SessionLogEntry[]>([]);
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState<SessionDiagnostic | null>(null);
+  const [selectedLogsLoading, setSelectedLogsLoading] = useState(false);
   const [restartingIssues, setRestartingIssues] = useState<Set<string>>(new Set());
   const [cleaningIssues, setCleaningIssues] = useState<Set<string>>(new Set());
   const [repoFilter, setRepoFilter] = useState<string>('');
@@ -52,18 +57,80 @@ function App() {
     };
   }, []);
 
-  // Poll logs (SSE)
   useEffect(() => {
-    const evtSource = new EventSource('/api/logs');
-    evtSource.onmessage = (event) => {
+    if (!selectedSession) {
+      setSelectedSystemLogs([]);
+      setSelectedAgentLogs([]);
+      setSelectedMergedLogs([]);
+      setSelectedDiagnostic(null);
+      return;
+    }
+
+    let active = true;
+    setSelectedLogTab('merged');
+    setSelectedLogsLoading(true);
+
+    const params = new URLSearchParams({
+      owner: selectedSession.owner,
+      repo: selectedSession.repo,
+      issueNumber: String(selectedSession.issueNumber),
+    });
+
+    const loadDetails = async () => {
       try {
-        const newLogs = JSON.parse(event.data);
-        setLogs(newLogs);
-      } catch(e) {}
+        const [systemRes, agentRes, mergedRes, diagnosticRes] = await Promise.all([
+          fetch(`/api/session-log?${params.toString()}&source=system&maxLines=150`),
+          fetch(`/api/session-log?${params.toString()}&source=agent&maxLines=250`),
+          fetch(`/api/session-log?${params.toString()}&source=merged&maxLines=250`),
+          fetch(`/api/session-diagnostic?${params.toString()}`),
+        ]);
+
+        if (!active) return;
+
+        if (systemRes.ok) {
+          setSelectedSystemLogs(await systemRes.json());
+        } else {
+          setSelectedSystemLogs([]);
+        }
+
+        if (agentRes.ok) {
+          setSelectedAgentLogs(await agentRes.json());
+        } else {
+          setSelectedAgentLogs([]);
+        }
+
+        if (mergedRes.ok) {
+          setSelectedMergedLogs(await mergedRes.json());
+        } else {
+          setSelectedMergedLogs([]);
+        }
+
+        if (diagnosticRes.ok) {
+          setSelectedDiagnostic(await diagnosticRes.json());
+        } else {
+          setSelectedDiagnostic(null);
+        }
+      } catch (e) {
+        if (!active) return;
+        setSelectedSystemLogs([]);
+        setSelectedAgentLogs([]);
+        setSelectedMergedLogs([]);
+        setSelectedDiagnostic(null);
+      } finally {
+        if (active) {
+          setSelectedLogsLoading(false);
+        }
+      }
     };
-    return () => evtSource.close();
-  }, []);
-  const [sysLogExpanded, setSysLogExpanded] = useState(false);
+
+    loadDetails();
+    const timer = setInterval(loadDetails, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [selectedSession]);
 
   const counts = useMemo<StatusCounts>(() => {
     const defaultCounts: StatusCounts = {
@@ -204,9 +271,44 @@ function App() {
     return '';
   };
 
+  const renderSessionLogLines = (entries: SessionLogEntry[], source: 'system' | 'agent' | 'merged') => {
+    if (entries.length === 0) {
+      return <div className="p-4 text-text-muted">No {source} logs yet.</div>;
+    }
+
+    return entries.map((entry, i) => (
+      <div key={`${source}-${i}`} className="p-1.5 rounded break-all hover:bg-white/5 whitespace-pre-wrap">
+        {entry.timestamp && (
+          <span className="text-text-muted mr-2">
+            {new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(entry.timestamp))}
+          </span>
+        )}
+        {entry.level && (
+          <span className={`font-semibold mr-2 uppercase ${getLogLevelColor(entry.level)}`}>[{entry.level}]</span>
+        )}
+        {entry.tag && (
+          <span className="text-text-muted mr-2">({entry.tag})</span>
+        )}
+        {source === 'merged' && (
+          <span className={`font-semibold mr-2 uppercase ${entry.source === 'system' ? 'text-sky-300' : 'text-amber-300'}`}>
+            [{entry.source}]
+          </span>
+        )}
+        <span>{entry.message}</span>
+      </div>
+    ));
+  };
+
+  const currentSelectedLogs =
+    selectedLogTab === 'merged'
+      ? selectedMergedLogs
+      : selectedLogTab === 'system'
+        ? selectedSystemLogs
+        : selectedAgentLogs;
+
   return (
-    <div className="max-w-[1400px] mx-auto p-4 md:p-6 lg:p-8 flex flex-col gap-4 md:gap-6 lg:gap-8 h-screen">
-      <header className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center pb-4 md:pb-6 border-b border-border-color">
+    <div className="w-screen h-screen flex flex-col overflow-hidden">
+      <header className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center px-4 py-4 md:px-6 md:py-5 border-b border-border-color shrink-0">
         <h1 className="font-semibold text-xl md:text-2xl tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
           🚀 ALONG Dashboard
         </h1>
@@ -228,8 +330,8 @@ function App() {
         </div>
       </header>
 
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 flex-1 min-h-0">
-        <div className="flex-1 lg:flex-[2] bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
+      <div className="flex-1 min-h-0 px-0 md:px-0">
+        <div className="h-full bg-bg-glass backdrop-blur-md border-x-0 md:border-x-0 border-y-0 md:border-y-0 border border-border-color rounded-none flex flex-col overflow-hidden min-h-[300px]">
           <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold text-sm md:text-base flex justify-between items-center">
             <span>Recent Tasks</span>
             <div className="relative">
@@ -359,36 +461,18 @@ function App() {
             </table>
           </div>
         </div>
-
-        <div className="max-h-[300px] lg:max-h-none lg:flex-1 bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden">
-          <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold border-l-4 border-l-brand flex justify-between items-center text-sm md:text-base">
-             <span>System Logs</span>
-             <button title="全屏显示" className="bg-transparent text-text-secondary cursor-pointer hover:text-white" onClick={() => setSysLogExpanded(true)}>⛶</button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 md:p-4 font-mono text-xs md:text-[13px] flex flex-col gap-1.5">
-            {logs.map((log, i) => (
-              <div key={i} className="p-1.5 rounded break-all hover:bg-white/5">
-                 <span className="text-text-muted mr-1.5 md:mr-2">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
-                 <span className={`font-semibold mr-1.5 md:mr-2 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
-                 {log.tag && <span className="text-text-muted mr-1.5 md:mr-2">({log.tag})</span>}
-                 <span>{log.message}</span>
-              </div>
-            ))}
-            {logs.length === 0 && <div className="p-4 text-text-muted">Waiting for logs...</div>}
-          </div>
-        </div>
       </div>
 
       {selectedSession && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-8 animate-[fadeIn_0.2s_ease]"
+          className="fixed inset-0 bg-black/45 backdrop-blur-[2px] z-50 animate-[fadeIn_0.2s_ease]"
           onClick={() => setSelectedSession(null)}
         >
            <div
-             className="bg-bg-secondary border border-border-color rounded-t-2xl md:rounded-2xl w-full max-w-[800px] max-h-[85vh] md:max-h-[90vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]"
+             className="absolute inset-y-0 right-0 bg-bg-secondary border-l border-border-color w-full md:w-[88vw] xl:w-[82vw] max-w-[1280px] flex flex-col shadow-2xl animate-[slideInRight_0.28s_cubic-bezier(0.16,1,0.3,1)]"
              onClick={e => e.stopPropagation()}
            >
-              <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center">
+              <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center shrink-0">
                  <h2 className="text-base md:text-xl font-bold truncate mr-2">
                    {selectedSession.owner}/{selectedSession.repo} #{selectedSession.issueNumber}
                    {selectedSession.hasWorktree && <span className="ml-2 opacity-70" title="Worktree exists">📁</span>}
@@ -400,108 +484,164 @@ function App() {
                    ✕
                  </button>
               </div>
-              <div className="p-4 md:p-6 overflow-y-auto flex flex-col gap-4 md:gap-6">
-                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">Title</span>
-                    <span className="text-sm md:text-base">{selectedSession.title}</span>
-                 </div>
-                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">Status</span>
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.status)}`}>
-                        {getStatusLabel(selectedSession.status)}
-                      </span>
-                      {isFailedStatus(selectedSession.status) && (
-                        <button
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                            restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
-                              ? 'bg-blue-500/20 text-status-running border-blue-500/30 cursor-wait'
-                              : 'bg-blue-500/10 text-status-running border-blue-500/30 hover:bg-blue-500/25'
-                          }`}
-                          onClick={() => restartSession(selectedSession)}
-                          disabled={restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
-                        >
-                          🔄 {restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '重启中...' : '重启'}
-                        </button>
-                      )}
-                    </div>
-                 </div>
-                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">Runtime</span>
-                    <span className="text-sm md:text-base">{selectedSession.runtime}</span>
-                 </div>
-                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">Current Step</span>
-                    <span className="text-sm md:text-base">{selectedSession.currentStep || 'N/A'}</span>
-                 </div>
-                 <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">Last Message</span>
-                    <span className="text-sm md:text-base">{selectedSession.lastMessage || 'N/A'}</span>
-                 </div>
+              <div className="flex-1 min-h-0 p-4 md:p-6">
+                 <div className="h-full min-h-0 flex flex-col gap-4 md:gap-6 lg:grid lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)] lg:gap-6">
+                   <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 md:gap-6 pr-0 lg:pr-3">
+                     {selectedDiagnostic && isFailedStatus(selectedSession.status) && (
+                        <div className="flex flex-col gap-3">
+                           <div className="text-text-secondary font-medium text-xs md:text-sm">Failure Summary</div>
+                           <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 flex flex-col gap-3">
+                             <div>
+                               <div className="text-sm md:text-base font-semibold text-white">{selectedDiagnostic.summary}</div>
+                               <div className="text-xs text-text-muted mt-1">
+                                 {selectedDiagnostic.category}
+                                 {selectedDiagnostic.phase ? ` · ${selectedDiagnostic.phase}` : ''}
+                                 {typeof selectedDiagnostic.exitCode === 'number' ? ` · exit ${selectedDiagnostic.exitCode}` : ''}
+                               </div>
+                             </div>
+                             {selectedDiagnostic.command && (
+                               <div className="font-mono text-xs md:text-[13px] text-gray-300 whitespace-pre-wrap break-all">
+                                 {selectedDiagnostic.command}
+                               </div>
+                             )}
+                             {selectedDiagnostic.hints.length > 0 && (
+                               <div className="flex flex-col gap-1">
+                                 {selectedDiagnostic.hints.map((hint, index) => (
+                                   <div key={index} className="text-xs md:text-sm text-gray-300">{index + 1}. {hint}</div>
+                                 ))}
+                               </div>
+                             )}
+                           </div>
+                        </div>
+                     )}
 
-                 {selectedSession.hasWorktree && (
-                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                       <span className="text-text-secondary font-medium text-xs md:text-sm">Worktree</span>
-                       <div className="flex items-center gap-3">
-                         <span className="text-sm md:text-base opacity-70">📁 存在</span>
+                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Title</span>
+                        <span className="text-sm md:text-base">{selectedSession.title}</span>
+                     </div>
+                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Status</span>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.status)}`}>
+                            {getStatusLabel(selectedSession.status)}
+                          </span>
+                          {isFailedStatus(selectedSession.status) && (
+                            <button
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
+                                  ? 'bg-blue-500/20 text-status-running border-blue-500/30 cursor-wait'
+                                  : 'bg-blue-500/10 text-status-running border-blue-500/30 hover:bg-blue-500/25'
+                              }`}
+                              onClick={() => restartSession(selectedSession)}
+                              disabled={restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
+                            >
+                              🔄 {restartingIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '重启中...' : '重启'}
+                            </button>
+                          )}
+                        </div>
+                     </div>
+                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Runtime</span>
+                        <span className="text-sm md:text-base">{selectedSession.runtime}</span>
+                     </div>
+                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Current Step</span>
+                        <span className="text-sm md:text-base">{selectedSession.currentStep || 'N/A'}</span>
+                     </div>
+                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Last Message</span>
+                        <span className="text-sm md:text-base">{selectedSession.lastMessage || 'N/A'}</span>
+                     </div>
+
+                     {selectedSession.hasWorktree && (
+                        <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                           <span className="text-text-secondary font-medium text-xs md:text-sm">Worktree</span>
+                           <div className="flex items-center gap-3 flex-wrap">
+                             <span className="text-sm md:text-base opacity-70">📁 存在</span>
+                             <button
+                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                 cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
+                                   ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
+                                   : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
+                               }`}
+                               onClick={(e) => cleanupWorktree(selectedSession, e)}
+                               disabled={cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
+                             >
+                               🗑️ {cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '清理中...' : '删除 Worktree'}
+                             </button>
+                           </div>
+                        </div>
+                     )}
+
+                     {selectedSession.errorMessage && (
+                        <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
+                           <span className="text-text-secondary font-medium text-xs md:text-sm">Error</span>
+                           <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-status-error overflow-x-auto">
+                             {selectedSession.errorMessage}
+                           </div>
+                        </div>
+                     )}
+
+                     {selectedSession.crashLog && (
+                        <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
+                           <span className="text-text-secondary font-medium text-xs md:text-sm">Crash Log</span>
+                           <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-white overflow-x-auto">
+                             {selectedSession.crashLog}
+                           </div>
+                        </div>
+                     )}
+                   </div>
+
+                   <div className="min-h-[320px] lg:min-h-0 lg:h-full flex flex-col gap-3 border-t border-white/5 pt-4 lg:pt-0 lg:border-t-0 lg:border-l lg:border-white/5 lg:pl-6">
+                     <div className="flex items-center justify-between gap-3 flex-wrap">
+                       <div>
+                         <div className="text-text-secondary font-medium text-xs md:text-sm">Session Logs</div>
+                         <div className="text-text-muted text-xs mt-1">Timeline 保持默认打开，便于直接排障。</div>
+                       </div>
+                       <div className="flex gap-2 flex-wrap">
                          <button
-                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                             cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)
-                               ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
-                               : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
+                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                             selectedLogTab === 'merged'
+                               ? 'bg-white/10 text-white border-border-color'
+                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
                            }`}
-                           onClick={(e) => cleanupWorktree(selectedSession, e)}
-                           disabled={cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`)}
+                           onClick={() => setSelectedLogTab('merged')}
                          >
-                           🗑️ {cleaningIssues.has(`${selectedSession.owner}/${selectedSession.repo}#${selectedSession.issueNumber}`) ? '清理中...' : '删除 Worktree'}
+                           Timeline
+                         </button>
+                         <button
+                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                             selectedLogTab === 'system'
+                               ? 'bg-white/10 text-white border-border-color'
+                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
+                           }`}
+                           onClick={() => setSelectedLogTab('system')}
+                         >
+                           System Log
+                         </button>
+                         <button
+                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                             selectedLogTab === 'agent'
+                               ? 'bg-white/10 text-white border-border-color'
+                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
+                           }`}
+                           onClick={() => setSelectedLogTab('agent')}
+                         >
+                           Agent Log
                          </button>
                        </div>
-                    </div>
-                 )}
-
-	                 {selectedSession.errorMessage && (
-                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
-                       <span className="text-text-secondary font-medium text-xs md:text-sm">Error</span>
-                       <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-status-error overflow-x-auto">
-                         {selectedSession.errorMessage}
-                       </div>
-                    </div>
-                 )}
-
-                 {selectedSession.crashLog && (
-                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
-                       <span className="text-text-secondary font-medium text-xs md:text-sm">Crash Log</span>
-                       <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-white overflow-x-auto">
-                         {selectedSession.crashLog}
-                       </div>
-                    </div>
-                 )}
+                     </div>
+                     <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] text-gray-300 overflow-auto flex-1 min-h-0 flex flex-col gap-1.5">
+                       {selectedLogsLoading
+                         ? <div className="p-4 text-text-muted">Loading logs...</div>
+                         : renderSessionLogLines(currentSelectedLogs, selectedLogTab)}
+                     </div>
+                   </div>
+                 </div>
               </div>
            </div>
         </div>
       )}
-
-      {sysLogExpanded && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4" onClick={() => setSysLogExpanded(false)}>
-           <div className="bg-bg-secondary border border-border-color rounded-t-2xl md:rounded-2xl w-full max-w-[1200px] h-[85vh] md:h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="p-3 md:p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
-                 <h2 className="text-sm md:text-lg font-bold flex items-center gap-2 md:gap-3">💻 Full System Logs (Live)</h2>
-                 <button className="text-text-secondary hover:text-white bg-transparent text-xl cursor-pointer p-2" onClick={() => setSysLogExpanded(false)}>✕</button>
-              </div>
-              <div className="flex-1 overflow-auto p-3 md:p-4 bg-black font-mono text-xs md:text-[13px] text-gray-300 flex flex-col gap-1.5 flex-col-reverse">
-                {[...logs].reverse().map((log, i) => (
-                  <div key={i} className="p-1 break-all hover:bg-white/5 whitespace-pre-wrap">
-                     <span className="text-text-muted mr-1.5 md:mr-2">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
-                     <span className={`font-semibold mr-1.5 md:mr-2 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
-                     {log.tag && <span className="text-text-muted mr-1.5 md:mr-2">({log.tag})</span>}
-                     <span>{log.message}</span>
-                  </div>
-                ))}
-              </div>
-           </div>
-        </div>
-      )}
-
     </div>
   );
 }

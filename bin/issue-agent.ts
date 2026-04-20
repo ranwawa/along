@@ -27,6 +27,7 @@ import { getAgentRole } from "./agent-config";
 import { readGithubToken, get_gh_client } from "./github-client";
 import { readSession } from "./db";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
+import { clearSessionDiagnostic, generateSessionDiagnostic, writeSessionDiagnostic } from "./session-diagnostics";
 import { $ } from "bun";
 import type { WorkflowPhase } from "./session-state-machine";
 
@@ -85,6 +86,31 @@ export function syncPromptsToWorktree(worktreePath: string): Result<void> {
 
 type WritableTarget = { write(data: string): any };
 
+function createTimestampedWriter(out: WritableTarget): WritableTarget & { flush(): void } {
+  let buffer = "";
+
+  const writeLine = (line: string) => {
+    const stamped = `[${new Date().toISOString()}] ${line}\n`;
+    out.write(stamped);
+  };
+
+  return {
+    write(data: string) {
+      buffer += data;
+      const parts = buffer.split("\n");
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        writeLine(part);
+      }
+    },
+    flush() {
+      if (!buffer) return;
+      writeLine(buffer);
+      buffer = "";
+    },
+  };
+}
+
 async function drainStream(stream: ReadableStream<Uint8Array>, out: WritableTarget): Promise<void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -134,14 +160,16 @@ export async function execAgent(
   // Dashboard 模式下将 agent 输出写入日志文件，避免破坏 Ink 渲染
   const targetLogFile = _dashboardMode ? logFile : undefined;
   let fileHandle: { write(data: string): any; end(): void } | undefined;
+  let fileWriter: (WritableTarget & { flush(): void }) | undefined;
 
   if (targetLogFile) {
     const ws = fs.createWriteStream(targetLogFile, { flags: "a" });
     fileHandle = ws;
+    fileWriter = createTimestampedWriter(ws);
   }
 
-  const out: WritableTarget = fileHandle || process.stdout;
-  const err: WritableTarget = fileHandle || process.stderr;
+  const out: WritableTarget = fileWriter || process.stdout;
+  const err: WritableTarget = fileWriter || process.stderr;
 
   try {
     await Promise.all([
@@ -149,6 +177,7 @@ export async function execAgent(
       proc.stderr ? drainStream(proc.stderr, err) : Promise.resolve(),
     ]);
   } finally {
+    fileWriter?.flush();
     fileHandle?.end();
   }
 
@@ -204,6 +233,11 @@ export async function execTmux(
     .replace("{workflow}", options.workflow)
     .replace("{num}", num);
 
+  sessionManager.writeStatus({
+    agentType: tag,
+    agentCommand: cmd,
+  });
+
   // 对路径和参数进行 shell 转义
   const esc = {
     logFile: shellEscape(logFile),
@@ -223,9 +257,14 @@ export async function execTmux(
 
   const scriptContent = `#!/bin/bash
 ${envExports.join("\n")}
+prefix_log() {
+  while IFS= read -r line; do
+    printf '[%s] %s\\n' "$(date -Iseconds)" "$line"
+  done
+}
 echo "Starting at $(date)" > ${esc.logFile}
 ${writePidScript}
-cd ${esc.worktreePath} && ${cmd} 2>&1 | tee -a ${esc.logFile}
+cd ${esc.worktreePath} && ${cmd} 2>&1 | prefix_log | tee -a ${esc.logFile}
 EXIT_CODE=\${PIPESTATUS[0]}
 ${updateStatusScript}
 if [ \${EXIT_CODE} -ne 0 ]; then
@@ -376,8 +415,25 @@ export async function launchIssueAgent(
 
   // 4. 启动 agent
   const workflow = "resolve-github-issue";
+  try {
+    const tagRes = config.getLogTag();
+    if (tagRes.success) {
+      const tag = tagRes.data;
+      const editor = config.EDITORS.find((e) => e.id === tag);
+      const agentCommand = (editor?.runTemplate || "{tag} --prompt-template {workflow} {num}")
+        .replace("{tag}", tag)
+        .replace("{workflow}", workflow)
+        .replace("{num}", String(issueNumber));
+      session.writeStatus({
+        agentType: tag,
+        agentCommand,
+      });
+    }
+  } catch {
+  }
   session.transition({ type: "START_PHASE", phase, message: `启动 ${phase}` });
   session.updateStep("启动 Agent", `phase=${phase}, workflow=${workflow}`);
+  clearSessionDiagnostic(paths);
 
   if (options.strategy === "tmux") {
     return execTmux(worktreePath, issueNumber, paths, session, {
@@ -412,6 +468,10 @@ export async function launchIssueAgent(
         }
       } catch (e) {}
       session.markAsCrashed(`Agent 意外退出 (退出码: ${exitCode})`, crashLog || "无法获取日志文件内容", exitCode);
+      const currentRes = session.readStatus();
+      if (currentRes.success && currentRes.data) {
+        writeSessionDiagnostic(paths, generateSessionDiagnostic(currentRes.data, paths));
+      }
     } else {
       session.transition({ type: "AGENT_EXITED_SUCCESS", phase });
     }

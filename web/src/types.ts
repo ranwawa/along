@@ -18,6 +18,28 @@ export interface LogEntry {
   message: string;
 }
 
+export interface SessionLogEntry {
+  source: "system" | "agent" | "merged";
+  raw: string;
+  timestamp?: string;
+  level?: string;
+  message: string;
+  tag?: string;
+}
+
+export interface SessionDiagnostic {
+  category: string;
+  summary: string;
+  failedAt?: string;
+  phase?: "phase1" | "phase2";
+  exitCode?: number;
+  command?: string;
+  errorMessage?: string;
+  hints: string[];
+  lastSystemLines: string[];
+  lastAgentLines: string[];
+}
+
 export interface DashboardSession {
   owner: string;
   repo: string;

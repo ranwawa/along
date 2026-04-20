@@ -26,6 +26,8 @@ import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { cleanupIssue } from "./cleanup-utils";
 import { isActiveSessionStatus } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
+import { SessionPathManager } from "./session-paths";
+import { readSessionDiagnostic, readSessionLog, generateSessionDiagnostic, type SessionLogSource } from "./session-diagnostics";
 
 const logger = consola.withTag("webhook-server");
 
@@ -108,6 +110,14 @@ function fireAndForget(fn: () => Promise<any>) {
   fn().catch((err) => {
     logger.error(`处理函数执行内部异常: ${err.message}`);
   });
+}
+
+function getSessionQuery(url: URL): { owner: string; repo: string; issueNumber: number } | null {
+  const owner = url.searchParams.get("owner") || "";
+  const repo = url.searchParams.get("repo") || "";
+  const issueNumber = Number(url.searchParams.get("issueNumber") || "");
+  if (!owner || !repo || !issueNumber) return null;
+  return { owner, repo, issueNumber };
 }
 
 /**
@@ -498,8 +508,8 @@ async function main() {
         }
       }
 
-      // ── API: /api/logs (SSE) ──
-      if (url.pathname === "/api/logs" && req.method === "GET") {
+      // ── API: /api/system-logs (SSE) ──
+      if (url.pathname === "/api/system-logs" && req.method === "GET") {
          return new Response(new ReadableStream({
              start(controller) {
                  const id = setInterval(() => {
@@ -518,6 +528,57 @@ async function main() {
                  "Access-Control-Allow-Origin": "*"
              }
          });
+      }
+
+      // ── API: /api/session-log ──
+      if (url.pathname === "/api/session-log" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "Missing owner, repo, or issueNumber" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const source = (url.searchParams.get("source") || "system") as SessionLogSource;
+        if (source !== "system" && source !== "agent" && source !== "merged") {
+          return new Response(JSON.stringify({ error: "Invalid source" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const maxLines = Number(url.searchParams.get("maxLines") || "") || undefined;
+        const paths = new SessionPathManager(query.owner, query.repo, query.issueNumber);
+        const logs = readSessionLog(paths, source, maxLines);
+        return new Response(JSON.stringify(logs), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      // ── API: /api/session-diagnostic ──
+      if (url.pathname === "/api/session-diagnostic" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "Missing owner, repo, or issueNumber" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const sessionRes = readSession(query.owner, query.repo, query.issueNumber);
+        if (!sessionRes.success || !sessionRes.data) {
+          return new Response(JSON.stringify({ error: "Session not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const paths = new SessionPathManager(query.owner, query.repo, query.issueNumber);
+        const diagnostic = readSessionDiagnostic(paths) || generateSessionDiagnostic(sessionRes.data, paths);
+        return new Response(JSON.stringify(diagnostic), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
       }
 
       // ── Static Web UI ──

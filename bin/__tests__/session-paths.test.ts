@@ -78,6 +78,10 @@ describe("session-paths.ts", () => {
       expect(pm.getAgentLogFile()).toBe(path.join(issueDir, "agent.log"));
     });
 
+    it("getDiagnosticFile() 返回 diagnostic.json", () => {
+      expect(pm.getDiagnosticFile()).toBe(path.join(issueDir, "diagnostic.json"));
+    });
+
     it("getWorktreeDir() 返回 worktree 目录", () => {
       expect(pm.getWorktreeDir()).toBe(path.join(issueDir, "worktree"));
     });
@@ -91,7 +95,7 @@ describe("session-paths.ts", () => {
 
   describe("ensureDir()", () => {
     it("成功创建目录时返回 success", () => {
-      vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
+      (fs.mkdirSync as any).mockReturnValue(undefined);
       const result = pm.ensureDir();
       expect(result.success).toBe(true);
       expect(fs.mkdirSync).toHaveBeenCalledWith(pm.getIssueDir(), {
@@ -100,7 +104,7 @@ describe("session-paths.ts", () => {
     });
 
     it("创建失败时返回 failure", () => {
-      vi.mocked(fs.mkdirSync).mockImplementation(() => {
+      (fs.mkdirSync as any).mockImplementation(() => {
         throw new Error("EACCES");
       });
       const result = pm.ensureDir();
