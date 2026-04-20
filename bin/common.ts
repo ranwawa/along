@@ -12,7 +12,8 @@ const { simpleGit } = require("simple-git");
 export const git = simpleGit();
 
 export type { Result } from "./result";
-export { success, failure } from "./result";
+import { success, failure } from "./result";
+export { success, failure };
 
 let cachedIsRepo: boolean | null = null;
 
