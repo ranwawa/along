@@ -23,7 +23,7 @@ import { config } from "./config";
 import { recoverSessions, recoverMissedIssues, startPeriodicHealthCheck, stopPeriodicHealthCheck } from "./recovery";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
-import { setupLogInterceptor, getLogEntries } from "./log-buffer";
+import { setupLogInterceptor, getLogEntries, getIssueLogs } from "./log-buffer";
 import { SessionPathManager } from "./session-paths";
 import { cleanupIssue } from "./cleanup-utils";
 
@@ -488,6 +488,52 @@ async function main() {
             headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });
         }
+      }
+
+      // ── API: /api/cleanup ──
+      if (url.pathname === "/api/cleanup" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const { owner, repo, issueNumber } = body;
+          if (!owner || !repo || !issueNumber) {
+            return new Response(JSON.stringify({ error: "Missing owner, repo, or issueNumber" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            });
+          }
+          logger.info(`清理 Issue #${issueNumber} 的 worktree (${owner}/${repo})...`);
+          const res = await cleanupIssue(String(issueNumber), { force: true, reason: "dashboard", silent: true }, owner, repo);
+          if (!res.success) {
+            return new Response(JSON.stringify({ error: res.error }), {
+              status: 500,
+              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            });
+          }
+          return new Response(JSON.stringify({ message: `已清理 Issue #${issueNumber} 的 worktree` }), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        } catch (e: any) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+      }
+
+      // ── API: /api/issue-logs ──
+      if (url.pathname === "/api/issue-logs" && req.method === "GET") {
+        const owner = url.searchParams.get("owner");
+        const repo = url.searchParams.get("repo");
+        const issueNumber = url.searchParams.get("issueNumber");
+        if (!owner || !repo || !issueNumber) {
+          return new Response("Missing parameters", { status: 400 });
+        }
+        const issueKey = `${owner}/${repo}#${issueNumber}`;
+        const issueLogs = getIssueLogs(issueKey);
+        return new Response(JSON.stringify(issueLogs), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
       }
 
       // ── API: /api/agent-logs ──
