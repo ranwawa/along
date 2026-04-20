@@ -10,6 +10,8 @@
 import fs from "fs";
 import { readSession, upsertSession } from "./db";
 import { applySessionStateEvent } from "./session-state-machine";
+import { SessionPathManager } from "./session-paths";
+import { clearSessionDiagnostic, generateSessionDiagnostic, writeSessionDiagnostic } from "./session-diagnostics";
 
 const [owner, repo, issueNumberStr, phase, exitCodeStr, logFile] = process.argv.slice(2);
 
@@ -24,10 +26,12 @@ try {
   const res = readSession(owner, repo, issueNumber);
   if (!res.success || !res.data) process.exit(0);
   const session = res.data;
+  const paths = new SessionPathManager(owner, repo, issueNumber);
 
   let update: Record<string, any>;
 
   if (exitCode === 0) {
+    clearSessionDiagnostic(paths);
     update = applySessionStateEvent(session, {
       type: "AGENT_EXITED_SUCCESS",
       phase: phase as "phase1" | "phase2",
@@ -54,6 +58,13 @@ try {
     ...update,
     lastUpdate: new Date().toISOString(),
   });
+
+  if (exitCode !== 0) {
+    const latestRes = readSession(owner, repo, issueNumber);
+    if (latestRes.success && latestRes.data) {
+      writeSessionDiagnostic(paths, generateSessionDiagnostic(latestRes.data, paths));
+    }
+  }
 } catch {
   // 静默失败
   process.exit(0);

@@ -65,6 +65,10 @@ export class SessionPathManager {
     return path.join(this.getIssueDir(), "agent.log");
   }
 
+  getDiagnosticFile(): string {
+    return path.join(this.getIssueDir(), "diagnostic.json");
+  }
+
   getPrReviewAgentLogFile(): string {
     return path.join(this.getIssueDir(), "pr-review-agent.log");
   }
