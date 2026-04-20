@@ -18,14 +18,14 @@ import crypto from "crypto";
 import { reviewPr, resolveReview, resolveCi, cleanupIssueSession } from "./webhook-handlers";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { launchIssueAgent, setDashboardMode } from "./issue-agent";
-import { readGithubToken, GitHubClient, readRepoInfo } from "./github-client";
+import { readGithubToken, GitHubClient } from "./github-client";
 import { config } from "./config";
-import { recoverSessions, recoverMissedIssues, startPeriodicHealthCheck, stopPeriodicHealthCheck } from "./recovery";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
-import { setupLogInterceptor, getLogEntries, getIssueLogs } from "./log-buffer";
-import { SessionPathManager } from "./session-paths";
+import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { cleanupIssue } from "./cleanup-utils";
+import { isActiveSessionStatus } from "./session-state-machine";
+import { SessionManager } from "./session-manager";
 
 const logger = consola.withTag("webhook-server");
 
@@ -108,31 +108,6 @@ function fireAndForget(fn: () => Promise<any>) {
   fn().catch((err) => {
     logger.error(`处理函数执行内部异常: ${err.message}`);
   });
-}
-
-/**
- * 将 Webhook 事件持久化到 ~/.along/webhook-events.jsonl 供后续分析
- */
-function logWebhookEvent(deliveryId: string, event: string, payload: any) {
-  const logFile = path.join(config.USER_ALONG_DIR, "webhook-events.jsonl");
-  const entry = {
-    timestamp: new Date().toISOString(),
-    deliveryId,
-    event,
-    action: payload.action || null,
-    owner: payload.repository?.owner?.login,
-    repo: payload.repository?.name,
-    sender: payload.sender?.login,
-    // 仅记录关键标识，不记录整个 Payload 以免日志过大
-    issueNumber: payload.issue?.number,
-    prNumber: payload.pull_request?.number,
-  };
-
-  try {
-    fs.appendFileSync(logFile, JSON.stringify(entry) + "\n");
-  } catch (err: any) {
-    logger.warn(`写入事件日志失败: ${err.message}`);
-  }
 }
 
 /**
@@ -250,6 +225,8 @@ async function handleEvent(
           const linkedIssue = Number(issueMatch[1]);
           logger.info(`PR #${prNumber} 已合并，清理 Issue #${linkedIssue} 的 WIP 标签...`);
           fireAndForget(async () => {
+            const session = new SessionManager(owner, repo, linkedIssue);
+            session.transition({ type: "PR_MERGED" });
             const tokenRes = await readGithubToken();
             if (!tokenRes.success) {
               logger.error(`获取 Token 失败: ${tokenRes.error}`);
@@ -395,9 +372,6 @@ async function main() {
           });
         }
 
-        // 持久化记录所有收到的事件（异步）
-        logWebhookEvent(deliveryId, githubEvent, payload);
-
         // 处理 ping 事件（GitHub App 安装/配置时发送）
         if (githubEvent === "ping") {
           logger.success(`[${deliveryId}] 收到 GitHub ping 事件，zen: ${payload.zen}`);
@@ -445,7 +419,7 @@ async function main() {
           const res = readSession(info.owner, info.repo, info.issueNumber);
           if (res.success && res.data) {
              let displayStatus = res.data.status;
-             if (displayStatus === "running" && res.data.pid) {
+             if (isActiveSessionStatus(displayStatus) && res.data.pid) {
                 const alive = await check_process_running(res.data.pid);
                 if (!alive) displayStatus = "zombie";
              }
@@ -475,7 +449,10 @@ async function main() {
           }
           logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
           enqueueAgent(`Issue #${issueNumber} 手动重启`, async () => {
-            const res = await launchIssueAgent(owner, repo, issueNumber, "phase1", { taskData: { title: `Issue #${issueNumber}` } });
+            const sessionRes = readSession(owner, repo, issueNumber);
+            const phase = sessionRes.success && sessionRes.data?.workflowPhase === "phase2" ? "phase2" : "phase1";
+            const title = sessionRes.success && sessionRes.data?.title ? sessionRes.data.title : `Issue #${issueNumber}`;
+            const res = await launchIssueAgent(owner, repo, issueNumber, phase, { taskData: { title } });
             if (!res.success) logger.error(`手动重启 Issue #${issueNumber} 失败: ${res.error}`);
           });
           return new Response(JSON.stringify({ message: `已触发重启 Issue #${issueNumber}` }), {
@@ -518,43 +495,6 @@ async function main() {
             status: 500,
             headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });
-        }
-      }
-
-      // ── API: /api/issue-logs ──
-      if (url.pathname === "/api/issue-logs" && req.method === "GET") {
-        const owner = url.searchParams.get("owner");
-        const repo = url.searchParams.get("repo");
-        const issueNumber = url.searchParams.get("issueNumber");
-        if (!owner || !repo || !issueNumber) {
-          return new Response("Missing parameters", { status: 400 });
-        }
-        const issueKey = `${owner}/${repo}#${issueNumber}`;
-        const issueLogs = getIssueLogs(issueKey);
-        return new Response(JSON.stringify(issueLogs), {
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        });
-      }
-
-      // ── API: /api/agent-logs ──
-      if (url.pathname === "/api/agent-logs" && req.method === "GET") {
-        const owner = url.searchParams.get("owner");
-        const repo = url.searchParams.get("repo");
-        const issueNumber = url.searchParams.get("issueNumber");
-        if (!owner || !repo || !issueNumber) {
-          return new Response("Missing parameters", { status: 400 });
-        }
-        try {
-          const paths = new SessionPathManager(owner, repo, Number(issueNumber));
-          const logFile = paths.getAgentLogFile();
-          if (fs.existsSync(logFile)) {
-            const content = fs.readFileSync(logFile, "utf-8");
-            return new Response(content, { headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" } });
-          } else {
-            return new Response("No logs found.", { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
-          }
-        } catch (e: any) {
-          return new Response(e.message, { status: 500 });
         }
       }
 
@@ -612,36 +552,9 @@ async function main() {
     logger.info("签名验证: 已启用");
   }
 
-  // ── 启动扫描：仅记录孤立/崩溃会话，不自动重启（由 Dashboard 手动触发） ──
-  fireAndForget(async () => {
-    logger.info("启动扫描：检查孤立/崩溃会话（不自动重启）...");
-    const sessionReport = await recoverSessions(true); // dryRun=true
-    logger.info(
-      `会话扫描完成: 扫描 ${sessionReport.scannedSessions} 个, ` +
-      `孤立 ${sessionReport.orphanedFound}, 崩溃 ${sessionReport.crashedFound}, ` +
-      `可恢复 ${sessionReport.restarted}, 跳过(上限) ${sessionReport.skippedMaxRetries}`
-    );
-
-    // 检查遗漏的 Issue（仅扫描，不自动启动）
-    const repoRes = await readRepoInfo();
-    if (repoRes.success) {
-      logger.info("检查 GitHub 上遗漏的 Issue（仅扫描）...");
-      const missedReport = await recoverMissedIssues(repoRes.data.owner, repoRes.data.repo, true); // dryRun=true
-      logger.info(
-        `遗漏 Issue 扫描完成: 发现 ${missedReport.missedIssuesFound} 个（需手动在 Dashboard 重启）`
-      );
-    } else {
-      logger.warn(`无法获取仓库信息，跳过遗漏 Issue 检查: ${repoRes.error}`);
-    }
-  });
-
-  // ── 定期健康检查 ──
-  startPeriodicHealthCheck();
-
   // ── 优雅关闭 ──
   const shutdown = () => {
-    logger.info("收到关闭信号，停止健康检查...");
-    stopPeriodicHealthCheck();
+    logger.info("收到关闭信号，准备退出...");
     process.exit(0);
   };
   process.on("SIGTERM", shutdown);

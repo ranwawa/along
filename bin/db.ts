@@ -26,7 +26,6 @@ export interface SessionInfo {
 
 const JSON_FIELDS = new Set([
   "commitShas",
-  "stepHistory",
   "ciResults",
   "environment",
   "repo",
@@ -49,15 +48,13 @@ const CAMEL_TO_SNAKE: Record<string, string> = {
   lastUpdate: "last_update",
   lastMessage: "last_message",
   currentStep: "current_step",
-  stepHistory: "step_history",
   errorMessage: "error_message",
   exitCode: "exit_code",
   crashLog: "crash_log",
-  cleanupTime: "cleanup_time",
-  cleanupReason: "cleanup_reason",
   retryCount: "retry_count",
   ciResults: "ci_results",
   reviewCommentCount: "review_comment_count",
+  workflowPhase: "workflow_phase",
 };
 
 const SNAKE_TO_CAMEL: Record<string, string> = {};
@@ -103,7 +100,7 @@ function initSchema(db: Database) {
       owner TEXT NOT NULL,
       repo TEXT NOT NULL,
       issue_number INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'running',
+      status TEXT NOT NULL DEFAULT 'phase1_running',
       start_time TEXT NOT NULL,
       end_time TEXT,
       branch_name TEXT DEFAULT '',
@@ -119,15 +116,13 @@ function initSchema(db: Database) {
       last_update TEXT,
       last_message TEXT,
       current_step TEXT,
-      step_history TEXT DEFAULT '[]',
       error_message TEXT,
       exit_code INTEGER,
       crash_log TEXT,
-      cleanup_time TEXT,
-      cleanup_reason TEXT,
       retry_count INTEGER DEFAULT 0,
       ci_results TEXT,
       review_comment_count INTEGER,
+      workflow_phase TEXT,
       environment TEXT,
       UNIQUE(owner, repo, issue_number)
     );
@@ -137,6 +132,7 @@ function initSchema(db: Database) {
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_pr_number ON sessions(pr_number)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch_name)"); } catch {}
+  try { db.exec("ALTER TABLE sessions ADD COLUMN workflow_phase TEXT"); } catch {}
 }
 
 // ─── 行转换 ───────────────────────────────────────────────
@@ -156,7 +152,7 @@ function rowToSessionStatus(row: any): SessionStatus {
       try {
         result[camelKey] = JSON.parse(value);
       } catch {
-        result[camelKey] = camelKey === "commitShas" || camelKey === "stepHistory" ? [] : value;
+        result[camelKey] = camelKey === "commitShas" ? [] : value;
       }
     } else {
       result[camelKey] = value;
@@ -238,7 +234,7 @@ export function upsertSession(owner: string, repo: string, issueNumber: number, 
 
       // 确保必填字段有默认值
       if (!columns.start_time) columns.start_time = new Date().toISOString();
-      if (!columns.status) columns.status = "running";
+      if (!columns.status) columns.status = "phase1_running";
 
       const keys = Object.keys(columns);
       const placeholders = keys.map(() => "?").join(", ");
@@ -395,7 +391,7 @@ export function transactSession(
         columns.repo = columns.repo || repo;
         columns.issue_number = issueNumber;
         if (!columns.start_time) columns.start_time = new Date().toISOString();
-        if (!columns.status) columns.status = "running";
+        if (!columns.status) columns.status = "phase1_running";
 
         const keys = Object.keys(columns);
         const placeholders = keys.map(() => "?").join(", ");

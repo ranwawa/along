@@ -1,3 +1,16 @@
+export type DashboardStatus =
+  | "phase1_running"
+  | "awaiting_approval"
+  | "phase2_running"
+  | "awaiting_pr"
+  | "pr_open"
+  | "review_fixing"
+  | "ci_fixing"
+  | "merged"
+  | "error"
+  | "crashed"
+  | "zombie";
+
 export interface LogEntry {
   timestamp: string;
   level: string;
@@ -10,7 +23,7 @@ export interface DashboardSession {
   repo: string;
   issueNumber: number;
   title: string;
-  status: "running" | "completed" | "error" | "crashed" | "zombie";
+  status: DashboardStatus;
   currentStep: string;
   lastMessage: string;
   startTime: string;
@@ -24,11 +37,18 @@ export interface DashboardSession {
   errorMessage?: string;
   crashLog?: string;
   hasWorktree?: boolean;
+  workflowPhase?: "phase1" | "phase2";
 }
 
 export interface StatusCounts {
-  running: number;
-  completed: number;
+  phase1_running: number;
+  awaiting_approval: number;
+  phase2_running: number;
+  awaiting_pr: number;
+  pr_open: number;
+  review_fixing: number;
+  ci_fixing: number;
+  merged: number;
   error: number;
   crashed: number;
   zombie: number;

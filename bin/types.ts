@@ -1,3 +1,5 @@
+import type { SessionLifecycleStatus } from "./session-state-machine";
+
 export interface LogEntry {
   timestamp: Date;
   level: string;
@@ -10,7 +12,7 @@ export interface DashboardSession {
   repo: string;
   issueNumber: number;
   title: string;
-  status: "running" | "completed" | "error" | "crashed" | "zombie";
+  status: SessionLifecycleStatus | "zombie";
   currentStep: string;
   lastMessage: string;
   startTime: string;
@@ -23,11 +25,18 @@ export interface DashboardSession {
   retryCount?: number;
   errorMessage?: string;
   crashLog?: string;
+  workflowPhase?: "phase1" | "phase2";
 }
 
 export interface StatusCounts {
-  running: number;
-  completed: number;
+  phase1_running: number;
+  awaiting_approval: number;
+  phase2_running: number;
+  awaiting_pr: number;
+  pr_open: number;
+  review_fixing: number;
+  ci_fixing: number;
+  merged: number;
   error: number;
   crashed: number;
   zombie: number;

@@ -301,11 +301,8 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   const commentsFile = writeCommentsFile(paths, unresolvedComments, prNumber, statusData.repo, session);
   logger.info(`评论已写入: ${commentsFile}`);
 
-  session.writeStatus({
-    status: "running",
-    currentStep: "处理 PR 评论",
-    lastMessage: `发现 ${unresolvedComments.length} 条未解决的评论`,
-  });
+  session.transition({ type: "REVIEW_FIX_STARTED", commentCount: unresolvedComments.length });
+  session.writeStatus({ reviewCommentCount: unresolvedComments.length });
 
   session.logEvent("agent-launched", { trigger: "webhook-review", commentCount: unresolvedComments.length });
   const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review", (pid) => {
@@ -319,6 +316,7 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   }
 
   session.logEvent("agent-completed", { trigger: "webhook-review" });
+  session.transition({ type: "REVIEW_FIX_COMPLETED" });
 
   logger.info(`PR #${prNumber} 评论处理完成`);
 
@@ -441,11 +439,7 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   const ciFile = writeCiFailureFile(paths, failedRuns, headSha, statusData.repo, session);
   logger.info(`CI 失败信息已写入: ${ciFile}`);
 
-  session.writeStatus({
-    status: "running",
-    currentStep: "修复 CI 失败",
-    lastMessage: `发现 ${failedRuns.length} 个 CI 检查失败`,
-  });
+  session.transition({ type: "CI_FIX_STARTED", failedCount: failedRuns.length });
   session.updateCiResults(0, failedRuns.length, headSha);
 
   session.logEvent("agent-launched", { trigger: "webhook-ci", failedCount: failedRuns.length, headSha });
@@ -462,6 +456,7 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   }
 
   session.logEvent("agent-completed", { trigger: "webhook-ci" });
+  session.transition({ type: "CI_FIX_COMPLETED" });
 
   logger.info(`PR #${prNumber} CI 修复完成`);
 }

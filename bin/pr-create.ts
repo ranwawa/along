@@ -101,11 +101,11 @@ async function main() {
     const prNum = prNumberMatch ? Number(prNumberMatch[1]) : undefined;
 
     // 更新数据库：记录 PR URL，保持 running 状态
-    const writeRes = session.writeStatus({
+    const writeRes = session.transition({
+      type: "PR_CREATED",
       prUrl,
-      lastMessage: "PR 已创建",
-      currentStep: "等待 PR 审核与合并",
-      ...(prNum ? { prNumber: prNum } : {}),
+      prNumber: prNum,
+      message: "PR 已创建",
     });
     if (!writeRes.success) {
       logger.warn(`更新 PR 状态失败: ${writeRes.error}`);

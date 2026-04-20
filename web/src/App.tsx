@@ -2,6 +2,21 @@ import { useState, useEffect, useMemo } from 'react';
 import type { DashboardSession, LogEntry, StatusCounts } from './types';
 import './index.css';
 
+const statusFilters = [
+  'all',
+  'phase1_running',
+  'awaiting_approval',
+  'phase2_running',
+  'awaiting_pr',
+  'pr_open',
+  'review_fixing',
+  'ci_fixing',
+  'merged',
+  'error',
+  'crashed',
+  'zombie',
+] as const;
+
 function App() {
   const [sessions, setSessions] = useState<DashboardSession[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -48,49 +63,23 @@ function App() {
     };
     return () => evtSource.close();
   }, []);
-
-  const [viewingLogSession, setViewingLogSession] = useState<DashboardSession | null>(null);
-  const [agentLogContent, setAgentLogContent] = useState<string>('');
   const [sysLogExpanded, setSysLogExpanded] = useState(false);
-  const [issueLogs, setIssueLogs] = useState<LogEntry[]>([]);
-
-  useEffect(() => {
-    if (!viewingLogSession) return;
-    let active = true;
-    const fetchLog = async () => {
-       try {
-         const res = await fetch(`/api/agent-logs?owner=${encodeURIComponent(viewingLogSession.owner)}&repo=${encodeURIComponent(viewingLogSession.repo)}&issueNumber=${viewingLogSession.issueNumber}`);
-         if (res.ok && active) {
-            setAgentLogContent(await res.text());
-         }
-       } catch (e) {}
-    };
-    fetchLog();
-    const timer = setInterval(fetchLog, 3000);
-    return () => { active = false; clearInterval(timer); };
-  }, [viewingLogSession]);
-
-  useEffect(() => {
-    if (!selectedSession) {
-      setIssueLogs([]);
-      return;
-    }
-    let active = true;
-    const fetchIssueLogs = async () => {
-      try {
-        const res = await fetch(`/api/issue-logs?owner=${encodeURIComponent(selectedSession.owner)}&repo=${encodeURIComponent(selectedSession.repo)}&issueNumber=${selectedSession.issueNumber}`);
-        if (res.ok && active) {
-          setIssueLogs(await res.json());
-        }
-      } catch (e) {}
-    };
-    fetchIssueLogs();
-    const timer = setInterval(fetchIssueLogs, 3000);
-    return () => { active = false; clearInterval(timer); };
-  }, [selectedSession]);
 
   const counts = useMemo<StatusCounts>(() => {
-    const defaultCounts: StatusCounts = { running: 0, completed: 0, error: 0, crashed: 0, zombie: 0, total: sessions.length };
+    const defaultCounts: StatusCounts = {
+      phase1_running: 0,
+      awaiting_approval: 0,
+      phase2_running: 0,
+      awaiting_pr: 0,
+      pr_open: 0,
+      review_fixing: 0,
+      ci_fixing: 0,
+      merged: 0,
+      error: 0,
+      crashed: 0,
+      zombie: 0,
+      total: sessions.length,
+    };
     for (const s of sessions) {
       if (s.status in defaultCounts) {
         (defaultCounts as any)[s.status]++;
@@ -108,6 +97,23 @@ function App() {
   }, [sessions, currentFilter, repoFilter]);
 
   const isFailedStatus = (status: string) => ['error', 'crashed', 'zombie'].includes(status);
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'phase1_running': return 'Phase 1';
+      case 'awaiting_approval': return 'Awaiting Approval';
+      case 'phase2_running': return 'Phase 2';
+      case 'awaiting_pr': return 'Awaiting PR';
+      case 'pr_open': return 'PR Open';
+      case 'review_fixing': return 'Review Fix';
+      case 'ci_fixing': return 'CI Fix';
+      case 'merged': return 'Merged';
+      case 'error': return 'Error';
+      case 'crashed': return 'Crashed';
+      case 'zombie': return 'Zombie';
+      default: return status;
+    }
+  };
 
   const restartSession = async (session: DashboardSession, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -175,8 +181,14 @@ function App() {
 
   const getStatusColor = (status: string) => {
     switch(status) {
-      case 'running': return 'bg-blue-500/15 text-status-running border-blue-500/30';
-      case 'completed': return 'bg-emerald-500/15 text-status-completed border-emerald-500/30';
+      case 'phase1_running': return 'bg-sky-500/15 text-status-running border-sky-500/30';
+      case 'awaiting_approval': return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      case 'phase2_running': return 'bg-blue-500/15 text-status-running border-blue-500/30';
+      case 'awaiting_pr': return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+      case 'pr_open': return 'bg-emerald-500/15 text-status-completed border-emerald-500/30';
+      case 'review_fixing': return 'bg-violet-500/15 text-violet-300 border-violet-500/30';
+      case 'ci_fixing': return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
+      case 'merged': return 'bg-emerald-500/15 text-status-completed border-emerald-500/30';
       case 'error': return 'bg-red-500/15 text-status-error border-red-500/30';
       case 'crashed': return 'bg-orange-500/15 text-status-crashed border-orange-500/30';
       case 'zombie': return 'bg-purple-500/15 text-status-zombie border-purple-500/30';
@@ -199,7 +211,7 @@ function App() {
           🚀 ALONG Dashboard
         </h1>
         <div className="flex flex-wrap gap-1.5 md:gap-2">
-          {['all', 'running', 'completed', 'error', 'crashed', 'zombie'].map(filter => (
+          {statusFilters.map(filter => (
             <button
               key={filter}
               className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer text-xs md:text-sm transition-all border ${
@@ -209,7 +221,7 @@ function App() {
               }`}
               onClick={() => setCurrentFilter(filter)}
             >
-              {filter.charAt(0).toUpperCase() + filter.slice(1)}
+              {filter === 'all' ? 'All' : getStatusLabel(filter)}
               {filter !== 'all' && <span className="opacity-60 ml-1.5">{(counts as any)[filter]}</span>}
             </button>
           ))}
@@ -260,7 +272,7 @@ function App() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.status)}`}>
-                        {session.status}
+                        {getStatusLabel(session.status)}
                       </span>
                       <span className="text-text-muted text-xs">{session.runtime}</span>
                       {session.currentStep && (
@@ -283,13 +295,6 @@ function App() {
                         🔄
                       </button>
                     )}
-                    <button
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer bg-white/5 text-text-secondary hover:bg-white/20 hover:text-white"
-                      title="查看 Agent 完整日志"
-                      onClick={(e) => { e.stopPropagation(); setViewingLogSession(session); }}
-                    >
-                      📄
-                    </button>
                   </div>
                 </div>
               ))}
@@ -325,7 +330,7 @@ function App() {
                      </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.status)}`}>
-                          {session.status}
+                          {getStatusLabel(session.status)}
                         </span>
                      </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">{session.runtime}</td>
@@ -347,13 +352,6 @@ function App() {
                            🔄
                          </button>
                        )}
-                       <button
-                         className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer bg-white/5 text-text-secondary hover:bg-white/20 hover:text-white"
-                         title="查看 Agent 完整日志"
-                         onClick={(e) => { e.stopPropagation(); setViewingLogSession(session); }}
-                       >
-                         📄
-                       </button>
                      </td>
                    </tr>
                 ))}
@@ -411,7 +409,7 @@ function App() {
                     <span className="text-text-secondary font-medium text-xs md:text-sm">Status</span>
                     <div className="flex items-center gap-3">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.status)}`}>
-                        {selectedSession.status}
+                        {getStatusLabel(selectedSession.status)}
                       </span>
                       {isFailedStatus(selectedSession.status) && (
                         <button
@@ -461,23 +459,7 @@ function App() {
                     </div>
                  )}
 
-                 {issueLogs.length > 0 && (
-                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
-                       <span className="text-text-secondary font-medium text-xs md:text-sm">执行日志</span>
-                       <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] max-h-[300px] overflow-y-auto flex flex-col gap-1">
-                         {issueLogs.map((log, i) => (
-                           <div key={i} className="break-all hover:bg-white/5 p-0.5">
-                             <span className="text-text-muted mr-1.5">{new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(log.timestamp))}</span>
-                             <span className={`font-semibold mr-1.5 uppercase ${getLogLevelColor(log.level)}`}>[{log.level}]</span>
-                             {log.tag && <span className="text-text-muted mr-1.5">({log.tag})</span>}
-                             <span className="text-gray-300">{log.message}</span>
-                           </div>
-                         ))}
-                       </div>
-                    </div>
-                 )}
-
-                 {selectedSession.errorMessage && (
+	                 {selectedSession.errorMessage && (
                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
                        <span className="text-text-secondary font-medium text-xs md:text-sm">Error</span>
                        <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-status-error overflow-x-auto">
@@ -494,23 +476,6 @@ function App() {
                        </div>
                     </div>
                  )}
-              </div>
-           </div>
-        </div>
-      )}
-
-      {viewingLogSession && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-0 md:p-4" onClick={() => setViewingLogSession(null)}>
-           <div className="bg-bg-secondary border border-border-color rounded-t-2xl md:rounded-2xl w-full max-w-[1200px] h-[85vh] md:h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="p-3 md:p-4 border-b border-border-color flex justify-between items-center bg-bg-glass">
-                 <h2 className="text-sm md:text-lg font-bold flex items-center gap-2 md:gap-3 truncate mr-2">
-                   📄 <span className="hidden md:inline">Agent Logs:</span><span className="md:hidden">Logs:</span> {viewingLogSession.owner}/{viewingLogSession.repo} #{viewingLogSession.issueNumber}
-                   {viewingLogSession.status === 'running' && <span className="text-xs bg-status-running/20 text-status-running px-2 py-1 rounded shrink-0">Live</span>}
-                 </h2>
-                 <button className="text-text-secondary hover:text-white bg-transparent text-xl cursor-pointer p-2 shrink-0" onClick={() => setViewingLogSession(null)}>✕</button>
-              </div>
-              <div className="flex-1 overflow-auto p-3 md:p-4 bg-black font-mono text-xs md:text-[13px] text-gray-300">
-                <pre className="whitespace-pre-wrap break-words m-0">{agentLogContent || 'Loading or missing logs...'}</pre>
               </div>
            </div>
         </div>

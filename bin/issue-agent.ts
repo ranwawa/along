@@ -28,6 +28,7 @@ import { readGithubToken, get_gh_client } from "./github-client";
 import { readSession } from "./db";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import { $ } from "bun";
+import type { WorkflowPhase } from "./session-state-machine";
 
 /**
  * 对字符串进行 shell 转义，防止注入
@@ -169,6 +170,7 @@ export async function execTmux(
     tmuxSessionName?: string;
     detach?: boolean;
     workflow: string;
+    phase: WorkflowPhase;
   },
 ): Promise<Result<void>> {
   const logTagRes = config.getLogTag();
@@ -211,27 +213,9 @@ export async function execTmux(
     num: shellEscape(num),
   };
 
-  // Agent 完成后导出会话数据
-  const exportBinPath = shellEscape(path.join(config.BIN_DIR, "agent-session-export.ts"));
-  const sessionPathsPath = shellEscape(path.join(config.BIN_DIR, "session-paths.ts"));
-  const exportSessionScript = `
-ALONG_EXPORT_BIN=${exportBinPath} \
-ALONG_PATHS_BIN=${sessionPathsPath} \
-ALONG_OWNER=${esc.owner} \
-ALONG_REPO=${esc.repo} \
-ALONG_NUM=${num} \
-ALONG_WORKTREE=${esc.worktreePath} \
-bun -e "
-  const { exportAgentSession } = require(process.env.ALONG_EXPORT_BIN);
-  const { SessionPathManager } = require(process.env.ALONG_PATHS_BIN);
-  const paths = new SessionPathManager(process.env.ALONG_OWNER, process.env.ALONG_REPO, Number(process.env.ALONG_NUM));
-  exportAgentSession(paths, process.env.ALONG_WORKTREE).catch(() => {});
-" 2>/dev/null || true
-  `.trim();
-
   // Agent 完成后更新数据库
   const finalizeBinPath = shellEscape(path.join(config.BIN_DIR, "session-finalize.ts"));
-  const updateStatusScript = `bun ${finalizeBinPath} ${esc.owner} ${esc.repo} ${issueNumber} \${EXIT_CODE} ${esc.logFile} 2>/dev/null || true`;
+  const updateStatusScript = `bun ${finalizeBinPath} ${esc.owner} ${esc.repo} ${issueNumber} ${options.phase} \${EXIT_CODE} ${esc.logFile} 2>/dev/null || true`;
 
   // 启动时将 shell PID 写入数据库
   const pidBinPath = shellEscape(path.join(config.BIN_DIR, "session-update-pid.ts"));
@@ -243,7 +227,6 @@ echo "Starting at $(date)" > ${esc.logFile}
 ${writePidScript}
 cd ${esc.worktreePath} && ${cmd} 2>&1 | tee -a ${esc.logFile}
 EXIT_CODE=\${PIPESTATUS[0]}
-${exportSessionScript}
 ${updateStatusScript}
 if [ \${EXIT_CODE} -ne 0 ]; then
   echo ""
@@ -346,12 +329,13 @@ export async function launchIssueAgent(
 
     const statusData: Record<string, any> = {
       issueNumber,
-      status: "running",
+      status: phase === "phase1" ? "phase1_running" : "phase2_running",
       startTime: iso_timestamp(),
       branchName: "",
       worktreePath,
       title,
       repo: { owner, name: repo },
+      workflowPhase: phase,
     };
 
     const agentRole = getAgentRole();
@@ -379,8 +363,7 @@ export async function launchIssueAgent(
     await initSessionFiles(paths, worktreePath, statusData, session);
     logger.success("worktree 初始化完成");
   } else {
-    // worktree 已存在，更新状态为 running
-    session.writeStatus({ status: "running", lastUpdate: iso_timestamp() });
+    session.transition({ type: "START_PHASE", phase, message: `重新启动 ${phase}` });
   }
 
   ensureEditorPermissions(worktreePath);
@@ -393,6 +376,7 @@ export async function launchIssueAgent(
 
   // 4. 启动 agent
   const workflow = "resolve-github-issue";
+  session.transition({ type: "START_PHASE", phase, message: `启动 ${phase}` });
   session.updateStep("启动 Agent", `phase=${phase}, workflow=${workflow}`);
 
   if (options.strategy === "tmux") {
@@ -400,6 +384,7 @@ export async function launchIssueAgent(
       tmuxSessionName: options.tmuxSessionName,
       detach: options.detach,
       workflow,
+      phase,
     });
   }
 
@@ -428,7 +413,7 @@ export async function launchIssueAgent(
       } catch (e) {}
       session.markAsCrashed(`Agent 意外退出 (退出码: ${exitCode})`, crashLog || "无法获取日志文件内容", exitCode);
     } else {
-      session.markAsCompleted();
+      session.transition({ type: "AGENT_EXITED_SUCCESS", phase });
     }
     clearCurrentIssueContext();
     return success(undefined);

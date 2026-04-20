@@ -3,17 +3,17 @@ import { iso_timestamp, success, failure } from "./common";
 import type { Result } from "./common";
 import { SessionPathManager } from "./session-paths";
 import { readSession, upsertSession, transactSession } from "./db";
-
-export interface StepRecord {
-  step: string;
-  message?: string;
-  startTime: string;
-  endTime?: string;
-}
+import {
+  applySessionStateEvent,
+  getDisplayStep,
+  type SessionLifecycleStatus,
+  type SessionStateEvent,
+  type WorkflowPhase,
+} from "./session-state-machine";
 
 export interface SessionStatus {
   issueNumber: number;
-  status: "running" | "completed" | "error" | "crashed";
+  status: SessionLifecycleStatus;
   startTime: string;
   endTime?: string;
   branchName: string;
@@ -30,15 +30,13 @@ export interface SessionStatus {
   lastUpdate?: string;
   lastMessage?: string;
   currentStep?: string;
-  stepHistory?: StepRecord[];
   errorMessage?: string;
   exitCode?: number;
   crashLog?: string;
-  cleanupTime?: string;
-  cleanupReason?: string;
   retryCount?: number;
   ciResults?: { passed: number; failed: number; lastSha?: string };
   reviewCommentCount?: number;
+  workflowPhase?: WorkflowPhase;
   environment?: {
     agentType: string;
     gitHeadSha: string;
@@ -84,12 +82,13 @@ export class SessionManager {
       // 首次写入，设置默认值
       const defaults: Partial<SessionStatus> = {
         issueNumber: this.issueNumber,
-        status: "running",
+        status: "phase1_running",
         startTime: iso_timestamp(),
         branchName: "",
         worktreePath: "",
         title: "",
         repo: { owner: this.owner, name: this.repo },
+        currentStep: getDisplayStep("phase1_running"),
       };
       return upsertSession(this.owner, this.repo, this.issueNumber, {
         ...defaults,
@@ -121,15 +120,23 @@ export class SessionManager {
   }
 
   /**
+   * 通过状态机事件驱动状态流转
+   */
+  transition(event: SessionStateEvent): Result<void> {
+    return transactSession(this.owner, this.repo, this.issueNumber, (current) => {
+      const { patch } = applySessionStateEvent(current, event);
+      return {
+        ...patch,
+        lastUpdate: iso_timestamp(),
+      };
+    });
+  }
+
+  /**
    * 标记会话为错误状态
    */
   markAsError(errorMessage: string, exitCode?: number): Result<void> {
-    const writeRes = this.writeStatus({
-      status: "error",
-      endTime: iso_timestamp(),
-      errorMessage,
-      exitCode,
-    });
+    const writeRes = this.transition({ type: "BLOCKED", message: errorMessage, exitCode });
     this.log(`Error: ${errorMessage}`, "error");
     return writeRes;
   }
@@ -138,10 +145,9 @@ export class SessionManager {
    * 标记会话为崩溃状态（异常退出）
    */
   markAsCrashed(errorMessage: string, crashLog?: string, exitCode?: number): Result<void> {
-    const writeRes = this.writeStatus({
-      status: "crashed",
-      endTime: iso_timestamp(),
-      errorMessage,
+    const writeRes = this.transition({
+      type: "AGENT_EXITED_FAILURE",
+      message: errorMessage,
       crashLog,
       exitCode,
     });
@@ -153,38 +159,12 @@ export class SessionManager {
   }
 
   /**
-   * 标记会话为完成状态
-   */
-  markAsCompleted(): Result<void> {
-    const writeRes = this.writeStatus({
-      status: "completed",
-      endTime: iso_timestamp(),
-    });
-    this.log("Completed successfully", "info");
-    return writeRes;
-  }
-
-  /**
-   * 更新当前步骤（同时记录步骤历史）
-   * 使用事务防止并发竞态
+   * 更新当前步骤
    */
   updateStep(step: string, message?: string): Result<void> {
-    const now = iso_timestamp();
-    const writeRes = transactSession(this.owner, this.repo, this.issueNumber, (current) => {
-      const history = current?.stepHistory ? [...current.stepHistory] : [];
-      if (history.length > 0) {
-        const last = history[history.length - 1];
-        if (!last.endTime) {
-          history[history.length - 1] = { ...last, endTime: now };
-        }
-      }
-      history.push({ step, message, startTime: now });
-      return {
-        currentStep: step,
-        lastMessage: message,
-        lastUpdate: now,
-        stepHistory: history,
-      };
+    const writeRes = this.writeStatus({
+      currentStep: step,
+      lastMessage: message,
     });
     if (message) {
       this.log(`Step: ${step} - ${message}`, "info");
