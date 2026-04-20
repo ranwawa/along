@@ -16,7 +16,7 @@ import { saveStepOutput, completeTodoStep } from "./todo-helper";
 import { SessionPathManager } from "./session-paths";
 import { readRepoInfo } from "./github-client";
 import { SessionManager } from "./session-manager";
-import { findSessionByBranch, upsertSession } from "./db";
+import { findSessionByBranch } from "./db";
 
 /**
  * .along/bin/commit-push.ts
@@ -34,11 +34,8 @@ function updateStatusAfterPush(branchName: string): { issueNumber: string; owner
   if (!foundRes.success || !foundRes.data) return null;
   const found = foundRes.data;
 
-  const res = upsertSession(found.owner, found.repo, found.issueNumber, {
-    lastUpdate: iso_timestamp(),
-    lastMessage: "代码已提交推送",
-    currentStep: "创建 PR",
-  });
+  const session = new SessionManager(found.owner, found.repo, found.issueNumber);
+  const res = session.transition({ type: "COMMITS_PUSHED" });
   if (res.success) {
     logger.success("状态已自动更新");
   }

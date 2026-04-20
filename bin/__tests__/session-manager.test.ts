@@ -38,6 +38,7 @@ vi.mock("fs", () => ({
 vi.mock("../db", () => ({
   readSession: vi.fn(),
   upsertSession: vi.fn(() => ({ success: true })),
+  transactSession: vi.fn(),
 }));
 
 // Mock common dependencies
@@ -48,7 +49,7 @@ vi.mock("../common", () => ({
 }));
 
 import fs from "fs";
-import { readSession, upsertSession } from "../db";
+import { readSession, upsertSession, transactSession } from "../db";
 import { SessionManager } from "../session-manager";
 
 describe("session-manager.ts", () => {
@@ -60,12 +61,17 @@ describe("session-manager.ts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sm = new SessionManager(owner, repo, issueNumber);
-    vi.mocked(upsertSession).mockReturnValue({ success: true } as any);
+    (upsertSession as any).mockReturnValue({ success: true } as any);
+    (transactSession as any).mockImplementation((mockOwner: string, mockRepo: string, mockIssueNumber: number, modifier: any) => {
+      const currentRes = (readSession as any)(mockOwner, mockRepo, mockIssueNumber);
+      const update = modifier(currentRes?.data ?? null);
+      return (upsertSession as any)(mockOwner, mockRepo, mockIssueNumber, update);
+    });
   });
 
   describe("writeStatus()", () => {
     it("首次写入时设置默认值", () => {
-      vi.mocked(readSession).mockReturnValue({ success: true, data: null } as any);
+      (readSession as any).mockReturnValue({ success: true, data: null } as any);
 
       sm.writeStatus({ title: "Test Issue" });
       expect(upsertSession).toHaveBeenCalledWith(
@@ -73,7 +79,7 @@ describe("session-manager.ts", () => {
         repo,
         issueNumber,
         expect.objectContaining({
-          status: "running",
+          status: "phase1_running",
           title: "Test Issue",
         })
       );
@@ -81,10 +87,10 @@ describe("session-manager.ts", () => {
   });
 
   describe("updateStep()", () => {
-    it("添加新步骤到历史记录", () => {
-      vi.mocked(readSession).mockReturnValue({
+    it("更新当前步骤和消息", () => {
+      (readSession as any).mockReturnValue({
         success: true,
-        data: { status: "running", stepHistory: [] },
+        data: { status: "phase1_running" },
       } as any);
 
       sm.updateStep("分析代码", "开始分析");
@@ -94,29 +100,9 @@ describe("session-manager.ts", () => {
         issueNumber,
         expect.objectContaining({
           currentStep: "分析代码",
-          stepHistory: expect.arrayContaining([
-            expect.objectContaining({ step: "分析代码" }),
-          ]),
+          lastMessage: "开始分析",
         })
       );
-    });
-
-    it("关闭上一个步骤的 endTime", () => {
-      vi.mocked(readSession).mockReturnValue({
-        success: true,
-        data: {
-          status: "running",
-          stepHistory: [
-            { step: "Step 1", startTime: "2026-01-01T00:00:00Z" },
-          ],
-        },
-      } as any);
-
-      sm.updateStep("Step 2");
-      const calls = vi.mocked(upsertSession).mock.calls;
-      const updateData = calls[0][3] as any;
-      expect(updateData.stepHistory[0].endTime).toBeTruthy();
-      expect(updateData.stepHistory[1].step).toBe("Step 2");
     });
   });
 

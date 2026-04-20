@@ -18,7 +18,6 @@ function printHelp(commands: string[], tag: string) {
     "run": "一键启动（默认前台，支持 --ci）",
     "webhook-server": "启动本地 webhook 服务器，接收 GitHub App webhook 事件",
     "app-init": "引导配置 GitHub App 以接收仓库事件",
-    "recover": "扫描并恢复孤立/崩溃的 session"
   };
 
   for (const name of commands) {
@@ -40,7 +39,7 @@ function printHelp(commands: string[], tag: string) {
  */
 async function dispatch(subCommand: string, args: string[], binDir: string, commands: string[], tag: string) {
   const scriptPath = path.join(binDir, `${subCommand}.ts`);
-  const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue', 'webhook-handlers', 'issue-triage', 'recovery'].includes(subCommand);
+  const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue', 'webhook-handlers', 'issue-triage'].includes(subCommand);
 
   if (commands.includes(subCommand) && !isInternal) {
     const proc = Bun.spawn([Bun.argv[0], scriptPath, ...args], {

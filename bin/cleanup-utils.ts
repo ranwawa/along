@@ -2,7 +2,6 @@ import { $ } from "bun";
 import { consola } from "consola";
 import {
   check_process_running,
-  iso_timestamp,
   success,
   failure,
 } from "./common";
@@ -14,8 +13,8 @@ import { config } from "./config";
 import fs from "fs";
 import { SessionPathManager } from "./session-paths";
 import { SessionManager } from "./session-manager";
-import { exportAgentSession } from "./agent-session-export";
-import { readSession } from "./db";
+import { deleteSession, readSession } from "./db";
+import { isActiveSessionStatus } from "./session-state-machine";
 
 export interface CleanupOptions {
   force?: boolean;
@@ -45,7 +44,7 @@ export async function checkAndKillProcess(
   if (!res.success) return { canProceed: false, error: res.error };
   const data = res.data;
   if (!data) return { canProceed: true };
-  if (data.status !== "running") return { canProceed: true };
+  if (!isActiveSessionStatus(data.status)) return { canProceed: true };
 
   const pid = data.pid || 0;
   if (!pid || !(await check_process_running(pid))) return { canProceed: true };
@@ -95,23 +94,6 @@ export async function cleanupBranch(branchName: string, silent?: boolean, sessio
     await $`git branch -D ${branchName}`.quiet().nothrow();
     session?.logEvent("branch-deleted", { branchName });
   }
-}
-
-/** 归档 session：在数据库中标记 cleanupTime/cleanupReason */
-export async function archiveSession(
-  owner: string,
-  repo: string,
-  issueNumber: number,
-  reason: string,
-  silent?: boolean,
-  session?: SessionManager,
-) {
-  session?.writeStatus({
-    cleanupTime: iso_timestamp(),
-    cleanupReason: reason,
-  });
-  info(`会话状态已标记清理: ${owner}/${repo}#${issueNumber}`, silent);
-  session?.logEvent("session-archived", { reason });
 }
 
 /**
@@ -174,21 +156,17 @@ export async function cleanupIssue(
   // 读取分支名（必须在归档前读取）
   const branchName = readBranchName(owner, repo, Number(issueNumber));
 
-  // 导出 agent 会话数据（必须在 worktree 删除前执行）
-  try {
-    await exportAgentSession(paths, worktreePath, session);
-  } catch (e: any) {
-    warn(`导出 agent 会话数据失败: ${e.message}`, options.silent);
-  }
-
   // 清理 worktree
   await cleanupWorktree(worktreePath, options.silent, session);
 
   // 删除本地分支
   await cleanupBranch(branchName, options.silent, session);
 
-  // 归档（在数据库中标记清理信息）
-  await archiveSession(owner, repo, Number(issueNumber), reason, options.silent, session);
+  const deleteRes = deleteSession(owner, repo, Number(issueNumber));
+  if (!deleteRes.success) {
+    return failure(deleteRes.error);
+  }
+  info(`会话记录已删除: ${owner}/${repo}#${issueNumber}`, options.silent);
 
   session.logEvent("cleanup-completed", { issueNumber, reason, branchName });
   return success(undefined);

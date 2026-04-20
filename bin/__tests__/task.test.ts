@@ -45,8 +45,8 @@ describe("task.ts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // 默认 mock: db 中无 session，文件系统无 todo 和 worktree
-    vi.mocked(readSession).mockReturnValue({ success: true, data: null } as any);
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    (readSession as any).mockReturnValue({ success: true, data: null } as any);
+    (fs.existsSync as any).mockReturnValue(false);
   });
 
   describe("构造函数", () => {
@@ -65,7 +65,7 @@ describe("task.ts", () => {
     });
 
     it("有 worktree 时返回 false", () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).includes("worktree"));
+      (fs.existsSync as any).mockImplementation((p: any) => String(p).includes("worktree"));
       const task = new Task(owner, repo, 42);
       expect(task.notExists()).toBe(false);
     });
@@ -79,10 +79,10 @@ describe("task.ts", () => {
 - [ ] 第四步：提交代码
 - [ ] 第五步：创建 PR`;
 
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      (fs.existsSync as any).mockImplementation((p: any) => {
         return String(p).endsWith("todo.md");
       });
-      vi.mocked(fs.readFileSync).mockReturnValue(todoContent);
+      (fs.readFileSync as any).mockReturnValue(todoContent);
 
       const task = new Task(owner, repo, 42);
       expect(task.todo).not.toBeNull();
@@ -104,10 +104,10 @@ describe("task.ts", () => {
 - [ ] 步骤2
 - [ ] 步骤3`;
 
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      (fs.existsSync as any).mockImplementation((p: any) => {
         return String(p).endsWith("todo.md");
       });
-      vi.mocked(fs.readFileSync).mockReturnValue(todoContent);
+      (fs.readFileSync as any).mockReturnValue(todoContent);
 
       const task = new Task(owner, repo, 42);
       expect(task.todo.currentStep).toBe("步骤2");
@@ -117,10 +117,10 @@ describe("task.ts", () => {
       const todoContent = `- [x] 步骤1
 - [x] 步骤2`;
 
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      (fs.existsSync as any).mockImplementation((p: any) => {
         return String(p).endsWith("todo.md");
       });
-      vi.mocked(fs.readFileSync).mockReturnValue(todoContent);
+      (fs.readFileSync as any).mockReturnValue(todoContent);
 
       const task = new Task(owner, repo, 42);
       expect(task.todo.currentStep).toBe("已完成");
@@ -128,12 +128,12 @@ describe("task.ts", () => {
   });
 
   describe("checkHealth()", () => {
-    it("running 状态无 worktree 时返回 failure", () => {
-      vi.mocked(readSession).mockReturnValue({
+    it("活跃状态无 worktree 时返回 failure", () => {
+      (readSession as any).mockReturnValue({
         success: true,
-        data: { status: "running" } as any,
+        data: { status: "phase1_running" } as any,
       } as any);
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      (fs.existsSync as any).mockReturnValue(false);
 
       const task = new Task(owner, repo, 42);
       const result = task.checkHealth();
@@ -144,8 +144,8 @@ describe("task.ts", () => {
     });
 
     it("无数据时返回 success", () => {
-      vi.mocked(readSession).mockReturnValue({ success: true, data: null } as any);
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      (readSession as any).mockReturnValue({ success: true, data: null } as any);
+      (fs.existsSync as any).mockReturnValue(false);
 
       const task = new Task(owner, repo, 42);
       const result = task.checkHealth();
