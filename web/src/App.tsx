@@ -8,6 +8,7 @@ function App() {
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] = useState<DashboardSession | null>(null);
   const [restartingIssues, setRestartingIssues] = useState<Set<string>>(new Set());
+  const [repoFilter, setRepoFilter] = useState<string>('');
 
   // Poll sessions
   useEffect(() => {
@@ -18,13 +19,8 @@ function App() {
         if (!res.ok) return;
         const data = await res.json();
         if (active) {
-          // Sort by start time descending
-          data.sort((a: DashboardSession, b: DashboardSession) => {
-            const pa = a.status === 'running' ? 0 : 1;
-            const pb = b.status === 'running' ? 0 : 1;
-            if (pa !== pb) return pa - pb;
-            return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
-          });
+          // Sort by issue number descending
+          data.sort((a: DashboardSession, b: DashboardSession) => b.issueNumber - a.issueNumber);
           setSessions(data);
         }
       } catch (e) {
@@ -83,9 +79,12 @@ function App() {
   }, [sessions]);
 
   const filteredSessions = useMemo(() => {
-    if (currentFilter === 'all') return sessions;
-    return sessions.filter(s => s.status === currentFilter);
-  }, [sessions, currentFilter]);
+    return sessions.filter(s => {
+      const matchesStatus = currentFilter === 'all' || s.status === currentFilter;
+      const matchesRepo = !repoFilter || s.repo.toLowerCase().includes(repoFilter.toLowerCase());
+      return matchesStatus && matchesRepo;
+    });
+  }, [sessions, currentFilter, repoFilter]);
 
   const isFailedStatus = (status: string) => ['error', 'crashed', 'zombie'].includes(status);
 
@@ -162,28 +161,28 @@ function App() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 md:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 md:gap-4">
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-text-secondary text-xs md:text-sm font-medium uppercase tracking-wider">Total Tasks</span>
-          <span className="text-2xl md:text-3xl font-bold">{counts.total}</span>
-        </div>
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-status-running text-xs md:text-sm font-medium uppercase tracking-wider">Running</span>
-          <span className="text-2xl md:text-3xl font-bold">{counts.running}</span>
-        </div>
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-status-completed text-xs md:text-sm font-medium uppercase tracking-wider">Completed</span>
-          <span className="text-2xl md:text-3xl font-bold">{counts.completed}</span>
-        </div>
-        <div className="bg-bg-glass backdrop-blur-md border border-border-color rounded-xl p-4 md:p-6 flex flex-col gap-1.5 md:gap-2 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
-          <span className="text-status-error text-xs md:text-sm font-medium uppercase tracking-wider">Exceptions</span>
-          <span className="text-2xl md:text-3xl font-bold">{counts.error + counts.crashed + counts.zombie}</span>
-        </div>
-      </div>
-
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 flex-1 min-h-0">
         <div className="flex-1 lg:flex-[2] bg-bg-glass backdrop-blur-md border border-border-color rounded-xl flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
-          <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold text-sm md:text-base">Recent Tasks</div>
+          <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold text-sm md:text-base flex justify-between items-center">
+            <span>Recent Tasks</span>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Filter by repo..."
+                value={repoFilter}
+                onChange={(e) => setRepoFilter(e.target.value)}
+                className="bg-white/5 border border-border-color rounded-lg px-3 py-1 text-xs md:text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-32 md:w-48 transition-all"
+              />
+              {repoFilter && (
+                <button
+                  onClick={() => setRepoFilter('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-white bg-transparent border-none cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex-1 overflow-auto">
             {/* Mobile card list */}
             <div className="lg:hidden flex flex-col">
@@ -199,7 +198,10 @@ function App() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium truncate">{session.owner}/{session.repo}</span>
-                      <span className="text-text-secondary text-sm">#{session.issueNumber}</span>
+                      <span className="text-text-secondary text-sm">
+                        #{session.issueNumber}
+                        {session.hasWorktree && <span className="ml-1 opacity-70" title="Worktree exists">📁</span>}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.status)}`}>
@@ -262,7 +264,10 @@ function App() {
                      className="transition-colors cursor-pointer hover:bg-white/5"
                    >
                      <td className="px-6 py-4 border-b border-white/5 text-sm">{session.owner}/{session.repo}</td>
-                     <td className="px-6 py-4 border-b border-white/5 text-sm">#{session.issueNumber}</td>
+                     <td className="px-6 py-4 border-b border-white/5 text-sm">
+                       #{session.issueNumber}
+                       {session.hasWorktree && <span className="ml-2 opacity-70" title="Worktree exists">📁</span>}
+                     </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.status)}`}>
                           {session.status}
@@ -331,7 +336,10 @@ function App() {
              onClick={e => e.stopPropagation()}
            >
               <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center">
-                 <h2 className="text-base md:text-xl font-bold truncate mr-2">{selectedSession.owner}/{selectedSession.repo} #{selectedSession.issueNumber}</h2>
+                 <h2 className="text-base md:text-xl font-bold truncate mr-2">
+                   {selectedSession.owner}/{selectedSession.repo} #{selectedSession.issueNumber}
+                   {selectedSession.hasWorktree && <span className="ml-2 opacity-70" title="Worktree exists">📁</span>}
+                 </h2>
                  <button
                    className="bg-transparent border-none text-text-secondary cursor-pointer p-2 rounded-lg transition-colors hover:bg-white/10 hover:text-white shrink-0"
                    onClick={() => setSelectedSession(null)}

@@ -11,6 +11,7 @@
 
 import { Command } from "commander";
 import { consola } from "consola";
+import { $ } from "bun";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -24,6 +25,7 @@ import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { SessionPathManager } from "./session-paths";
+import { cleanupIssue } from "./cleanup-utils";
 
 const logger = consola.withTag("webhook-server");
 
@@ -260,8 +262,15 @@ async function handleEvent(
             } else {
               logger.info(`已移除 Issue #${linkedIssue} 的 WIP 标签`);
             }
+
+            // 自动清理 worktree
+            logger.info(`PR #${prNumber} 已合并，开始清理 Issue #${linkedIssue} 的本地资源...`);
+            const cleanRes = await cleanupIssue(String(linkedIssue), { reason: "pr-merged", silent: false }, owner, repo);
+            if (!cleanRes.success) {
+              logger.warn(`清理 Issue #${linkedIssue} 失败: ${cleanRes.error}`);
+            }
           });
-          return { status: 202, message: `已触发 WIP 清理: Issue #${linkedIssue}` };
+          return { status: 202, message: `已触发 WIP 清理与资产回收: Issue #${linkedIssue}` };
         }
         return { status: 200, message: "PR 已合并但未关联 issue" };
       }
@@ -431,6 +440,7 @@ async function main() {
           return new Response(JSON.stringify({ error: "Failed to load sessions" }), { status: 500 });
         }
         const sessions = [];
+        const worktreeList = await $`git worktree list`.text();
         for (const info of allRes.data) {
           const res = readSession(info.owner, info.repo, info.issueNumber);
           if (res.success && res.data) {
@@ -439,7 +449,14 @@ async function main() {
                 const alive = await check_process_running(res.data.pid);
                 if (!alive) displayStatus = "zombie";
              }
-             sessions.push({ ...res.data, status: displayStatus, owner: info.owner, repo: info.repo, runtime: calculate_runtime(res.data.startTime) });
+             sessions.push({
+                ...res.data,
+                status: displayStatus,
+                owner: info.owner,
+                repo: info.repo,
+                runtime: calculate_runtime(res.data.startTime),
+                hasWorktree: res.data.worktreePath ? worktreeList.includes(res.data.worktreePath) : false,
+              });
           }
         }
         return new Response(JSON.stringify(sessions), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });

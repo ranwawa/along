@@ -17,6 +17,7 @@ import { findAllSessions, readSession } from "./db";
 import { launchIssueAgent } from "./issue-agent";
 import { readGithubToken, GitHubClient } from "./github-client";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
+import { runGc } from "./worktree-gc";
 
 const logger = consola.withTag("recovery");
 
@@ -445,32 +446,40 @@ export async function recoverMissedIssues(
     logger.error(`检查未分类 Issue 失败: ${e.message}`);
     report.errors.push({ issueKey: `${owner}/${repo}:unlabeled`, error: e.message });
   }
-
   return report;
 }
 
 // ─── 定期健康检查 ──────────────────────────────────────────
 
 let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+let healthCheckCount = 0;
 
 export function startPeriodicHealthCheck(): void {
   if (healthCheckTimer) return;
 
   healthCheckTimer = setInterval(async () => {
     logger.debug("定期健康检查：扫描会话状态...");
+    healthCheckCount++;
     try {
+      // 1. 恢复异常会话
       const report = await recoverSessions();
       if (report.restarted > 0) {
         logger.warn(`健康检查发现并重启了 ${report.restarted} 个会话`);
       } else if (report.orphanedFound > 0 || report.crashedFound > 0) {
         logger.info(`健康检查: 扫描 ${report.scannedSessions} 个会话，无需恢复`);
       }
+
+      // 2. 每 12 次检查（约 1 小时）执行一次垃圾回收
+      if (healthCheckCount % 12 === 0) {
+        logger.info("定期健康检查：执行工作树垃圾回收 (GC)...");
+        await runGc({ silent: true });
+      }
     } catch (err: any) {
       logger.error(`健康检查失败: ${err.message}`);
     }
   }, HEALTH_CHECK_INTERVAL_MS);
 
-  logger.info(`定期健康检查已启动 (间隔: ${HEALTH_CHECK_INTERVAL_MS / 1000}s)`);
+  logger.info(`定期健康检查已启动 (间隔: ${HEALTH_CHECK_INTERVAL_MS / 1000}s, GC 间隔: 1h)`);
 }
 
 export function stopPeriodicHealthCheck(): void {

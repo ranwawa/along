@@ -23,6 +23,7 @@ export interface DashboardSession {
   retryCount?: number;
   errorMessage?: string;
   crashLog?: string;
+  hasWorktree?: boolean;
 }
 
 export interface StatusCounts {
