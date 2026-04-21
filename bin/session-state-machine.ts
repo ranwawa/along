@@ -1,8 +1,118 @@
 import { iso_timestamp } from "./common";
 
-export type WorkflowPhase = "phase1" | "phase2";
+export type AgentWorkflow = "phase1" | "phase2";
 
-export type SessionLifecycleStatus =
+export type SessionLifecycle =
+  | "running"
+  | "waiting_human"
+  | "waiting_external"
+  | "completed"
+  | "failed"
+  | "interrupted";
+
+export type SessionPhase =
+  | "planning"
+  | "implementation"
+  | "delivery"
+  | "stabilization"
+  | "done";
+
+export type SessionStep =
+  | "read_issue"
+  | "understand_scope"
+  | "prepare_workspace"
+  | "prepare_branch"
+  | "analyze_codebase"
+  | "identify_change_set"
+  | "draft_plan"
+  | "publish_plan"
+  | "await_approval"
+  | "sync_approved_plan"
+  | "edit_code"
+  | "update_tests"
+  | "run_targeted_validation"
+  | "record_progress"
+  | "prepare_commit"
+  | "push_commits"
+  | "draft_pr"
+  | "open_pr"
+  | "triage_review_feedback"
+  | "address_review_feedback"
+  | "triage_ci_failures"
+  | "fix_ci"
+  | "await_merge"
+  | "archive_result";
+
+export interface SessionProgress {
+  current?: number;
+  total?: number;
+  unit?: string;
+  label?: string;
+}
+
+export interface SessionContext {
+  issueNumber: number;
+  title?: string;
+  repo?: string;
+  branchName?: string;
+  commitShas?: string[];
+  prNumber?: number;
+  prUrl?: string;
+  reviewCommentCount?: number;
+  failedCiCount?: number;
+  changedFiles?: string[];
+}
+
+export interface SessionError {
+  code?: string;
+  message: string;
+  retryable?: boolean;
+  details?: string;
+}
+
+export interface SessionStateSnapshot {
+  lifecycle?: SessionLifecycle;
+  phase?: SessionPhase;
+  step?: SessionStep;
+  message?: string;
+  progress?: SessionProgress;
+  context?: SessionContext;
+  error?: SessionError;
+  endTime?: string;
+  phaseStartedAt?: string;
+  stepStartedAt?: string;
+  pid?: number;
+}
+
+export type SessionStateEvent =
+  | { type: "START_PHASE"; workflow: AgentWorkflow; message?: string }
+  | { type: "AGENT_EXITED_SUCCESS"; workflow: AgentWorkflow; message?: string }
+  | { type: "AGENT_EXITED_FAILURE"; message: string; exitCode?: number; crashLog?: string }
+  | { type: "RECOVERY_DETECTED_CRASH"; message: string }
+  | { type: "BLOCKED"; message: string; exitCode?: number }
+  | {
+    type: "STEP_CHANGED";
+    phase: SessionPhase;
+    step: SessionStep;
+    message?: string;
+    progress?: SessionProgress;
+    context?: Partial<SessionContext>;
+  }
+  | { type: "BRANCH_PREPARED"; branchName?: string }
+  | { type: "COMMITS_PUSHED" }
+  | { type: "PR_CREATED"; prUrl: string; prNumber?: number; message?: string }
+  | { type: "REVIEW_FIX_STARTED"; commentCount: number }
+  | { type: "REVIEW_FIX_COMPLETED" }
+  | { type: "CI_FIX_STARTED"; failedCount: number }
+  | { type: "CI_FIX_COMPLETED" }
+  | { type: "PR_MERGED"; message?: string };
+
+export interface SessionStateTransition {
+  nextLifecycle: SessionLifecycle;
+  patch: Record<string, unknown>;
+}
+
+type LegacyStatus =
   | "phase1_running"
   | "awaiting_approval"
   | "phase2_running"
@@ -14,84 +124,264 @@ export type SessionLifecycleStatus =
   | "error"
   | "crashed";
 
-export interface SessionStateSnapshot {
-  status?: SessionLifecycleStatus;
-  workflowPhase?: WorkflowPhase;
+export function getWorkflowStartPoint(workflow: AgentWorkflow): { phase: SessionPhase; step: SessionStep } {
+  return workflow === "phase1"
+    ? { phase: "planning", step: "read_issue" }
+    : { phase: "implementation", step: "sync_approved_plan" };
+}
+
+export function isActiveSessionLifecycle(lifecycle?: SessionLifecycle): boolean {
+  return lifecycle === "running";
+}
+
+export function isActiveSessionStatus(lifecycle?: SessionLifecycle): boolean {
+  return isActiveSessionLifecycle(lifecycle);
+}
+
+export function getLifecycleLabel(lifecycle: SessionLifecycle): string {
+  switch (lifecycle) {
+    case "running":
+      return "Running";
+    case "waiting_human":
+      return "Waiting Human";
+    case "waiting_external":
+      return "Waiting External";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "interrupted":
+      return "Interrupted";
+  }
+}
+
+export function getPhaseLabel(phase: SessionPhase): string {
+  switch (phase) {
+    case "planning":
+      return "Planning";
+    case "implementation":
+      return "Implementation";
+    case "delivery":
+      return "Delivery";
+    case "stabilization":
+      return "Stabilization";
+    case "done":
+      return "Done";
+  }
+}
+
+export function getStepLabel(step: SessionStep): string {
+  switch (step) {
+    case "read_issue":
+      return "Read Issue";
+    case "understand_scope":
+      return "Understand Scope";
+    case "prepare_workspace":
+      return "Prepare Workspace";
+    case "prepare_branch":
+      return "Prepare Branch";
+    case "analyze_codebase":
+      return "Analyze Codebase";
+    case "identify_change_set":
+      return "Identify Change Set";
+    case "draft_plan":
+      return "Draft Plan";
+    case "publish_plan":
+      return "Publish Plan";
+    case "await_approval":
+      return "Await Approval";
+    case "sync_approved_plan":
+      return "Sync Approved Plan";
+    case "edit_code":
+      return "Edit Code";
+    case "update_tests":
+      return "Update Tests";
+    case "run_targeted_validation":
+      return "Run Targeted Validation";
+    case "record_progress":
+      return "Record Progress";
+    case "prepare_commit":
+      return "Prepare Commit";
+    case "push_commits":
+      return "Push Commits";
+    case "draft_pr":
+      return "Draft PR";
+    case "open_pr":
+      return "Open PR";
+    case "triage_review_feedback":
+      return "Triage Review Feedback";
+    case "address_review_feedback":
+      return "Address Review Feedback";
+    case "triage_ci_failures":
+      return "Triage CI Failures";
+    case "fix_ci":
+      return "Fix CI";
+    case "await_merge":
+      return "Await Merge";
+    case "archive_result":
+      return "Archive Result";
+  }
+}
+
+function mergeContext(
+  current: SessionContext | undefined,
+  updates: Partial<SessionContext> | undefined,
+): SessionContext | undefined {
+  if (!current && !updates) return undefined;
+  return { ...(current || {}), ...(updates || {}) } as SessionContext;
+}
+
+function nextStatePatch(
+  current: SessionStateSnapshot | null,
+  updates: {
+    lifecycle?: SessionLifecycle;
+    phase?: SessionPhase;
+    step?: SessionStep;
+    message?: string;
+    progress?: SessionProgress;
+    context?: Partial<SessionContext>;
+    error?: SessionError | null;
+    pid?: number;
+    endTime?: string;
+  },
+): SessionStateTransition {
+  const now = iso_timestamp();
+  const nextLifecycle = updates.lifecycle ?? current?.lifecycle ?? "running";
+  const nextPhase = updates.phase ?? current?.phase ?? "planning";
+  const nextStep = updates.step ?? current?.step ?? "read_issue";
+  const phaseChanged = nextPhase !== (current?.phase ?? nextPhase);
+  const stepChanged = phaseChanged || nextStep !== (current?.step ?? nextStep);
+
+  return {
+    nextLifecycle,
+    patch: {
+      lifecycle: nextLifecycle,
+      phase: nextPhase,
+      step: nextStep,
+      message: updates.message ?? current?.message,
+      progress: updates.progress ?? current?.progress,
+      context: mergeContext(current?.context, updates.context),
+      error: updates.error === null ? undefined : (updates.error ?? current?.error),
+      pid: updates.pid ?? current?.pid,
+      phaseStartedAt: phaseChanged ? now : (current?.phaseStartedAt ?? now),
+      stepStartedAt: stepChanged ? now : (current?.stepStartedAt ?? now),
+      endTime: updates.endTime,
+    },
+  };
+}
+
+export function normalizeLegacySessionState(input: {
+  status?: string;
+  workflowPhase?: string;
   currentStep?: string;
   lastMessage?: string;
-  endTime?: string;
   errorMessage?: string;
   crashLog?: string;
   exitCode?: number;
   prUrl?: string;
   prNumber?: number;
-  pid?: number;
-}
+  branchName?: string;
+  reviewCommentCount?: number;
+  ciResults?: { failed?: number };
+  issueNumber?: number;
+  title?: string;
+  repo?: { owner: string; name: string };
+}): Partial<SessionStateSnapshot> & {
+  lifecycle?: SessionLifecycle;
+  phase?: SessionPhase;
+  step?: SessionStep;
+  message?: string;
+  context?: SessionContext;
+  error?: SessionError;
+} {
+  const status = input.status as LegacyStatus | undefined;
+  const phase1 = input.workflowPhase === "phase1";
+  const context: SessionContext = {
+    issueNumber: input.issueNumber || 0,
+    title: input.title,
+    repo: input.repo ? `${input.repo.owner}/${input.repo.name}` : undefined,
+    branchName: input.branchName,
+    prNumber: input.prNumber,
+    prUrl: input.prUrl,
+    reviewCommentCount: input.reviewCommentCount,
+    failedCiCount: input.ciResults?.failed,
+  };
 
-export type SessionStateEvent =
-  | { type: "START_PHASE"; phase: WorkflowPhase; message?: string }
-  | { type: "AGENT_EXITED_SUCCESS"; phase: WorkflowPhase; message?: string }
-  | { type: "AGENT_EXITED_FAILURE"; message: string; exitCode?: number; crashLog?: string }
-  | { type: "RECOVERY_DETECTED_CRASH"; message: string }
-  | { type: "BLOCKED"; message: string; exitCode?: number }
-  | { type: "BRANCH_PREPARED"; branchName?: string }
-  | { type: "COMMITS_PUSHED" }
-  | { type: "PR_CREATED"; prUrl: string; prNumber?: number; message?: string }
-  | { type: "REVIEW_FIX_STARTED"; commentCount: number }
-  | { type: "REVIEW_FIX_COMPLETED" }
-  | { type: "CI_FIX_STARTED"; failedCount: number }
-  | { type: "CI_FIX_COMPLETED" }
-  | { type: "PR_MERGED"; message?: string };
+  let lifecycle: SessionLifecycle = "running";
+  let phase: SessionPhase = phase1 ? "planning" : "implementation";
+  let step: SessionStep = phase1 ? "read_issue" : "sync_approved_plan";
 
-export interface SessionStateTransition {
-  nextStatus: SessionLifecycleStatus;
-  patch: Record<string, unknown>;
-}
-
-function assertReachable(_value: never): never {
-  throw new Error("未处理的状态机分支");
-}
-
-export function isActiveSessionStatus(status?: SessionLifecycleStatus): boolean {
-  return status === "phase1_running"
-    || status === "phase2_running"
-    || status === "review_fixing"
-    || status === "ci_fixing";
-}
-
-export function getDisplayStep(status: SessionLifecycleStatus): string {
   switch (status) {
-    case "phase1_running":
-      return "Phase 1 执行中";
     case "awaiting_approval":
-      return "等待审批";
+      lifecycle = "waiting_human";
+      phase = "planning";
+      step = "await_approval";
+      break;
     case "phase2_running":
-      return "Phase 2 执行中";
+      lifecycle = "running";
+      phase = "implementation";
+      step = input.currentStep?.includes("PR") ? "draft_pr" : "edit_code";
+      if (step === "draft_pr") phase = "delivery";
+      break;
     case "awaiting_pr":
-      return "等待创建 PR";
+      lifecycle = "waiting_human";
+      phase = "delivery";
+      step = "draft_pr";
+      break;
     case "pr_open":
-      return "等待 PR 合并";
+      lifecycle = "waiting_external";
+      phase = "stabilization";
+      step = "await_merge";
+      break;
     case "review_fixing":
-      return "处理 PR 评论";
+      lifecycle = "running";
+      phase = "stabilization";
+      step = "address_review_feedback";
+      break;
     case "ci_fixing":
-      return "修复 CI";
+      lifecycle = "running";
+      phase = "stabilization";
+      step = "fix_ci";
+      break;
     case "merged":
-      return "已合并";
+      lifecycle = "completed";
+      phase = "done";
+      step = "archive_result";
+      break;
     case "error":
-      return "执行受阻";
+      lifecycle = "failed";
+      phase = phase1 ? "planning" : "implementation";
+      step = phase1 ? "analyze_codebase" : "edit_code";
+      break;
     case "crashed":
-      return "进程崩溃";
+      lifecycle = "interrupted";
+      phase = phase1 ? "planning" : "implementation";
+      step = phase1 ? "analyze_codebase" : "edit_code";
+      break;
+    case "phase1_running":
     default:
-      return assertReachable(status);
+      lifecycle = "running";
+      phase = "planning";
+      step = input.currentStep?.includes("分析") ? "analyze_codebase" : "read_issue";
+      break;
   }
-}
 
-function clearTerminalFields() {
+  const error = input.errorMessage
+    ? {
+      message: input.errorMessage,
+      details: input.crashLog,
+      code: input.exitCode ? `EXIT_${input.exitCode}` : undefined,
+      retryable: lifecycle !== "completed",
+    }
+    : undefined;
+
   return {
-    errorMessage: undefined,
-    crashLog: undefined,
-    exitCode: undefined,
-    endTime: undefined,
+    lifecycle,
+    phase,
+    step,
+    message: input.lastMessage,
+    context,
+    error,
   };
 }
 
@@ -103,198 +393,201 @@ export function applySessionStateEvent(
 
   switch (event.type) {
     case "START_PHASE": {
-      const nextStatus = event.phase === "phase1" ? "phase1_running" : "phase2_running";
-      return {
-        nextStatus,
-        patch: {
-          status: nextStatus,
-          workflowPhase: event.phase,
-          currentStep: getDisplayStep(nextStatus),
-          lastMessage: event.message ?? `启动 ${event.phase}`,
-          pid: undefined,
-          ...clearTerminalFields(),
-        },
-      };
+      const start = getWorkflowStartPoint(event.workflow);
+      return nextStatePatch(current, {
+        lifecycle: "running",
+        phase: start.phase,
+        step: start.step,
+        message: event.message ?? `启动 ${event.workflow}`,
+        progress: undefined,
+        error: null,
+        pid: undefined,
+      });
     }
 
-    case "AGENT_EXITED_SUCCESS": {
-      if (event.phase === "phase1") {
-        return {
-          nextStatus: "awaiting_approval",
-          patch: {
-            status: "awaiting_approval",
-            workflowPhase: "phase1",
-            currentStep: getDisplayStep("awaiting_approval"),
-            lastMessage: event.message ?? "Phase 1 已完成，等待人工审批",
-            pid: undefined,
-            ...clearTerminalFields(),
-            endTime: now,
-          },
-        };
+    case "AGENT_EXITED_SUCCESS":
+      if (event.workflow === "phase1") {
+        return nextStatePatch(current, {
+          lifecycle: "waiting_human",
+          phase: "planning",
+          step: "await_approval",
+          message: event.message ?? "规划阶段已完成，等待人工审批",
+          pid: undefined,
+          endTime: now,
+        });
       }
 
-      const nextStatus = current?.prUrl || current?.prNumber ? "pr_open" : "awaiting_pr";
-      return {
-        nextStatus,
-        patch: {
-          status: nextStatus,
-          workflowPhase: "phase2",
-          currentStep: getDisplayStep(nextStatus),
-          lastMessage: event.message ?? (nextStatus === "pr_open" ? "Phase 2 已完成，等待 PR 合并" : "Phase 2 已完成，等待创建 PR"),
+      if (current?.context?.prUrl || current?.context?.prNumber) {
+        return nextStatePatch(current, {
+          lifecycle: "waiting_external",
+          phase: "stabilization",
+          step: "await_merge",
+          message: event.message ?? "交付已完成，等待 PR 审核与合并",
           pid: undefined,
-          ...clearTerminalFields(),
-          endTime: nextStatus === "pr_open" ? undefined : now,
-        },
-      };
-    }
+          endTime: undefined,
+          error: null,
+        });
+      }
+
+      return nextStatePatch(current, {
+        lifecycle: "waiting_human",
+        phase: "delivery",
+        step: "draft_pr",
+        message: event.message ?? "交付阶段已完成，等待补充 PR",
+        pid: undefined,
+        endTime: now,
+      });
 
     case "AGENT_EXITED_FAILURE":
-      return {
-        nextStatus: "crashed",
-        patch: {
-          status: "crashed",
-          currentStep: getDisplayStep("crashed"),
-          lastMessage: event.message,
-          errorMessage: event.message,
-          crashLog: event.crashLog,
-          exitCode: event.exitCode,
-          pid: undefined,
-          endTime: now,
+      return nextStatePatch(current, {
+        lifecycle: "interrupted",
+        message: event.message,
+        error: {
+          message: event.message,
+          details: event.crashLog,
+          code: event.exitCode ? `EXIT_${event.exitCode}` : undefined,
+          retryable: true,
         },
-      };
+        pid: undefined,
+        endTime: now,
+      });
 
     case "RECOVERY_DETECTED_CRASH":
-      return {
-        nextStatus: "crashed",
-        patch: {
-          status: "crashed",
-          currentStep: getDisplayStep("crashed"),
-          lastMessage: event.message,
-          errorMessage: event.message,
-          pid: undefined,
-          endTime: now,
+      return nextStatePatch(current, {
+        lifecycle: "interrupted",
+        message: event.message,
+        error: {
+          message: event.message,
+          retryable: true,
         },
-      };
+        pid: undefined,
+        endTime: now,
+      });
 
     case "BLOCKED":
-      return {
-        nextStatus: "error",
-        patch: {
-          status: "error",
-          currentStep: getDisplayStep("error"),
-          lastMessage: event.message,
-          errorMessage: event.message,
-          exitCode: event.exitCode,
-          pid: undefined,
-          endTime: now,
-          crashLog: undefined,
+      return nextStatePatch(current, {
+        lifecycle: "failed",
+        message: event.message,
+        error: {
+          message: event.message,
+          code: event.exitCode ? `EXIT_${event.exitCode}` : undefined,
+          retryable: true,
         },
-      };
+        pid: undefined,
+        endTime: now,
+      });
+
+    case "STEP_CHANGED":
+      return nextStatePatch(current, {
+        lifecycle: "running",
+        phase: event.phase,
+        step: event.step,
+        message: event.message ?? current?.message,
+        progress: event.progress,
+        context: event.context,
+        endTime: undefined,
+      });
 
     case "BRANCH_PREPARED":
-      return {
-        nextStatus: current?.status || "phase1_running",
-        patch: {
-          currentStep: "分析代码库并制定实施计划",
-          lastMessage: event.branchName ? `已创建语义化分支 ${event.branchName}` : "已创建语义化分支",
-        },
-      };
+      return nextStatePatch(current, {
+        lifecycle: "running",
+        phase: "planning",
+        step: "analyze_codebase",
+        message: event.branchName ? `已创建语义化分支 ${event.branchName}` : "已创建语义化分支",
+        context: { branchName: event.branchName },
+        error: null,
+        endTime: undefined,
+      });
 
     case "COMMITS_PUSHED":
-      return {
-        nextStatus: "phase2_running",
-        patch: {
-          status: "phase2_running",
-          workflowPhase: "phase2",
-          currentStep: "创建 PR",
-          lastMessage: "代码已提交推送",
-          endTime: undefined,
-          ...clearTerminalFields(),
-        },
-      };
+      return nextStatePatch(current, {
+        lifecycle: "running",
+        phase: "delivery",
+        step: "draft_pr",
+        message: "代码已提交推送，准备创建 PR",
+        endTime: undefined,
+        error: null,
+      });
 
     case "PR_CREATED":
-      return {
-        nextStatus: "pr_open",
-        patch: {
-          status: "pr_open",
-          workflowPhase: "phase2",
+      return nextStatePatch(current, {
+        lifecycle: "waiting_external",
+        phase: "stabilization",
+        step: "await_merge",
+        message: event.message ?? "PR 已创建，等待审核与合并",
+        context: {
           prUrl: event.prUrl,
           prNumber: event.prNumber,
-          currentStep: getDisplayStep("pr_open"),
-          lastMessage: event.message ?? "PR 已创建，等待审核与合并",
-          endTime: undefined,
-          ...clearTerminalFields(),
         },
-      };
+        endTime: undefined,
+        error: null,
+      });
 
     case "REVIEW_FIX_STARTED":
-      return {
-        nextStatus: "review_fixing",
-        patch: {
-          status: "review_fixing",
-          workflowPhase: "phase2",
-          currentStep: getDisplayStep("review_fixing"),
-          lastMessage: `发现 ${event.commentCount} 条未解决的评论`,
-          endTime: undefined,
-          ...clearTerminalFields(),
+      return nextStatePatch(current, {
+        lifecycle: "running",
+        phase: "stabilization",
+        step: "address_review_feedback",
+        message: `发现 ${event.commentCount} 条未解决的评论`,
+        context: { reviewCommentCount: event.commentCount },
+        progress: {
+          current: 0,
+          total: event.commentCount,
+          unit: "comments",
+          label: "resolved",
         },
-      };
+        endTime: undefined,
+        error: null,
+      });
 
     case "REVIEW_FIX_COMPLETED":
-      return {
-        nextStatus: "pr_open",
-        patch: {
-          status: "pr_open",
-          workflowPhase: "phase2",
-          currentStep: getDisplayStep("pr_open"),
-          lastMessage: "PR 评论已处理，等待再次审核",
-          endTime: undefined,
-          ...clearTerminalFields(),
-        },
-      };
+      return nextStatePatch(current, {
+        lifecycle: "waiting_external",
+        phase: "stabilization",
+        step: "await_merge",
+        message: "PR 评论已处理，等待再次审核",
+        progress: undefined,
+        endTime: undefined,
+        error: null,
+      });
 
     case "CI_FIX_STARTED":
-      return {
-        nextStatus: "ci_fixing",
-        patch: {
-          status: "ci_fixing",
-          workflowPhase: "phase2",
-          currentStep: getDisplayStep("ci_fixing"),
-          lastMessage: `发现 ${event.failedCount} 个失败的 CI 检查`,
-          endTime: undefined,
-          ...clearTerminalFields(),
+      return nextStatePatch(current, {
+        lifecycle: "running",
+        phase: "stabilization",
+        step: "fix_ci",
+        message: `发现 ${event.failedCount} 个失败的 CI 检查`,
+        context: { failedCiCount: event.failedCount },
+        progress: {
+          current: 0,
+          total: event.failedCount,
+          unit: "checks",
+          label: "fixed",
         },
-      };
+        endTime: undefined,
+        error: null,
+      });
 
     case "CI_FIX_COMPLETED":
-      return {
-        nextStatus: "pr_open",
-        patch: {
-          status: "pr_open",
-          workflowPhase: "phase2",
-          currentStep: getDisplayStep("pr_open"),
-          lastMessage: "CI 修复完成，等待重新检查",
-          endTime: undefined,
-          ...clearTerminalFields(),
-        },
-      };
+      return nextStatePatch(current, {
+        lifecycle: "waiting_external",
+        phase: "stabilization",
+        step: "await_merge",
+        message: "CI 修复完成，等待重新检查",
+        progress: undefined,
+        endTime: undefined,
+        error: null,
+      });
 
     case "PR_MERGED":
-      return {
-        nextStatus: "merged",
-        patch: {
-          status: "merged",
-          workflowPhase: "phase2",
-          currentStep: getDisplayStep("merged"),
-          lastMessage: event.message ?? "PR 已合并，Issue 已解决",
-          pid: undefined,
-          endTime: now,
-          ...clearTerminalFields(),
-        },
-      };
-
-    default:
-      return assertReachable(event);
+      return nextStatePatch(current, {
+        lifecycle: "completed",
+        phase: "done",
+        step: "archive_result",
+        message: event.message ?? "PR 已合并，Issue 已解决",
+        pid: undefined,
+        endTime: now,
+        error: null,
+      });
   }
 }

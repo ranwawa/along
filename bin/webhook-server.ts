@@ -428,14 +428,14 @@ async function main() {
         for (const info of allRes.data) {
           const res = readSession(info.owner, info.repo, info.issueNumber);
           if (res.success && res.data) {
-             let displayStatus = res.data.status;
-             if (isActiveSessionStatus(displayStatus) && res.data.pid) {
+             let displayLifecycle = res.data.lifecycle;
+             if (isActiveSessionStatus(displayLifecycle) && res.data.pid) {
                 const alive = await check_process_running(res.data.pid);
-                if (!alive) displayStatus = "zombie";
+                if (!alive) displayLifecycle = "zombie" as any;
              }
              sessions.push({
                 ...res.data,
-                status: displayStatus,
+                lifecycle: displayLifecycle,
                 owner: info.owner,
                 repo: info.repo,
                 runtime: calculate_runtime(res.data.startTime),
@@ -460,7 +460,7 @@ async function main() {
           logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
           enqueueAgent(`Issue #${issueNumber} 手动重启`, async () => {
             const sessionRes = readSession(owner, repo, issueNumber);
-            const phase = sessionRes.success && sessionRes.data?.workflowPhase === "phase2" ? "phase2" : "phase1";
+            const phase = sessionRes.success && sessionRes.data?.phase === "planning" ? "phase1" : "phase2";
             const title = sessionRes.success && sessionRes.data?.title ? sessionRes.data.title : `Issue #${issueNumber}`;
             const res = await launchIssueAgent(owner, repo, issueNumber, phase, { taskData: { title } });
             if (!res.success) logger.error(`手动重启 Issue #${issueNumber} 失败: ${res.error}`);

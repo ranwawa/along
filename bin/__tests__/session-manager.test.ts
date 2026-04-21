@@ -79,7 +79,9 @@ describe("session-manager.ts", () => {
         repo,
         issueNumber,
         expect.objectContaining({
-          status: "phase1_running",
+          lifecycle: "running",
+          phase: "planning",
+          step: "read_issue",
           title: "Test Issue",
         })
       );
@@ -90,17 +92,19 @@ describe("session-manager.ts", () => {
     it("更新当前步骤和消息", () => {
       (readSession as any).mockReturnValue({
         success: true,
-        data: { status: "phase1_running" },
+        data: { lifecycle: "running", phase: "planning", step: "read_issue", context: { issueNumber } },
       } as any);
 
-      sm.updateStep("分析代码", "开始分析");
+      sm.updateStep("analyze_codebase" as any, "开始分析");
       expect(upsertSession).toHaveBeenCalledWith(
         owner,
         repo,
         issueNumber,
         expect.objectContaining({
-          currentStep: "分析代码",
-          lastMessage: "开始分析",
+          lifecycle: "running",
+          phase: "planning",
+          step: "analyze_codebase",
+          message: "开始分析",
         })
       );
     });

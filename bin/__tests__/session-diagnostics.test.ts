@@ -84,16 +84,19 @@ describe("session-diagnostics.ts", () => {
     const diagnostic = generateSessionDiagnostic(
       {
         issueNumber: 41,
-        status: "crashed",
+        lifecycle: "interrupted",
+        phase: "planning",
+        step: "draft_plan",
         startTime: "2026-04-20T12:00:00.000Z",
         endTime: "2026-04-20T12:01:00.000Z",
-        branchName: "",
         worktreePath: "",
         title: "Issue #41",
         repo: { owner: "ranwawa", name: "along" },
-        workflowPhase: "phase1",
-        exitCode: 1,
-        errorMessage: "Agent 退出码: 1",
+        context: { issueNumber: 41 },
+        error: {
+          code: "EXIT_1",
+          message: "Agent 退出码: 1",
+        },
       },
       paths,
     );

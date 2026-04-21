@@ -180,7 +180,7 @@ async function handleAction(num: string, options: any) {
     }
     logger.success("task检测通过");
 
-    sessionManager.updateStep("准备环境检查", "正在检查Git仓库和Issue状态");
+    sessionManager.writeStatus({ message: "正在检查 Git 仓库和 Issue 状态" });
 
     try {
       await runGc({ silent: true });
@@ -189,7 +189,7 @@ async function handleAction(num: string, options: any) {
       sessionManager.log("GC failed, but continuing anyway", "warn");
     }
 
-    sessionManager.updateStep("启动任务处理", "开始执行任务流程");
+    sessionManager.writeStatus({ message: "开始执行任务流程" });
 
     const phase = detectPhase(paths);
     logger.info(`执行阶段: ${phase}`);

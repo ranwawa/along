@@ -18,7 +18,7 @@ async function updateStatus(
   owner: string,
   repo: string,
   issueNumber: number,
-  status: string,
+  lifecycle: string,
   message?: string,
   step?: string,
 ): Promise<Result<null>> {
@@ -31,11 +31,11 @@ async function updateStatus(
   }
 
   const update: Record<string, any> = {
-    status,
+    lifecycle,
     lastUpdate: iso_timestamp(),
   };
-  if (message) update.lastMessage = message;
-  if (step) update.currentStep = step;
+  if (message) update.message = message;
+  if (step) update.step = step;
 
   const upRes = upsertSession(owner, repo, issueNumber, update);
   if (!upRes.success) {
@@ -50,7 +50,7 @@ async function main() {
     .name("issue-status")
     .description("更新 Issue 处理工作空间的状态")
     .argument("<issue-number>", "Issue 编号")
-    .argument("<status>", "新的状态 (如 running, completed, error)")
+    .argument("<status>", "新的 lifecycle (如 running, completed, failed)")
     .argument("[message]", "附加消息")
     .option("--step <step>", "当前执行的步骤名")
     .parse();

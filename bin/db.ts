@@ -1,20 +1,10 @@
-/**
- * db.ts - SQLite 数据库模块
- *
- * 替代分散的 status.json 文件，提供 ACID 事务和文件锁保护。
- * 数据库文件: ~/.along/along.db
- *
- * 使用 Bun 内置的 bun:sqlite 模块（API 与 better-sqlite3 兼容）。
- */
 import { Database } from "bun:sqlite";
-import { config } from "./config";
 import path from "path";
+import { config } from "./config";
 import { success, failure } from "./result";
 import type { Result } from "./result";
-
 import type { SessionStatus } from "./session-manager";
-
-// ─── 类型 ──────────────────────────────────────────────────
+import { normalizeLegacySessionState } from "./session-state-machine";
 
 export interface SessionInfo {
   owner: string;
@@ -22,39 +12,27 @@ export interface SessionInfo {
   issueNumber: number;
 }
 
-// ─── JSON 字段列表（读取时 parse，写入时 stringify） ──────
-
 const JSON_FIELDS = new Set([
-  "commitShas",
+  "progress",
+  "context",
+  "error",
   "ciResults",
   "environment",
   "repo",
 ]);
 
-// ─── 列名映射（camelCase ↔ snake_case）────────────────────
-
 const CAMEL_TO_SNAKE: Record<string, string> = {
   issueNumber: "issue_number",
   startTime: "start_time",
   endTime: "end_time",
-  branchName: "branch_name",
+  phaseStartedAt: "phase_started_at",
+  stepStartedAt: "step_started_at",
   worktreePath: "worktree_path",
   agentRole: "agent_role",
   agentType: "agent_type",
   agentCommand: "agent_command",
-  prUrl: "pr_url",
-  prNumber: "pr_number",
-  commitShas: "commit_shas",
   lastUpdate: "last_update",
-  lastMessage: "last_message",
-  currentStep: "current_step",
-  errorMessage: "error_message",
-  exitCode: "exit_code",
-  crashLog: "crash_log",
-  retryCount: "retry_count",
   ciResults: "ci_results",
-  reviewCommentCount: "review_comment_count",
-  workflowPhase: "workflow_phase",
 };
 
 const SNAKE_TO_CAMEL: Record<string, string> = {};
@@ -70,8 +48,6 @@ function toCamel(key: string): string {
   return SNAKE_TO_CAMEL[key] || key;
 }
 
-// ─── 单例 DB ───────────────────────────────────────────────
-
 let _db: Database | null = null;
 
 export function getDb(): Result<Database> {
@@ -85,11 +61,17 @@ export function getDb(): Result<Database> {
     _db.exec("PRAGMA journal_mode = WAL");
     _db.exec("PRAGMA foreign_keys = ON");
     _db.exec("PRAGMA busy_timeout = 5000");
-
     initSchema(_db);
     return success(_db);
   } catch (e: any) {
     return failure(`打开数据库失败: ${e.message}`);
+  }
+}
+
+function tryAddColumn(db: Database, sql: string) {
+  try {
+    db.exec(sql);
+  } catch {
   }
 }
 
@@ -100,85 +82,131 @@ function initSchema(db: Database) {
       owner TEXT NOT NULL,
       repo TEXT NOT NULL,
       issue_number INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'phase1_running',
+      lifecycle TEXT,
+      phase TEXT,
+      step TEXT,
+      message TEXT,
+      progress TEXT,
+      context TEXT,
+      error TEXT,
       start_time TEXT NOT NULL,
       end_time TEXT,
-      branch_name TEXT DEFAULT '',
+      phase_started_at TEXT,
+      step_started_at TEXT,
       worktree_path TEXT DEFAULT '',
       title TEXT DEFAULT '',
       agent_role TEXT,
       agent_type TEXT,
       agent_command TEXT,
       pid INTEGER,
+      last_update TEXT,
+      retry_count INTEGER DEFAULT 0,
+      ci_results TEXT,
+      environment TEXT,
+      status TEXT,
+      branch_name TEXT DEFAULT '',
       pr_url TEXT,
       pr_number INTEGER,
       commit_shas TEXT DEFAULT '[]',
-      last_update TEXT,
       last_message TEXT,
       current_step TEXT,
       error_message TEXT,
       exit_code INTEGER,
       crash_log TEXT,
-      retry_count INTEGER DEFAULT 0,
-      ci_results TEXT,
       review_comment_count INTEGER,
       workflow_phase TEXT,
-      environment TEXT,
       UNIQUE(owner, repo, issue_number)
     );
   `);
 
-  // 索引可能已存在，逐条创建避免报错
-  try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)"); } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_lifecycle ON sessions(lifecycle)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_pr_number ON sessions(pr_number)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch_name)"); } catch {}
-  try { db.exec("ALTER TABLE sessions ADD COLUMN workflow_phase TEXT"); } catch {}
+
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN lifecycle TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN phase TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN step TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN message TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN progress TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN context TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN error TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN phase_started_at TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN step_started_at TEXT");
 }
 
-// ─── 行转换 ───────────────────────────────────────────────
-
-/** 将数据库行（snake_case）转换为 SessionStatus（camelCase），并解析 JSON 字段 */
 function rowToSessionStatus(row: any): SessionStatus {
   const result: any = {};
   for (const [snakeKey, value] of Object.entries(row)) {
-    if (snakeKey === "id") continue; // 跳过内部 ID
-
-    const camelKey = toCamel(snakeKey);
-
-    // repo 特殊处理：数据库中 owner/repo 是独立列，转换为 { owner, name }
+    if (snakeKey === "id") continue;
     if (snakeKey === "owner" || snakeKey === "repo") continue;
 
+    const camelKey = toCamel(snakeKey);
     if (JSON_FIELDS.has(camelKey) && typeof value === "string") {
       try {
         result[camelKey] = JSON.parse(value);
       } catch {
-        result[camelKey] = camelKey === "commitShas" ? [] : value;
+        result[camelKey] = undefined;
       }
     } else {
       result[camelKey] = value;
     }
   }
 
-  // 构造 repo 对象
   result.repo = { owner: row.owner, name: row.repo };
+
+  if (!result.lifecycle || !result.phase || !result.step) {
+    const normalized = normalizeLegacySessionState({
+      status: row.status,
+      workflowPhase: row.workflow_phase,
+      currentStep: row.current_step,
+      lastMessage: row.last_message,
+      errorMessage: row.error_message,
+      crashLog: row.crash_log,
+      exitCode: row.exit_code,
+      prUrl: row.pr_url,
+      prNumber: row.pr_number,
+      branchName: row.branch_name,
+      reviewCommentCount: row.review_comment_count,
+      ciResults: result.ciResults,
+      issueNumber: row.issue_number,
+      title: row.title,
+      repo: result.repo,
+    });
+
+    result.lifecycle = normalized.lifecycle;
+    result.phase = normalized.phase;
+    result.step = normalized.step;
+    result.message = result.message || normalized.message;
+    result.context = result.context || normalized.context;
+    result.error = result.error || normalized.error;
+    result.phaseStartedAt = result.phaseStartedAt || row.last_update || row.start_time;
+    result.stepStartedAt = result.stepStartedAt || row.last_update || row.start_time;
+  }
+
+  if (!result.context) {
+    result.context = {
+      issueNumber: row.issue_number,
+      repo: `${row.owner}/${row.repo}`,
+    };
+  } else {
+    result.context.issueNumber = result.context.issueNumber || row.issue_number;
+    result.context.repo = result.context.repo || `${row.owner}/${row.repo}`;
+  }
 
   return result as SessionStatus;
 }
 
-/** 将 Partial<SessionStatus>（camelCase）转换为数据库列（snake_case），并序列化 JSON 字段 */
 function statusToColumns(data: Partial<SessionStatus>): Record<string, any> {
   const columns: Record<string, any> = {};
 
   for (const [key, value] of Object.entries(data)) {
     if (key === "repo" && value && typeof value === "object") {
-      // repo 对象拆分为独立列
       columns.owner = (value as any).owner;
       columns.repo = (value as any).name;
       continue;
     }
 
     const snakeKey = toSnake(key);
-
     if (JSON_FIELDS.has(key) && value !== null && value !== undefined && typeof value !== "string") {
       columns[snakeKey] = JSON.stringify(value);
     } else {
@@ -186,14 +214,21 @@ function statusToColumns(data: Partial<SessionStatus>): Record<string, any> {
     }
   }
 
+  if (data.context?.branchName !== undefined) columns.branch_name = data.context.branchName;
+  if (data.context?.prUrl !== undefined) columns.pr_url = data.context.prUrl;
+  if (data.context?.prNumber !== undefined) columns.pr_number = data.context.prNumber;
+  if (data.context?.reviewCommentCount !== undefined) columns.review_comment_count = data.context.reviewCommentCount;
+  if (data.message !== undefined) columns.last_message = data.message;
+  if (data.step !== undefined) columns.current_step = data.step;
+  if (data.error?.message !== undefined) columns.error_message = data.error.message;
+  if (data.error?.details !== undefined) columns.crash_log = data.error.details;
+  if (data.error?.code && /^EXIT_\d+$/.test(data.error.code)) {
+    columns.exit_code = Number(data.error.code.replace("EXIT_", ""));
+  }
+
   return columns;
 }
 
-// ─── CRUD 接口 ─────────────────────────────────────────────
-
-/**
- * 读取指定 session 的状态
- */
 export function readSession(owner: string, repo: string, issueNumber: number): Result<SessionStatus | null> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -211,10 +246,6 @@ export function readSession(owner: string, repo: string, issueNumber: number): R
   }
 }
 
-/**
- * 插入或更新 session 状态（UPSERT）
- * 如果记录不存在则插入，存在则合并更新
- */
 export function upsertSession(owner: string, repo: string, issueNumber: number, data: Partial<SessionStatus>): Result<void> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -226,43 +257,46 @@ export function upsertSession(owner: string, repo: string, issueNumber: number, 
     ).get(owner, repo, issueNumber) as any;
 
     if (!existing) {
-      // INSERT
       const columns = statusToColumns(data);
       columns.owner = columns.owner || owner;
       columns.repo = columns.repo || repo;
       columns.issue_number = issueNumber;
-
-      // 确保必填字段有默认值
       if (!columns.start_time) columns.start_time = new Date().toISOString();
-      if (!columns.status) columns.status = "phase1_running";
+      if (!columns.lifecycle) columns.lifecycle = "running";
+      if (!columns.phase) columns.phase = "planning";
+      if (!columns.step) columns.step = "read_issue";
+      if (!columns.context) {
+        columns.context = JSON.stringify({
+          issueNumber,
+          repo: `${owner}/${repo}`,
+        });
+      }
+      if (!columns.phase_started_at) columns.phase_started_at = columns.start_time;
+      if (!columns.step_started_at) columns.step_started_at = columns.start_time;
 
       const keys = Object.keys(columns);
       const placeholders = keys.map(() => "?").join(", ");
       const sql = `INSERT INTO sessions (${keys.join(", ")}) VALUES (${placeholders})`;
-      db.prepare(sql).run(...keys.map(k => columns[k]));
+      db.prepare(sql).run(...keys.map((k) => columns[k]));
     } else {
-      // UPDATE：只更新传入的字段
       const columns = statusToColumns(data);
-      // 不要覆盖 owner/repo/issue_number
       delete columns.owner;
       delete columns.repo;
       delete columns.issue_number;
 
       if (Object.keys(columns).length === 0) return success(undefined);
 
-      const setClauses = Object.keys(columns).map(k => `${k} = ?`).join(", ");
+      const setClauses = Object.keys(columns).map((k) => `${k} = ?`).join(", ");
       const sql = `UPDATE sessions SET ${setClauses} WHERE owner = ? AND repo = ? AND issue_number = ?`;
       db.prepare(sql).run(...Object.values(columns), owner, repo, issueNumber);
     }
+
     return success(undefined);
   } catch (e: any) {
     return failure(`保存 Session 失败: ${e.message}`);
   }
 }
 
-/**
- * 查询所有 session（可按 owner/repo 过滤）
- */
 export function findAllSessions(filterOwner?: string, filterRepo?: string): Result<SessionInfo[]> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -287,7 +321,7 @@ export function findAllSessions(filterOwner?: string, filterRepo?: string): Resu
     }
 
     const rows = db.prepare(sql).all(...params) as any[];
-    return success(rows.map(row => ({
+    return success(rows.map((row) => ({
       owner: row.owner,
       repo: row.repo,
       issueNumber: row.issue_number,
@@ -297,9 +331,6 @@ export function findAllSessions(filterOwner?: string, filterRepo?: string): Resu
   }
 }
 
-/**
- * 通过 PR 编号查找 session
- */
 export function findSessionByPr(
   owner: string,
   repo: string,
@@ -310,16 +341,20 @@ export function findSessionByPr(
   const db = dbRes.data;
 
   try {
-    // 先精确匹配 pr_number
     let row = db.prepare(
       "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_number = ?"
     ).get(owner, repo, prNumber) as any;
 
-    // 回退：从 pr_url 匹配
     if (!row) {
       row = db.prepare(
         "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_url LIKE ?"
       ).get(owner, repo, `%/pull/${prNumber}%`) as any;
+    }
+
+    if (!row) {
+      row = db.prepare(
+        "SELECT * FROM sessions WHERE owner = ? AND repo = ? AND context LIKE ?"
+      ).get(owner, repo, `%"prNumber":${prNumber}%`) as any;
     }
 
     if (!row) return success(null);
@@ -333,9 +368,6 @@ export function findSessionByPr(
   }
 }
 
-/**
- * 通过分支名查找 session
- */
 export function findSessionByBranch(
   branchName: string,
 ): Result<{ owner: string; repo: string; issueNumber: number; statusData: SessionStatus } | null> {
@@ -344,9 +376,15 @@ export function findSessionByBranch(
   const db = dbRes.data;
 
   try {
-    const row = db.prepare(
+    let row = db.prepare(
       "SELECT * FROM sessions WHERE branch_name = ?"
     ).get(branchName) as any;
+
+    if (!row) {
+      row = db.prepare(
+        "SELECT * FROM sessions WHERE context LIKE ?"
+      ).get(`%"branchName":"${branchName}"%`) as any;
+    }
 
     if (!row) return success(null);
 
@@ -361,10 +399,6 @@ export function findSessionByBranch(
   }
 }
 
-/**
- * 在 SQLite 事务中执行 read-modify-write 操作
- * 防止并发 webhook handler 导致的竞态条件
- */
 export function transactSession(
   owner: string,
   repo: string,
@@ -384,19 +418,28 @@ export function transactSession(
       const current = row ? rowToSessionStatus(row) : null;
       const updates = modifier(current);
 
-      // 委托给 upsertSession 的内部逻辑
       if (!row) {
         const columns = statusToColumns(updates);
         columns.owner = columns.owner || owner;
         columns.repo = columns.repo || repo;
         columns.issue_number = issueNumber;
         if (!columns.start_time) columns.start_time = new Date().toISOString();
-        if (!columns.status) columns.status = "phase1_running";
+        if (!columns.lifecycle) columns.lifecycle = "running";
+        if (!columns.phase) columns.phase = "planning";
+        if (!columns.step) columns.step = "read_issue";
+        if (!columns.context) {
+          columns.context = JSON.stringify({
+            issueNumber,
+            repo: `${owner}/${repo}`,
+          });
+        }
+        if (!columns.phase_started_at) columns.phase_started_at = columns.start_time;
+        if (!columns.step_started_at) columns.step_started_at = columns.start_time;
 
         const keys = Object.keys(columns);
         const placeholders = keys.map(() => "?").join(", ");
         const sql = `INSERT INTO sessions (${keys.join(", ")}) VALUES (${placeholders})`;
-        db.prepare(sql).run(...keys.map(k => columns[k]));
+        db.prepare(sql).run(...keys.map((k) => columns[k]));
       } else {
         const columns = statusToColumns(updates);
         delete columns.owner;
@@ -405,7 +448,7 @@ export function transactSession(
 
         if (Object.keys(columns).length === 0) return;
 
-        const setClauses = Object.keys(columns).map(k => `${k} = ?`).join(", ");
+        const setClauses = Object.keys(columns).map((k) => `${k} = ?`).join(", ");
         const sql = `UPDATE sessions SET ${setClauses} WHERE owner = ? AND repo = ? AND issue_number = ?`;
         db.prepare(sql).run(...Object.values(columns), owner, repo, issueNumber);
       }
@@ -418,9 +461,6 @@ export function transactSession(
   }
 }
 
-/**
- * 彻底删除指定 session 的记录
- */
 export function deleteSession(owner: string, repo: string, issueNumber: number): Result<void> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -436,9 +476,6 @@ export function deleteSession(owner: string, repo: string, issueNumber: number):
   }
 }
 
-/**
- * 关闭数据库连接（用于测试或清理）
- */
 export function closeDb(): void {
   if (_db) {
     _db.close();

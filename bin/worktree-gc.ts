@@ -52,7 +52,7 @@ function scanSessions(): GcSessionInfo[] {
 
     const paths = new SessionPathManager(session.owner, session.repo, session.issueNumber);
     const worktreePath = paths.getWorktreeDir();
-    const branchName = data.branchName || "";
+    const branchName = data.context?.branchName || "";
 
     results.push({
       type: "issue",

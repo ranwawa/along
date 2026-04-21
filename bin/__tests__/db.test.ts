@@ -74,8 +74,10 @@ describe("db.ts logic", () => {
         owner: "ranwawa",
         repo: "along",
         issue_number: 42,
-        status: "phase1_running",
-        commit_shas: JSON.stringify(["sha1", "sha2"]),
+        lifecycle: "running",
+        phase: "planning",
+        step: "read_issue",
+        context: JSON.stringify({ issueNumber: 42, commitShas: ["sha1", "sha2"] }),
       });
 
       const result = readSession("ranwawa", "along", 42);
@@ -86,7 +88,7 @@ describe("db.ts logic", () => {
   describe("upsertSession()", () => {
     it("可成功更新 session", () => {
       mockStmt.get.mockReturnValue({ id: 1 });
-      const result = upsertSession("o", "r", 1, { status: "merged" as any });
+      const result = upsertSession("o", "r", 1, { lifecycle: "completed", phase: "done", step: "archive_result" } as any);
       expect(result.success).toBe(true);
     });
   });

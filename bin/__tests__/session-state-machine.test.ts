@@ -7,42 +7,51 @@ vi.mock("../common", () => ({
 import { applySessionStateEvent, isActiveSessionStatus } from "../session-state-machine";
 
 describe("session-state-machine.ts", () => {
-  it("phase1 成功后进入 awaiting_approval", () => {
+  it("phase1 成功后进入 waiting_human/planning/await_approval", () => {
     const result = applySessionStateEvent(
-      { status: "phase1_running", workflowPhase: "phase1" },
-      { type: "AGENT_EXITED_SUCCESS", phase: "phase1" },
+      { lifecycle: "running", phase: "planning", step: "draft_plan", context: { issueNumber: 1 } },
+      { type: "AGENT_EXITED_SUCCESS", workflow: "phase1" },
     );
 
-    expect(result.nextStatus).toBe("awaiting_approval");
-    expect(result.patch.status).toBe("awaiting_approval");
+    expect(result.nextLifecycle).toBe("waiting_human");
+    expect(result.patch.lifecycle).toBe("waiting_human");
+    expect(result.patch.phase).toBe("planning");
+    expect(result.patch.step).toBe("await_approval");
     expect(result.patch.endTime).toBe("2026-04-20T12:00:00.000Z");
   });
 
-  it("phase2 成功且已有 PR 时保持 pr_open", () => {
+  it("phase2 成功且已有 PR 时进入 waiting_external/stabilization/await_merge", () => {
     const result = applySessionStateEvent(
-      { status: "phase2_running", workflowPhase: "phase2", prUrl: "https://example.com/pull/1" },
-      { type: "AGENT_EXITED_SUCCESS", phase: "phase2" },
+      {
+        lifecycle: "running",
+        phase: "delivery",
+        step: "open_pr",
+        context: { issueNumber: 1, prUrl: "https://example.com/pull/1" },
+      },
+      { type: "AGENT_EXITED_SUCCESS", workflow: "phase2" },
     );
 
-    expect(result.nextStatus).toBe("pr_open");
-    expect(result.patch.status).toBe("pr_open");
+    expect(result.nextLifecycle).toBe("waiting_external");
+    expect(result.patch.phase).toBe("stabilization");
+    expect(result.patch.step).toBe("await_merge");
     expect(result.patch.endTime).toBeUndefined();
   });
 
-  it("PR 合并后进入 merged", () => {
+  it("PR 合并后进入 completed/done/archive_result", () => {
     const result = applySessionStateEvent(
-      { status: "pr_open", workflowPhase: "phase2" },
+      { lifecycle: "waiting_external", phase: "stabilization", step: "await_merge", context: { issueNumber: 1 } },
       { type: "PR_MERGED" },
     );
 
-    expect(result.nextStatus).toBe("merged");
-    expect(result.patch.status).toBe("merged");
+    expect(result.nextLifecycle).toBe("completed");
+    expect(result.patch.phase).toBe("done");
+    expect(result.patch.step).toBe("archive_result");
   });
 
   it("只将执行中状态视为活跃状态", () => {
-    expect(isActiveSessionStatus("phase1_running")).toBe(true);
-    expect(isActiveSessionStatus("ci_fixing")).toBe(true);
-    expect(isActiveSessionStatus("awaiting_approval")).toBe(false);
-    expect(isActiveSessionStatus("merged")).toBe(false);
+    expect(isActiveSessionStatus("running")).toBe(true);
+    expect(isActiveSessionStatus("waiting_external")).toBe(false);
+    expect(isActiveSessionStatus("waiting_human")).toBe(false);
+    expect(isActiveSessionStatus("completed")).toBe(false);
   });
 });
