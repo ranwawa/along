@@ -379,7 +379,7 @@ const clientCache = new Map<string, GitHubClient>();
  *
  * 优先级:
  *   1. Agent 角色 token（ALONG_AGENT_ROLE 或 config.json defaultAgent → 对应角色的 githubToken）
- *   2. GH_TOKEN 环境变量（由 run.ts 在 tmux 启动时注入）
+ *   2. GH_TOKEN 环境变量（由 run.ts 启动 agent 时注入）
  *   3. ALONG_GITHUB_TOKEN 环境变量
  *   4. GITHUB_TOKEN 环境变量
  *   5. gh auth token
@@ -392,7 +392,7 @@ export async function readGithubToken(): Promise<Result<string>> {
   // 以下为默认 token，可缓存
   if (cachedDefaultToken) return success(cachedDefaultToken);
 
-  // 2. GH_TOKEN（由 run.ts 在 tmux 启动时注入）
+  // 2. GH_TOKEN（由 run.ts 启动 agent 时注入）
   if (process.env.GH_TOKEN) {
     cachedDefaultToken = process.env.GH_TOKEN;
     return success(cachedDefaultToken);

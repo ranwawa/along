@@ -1,22 +1,15 @@
 #!/usr/bin/env bun
-import { $ } from "bun";
 import path from "path";
 import fs from "fs";
-import { execSync } from "child_process";
 import { consola } from "consola";
 import {
   success,
   failure,
   checkGitRepo,
-  iso_timestamp,
-  ensureEditorPermissions,
-  check_process_running,
-  git,
 } from "./common";
-import type { Result } from "./common";
 
 const logger = consola.withTag("run");
-import { readRepoInfo, readGithubToken, get_gh_client } from "./github-client";
+import { readRepoInfo } from "./github-client";
 import chalk from "chalk";
 import { config } from "./config";
 import { runGc } from "./worktree-gc";
@@ -36,31 +29,11 @@ import type { SessionPhase } from "./session-state-machine";
 
 import { Command } from "commander";
 
-// logTag 延迟获取，避免模块加载时 worktree 未就绪导致检测失败
-function getLogTag(): Result<string> {
-  return config.getLogTag();
-}
-
-// Removed redundant functions: identifyTask, ensureWorktree, executeTask, execTmux, tryGetSessionTask, runTask
-
 const welcome = () => {
   logger.log(chalk.cyan("======================================"));
   logger.log(chalk.bold.cyan(`  ALONG 一键启动 (Bun 版)`));
   logger.log(chalk.cyan("======================================"));
   logger.log("");
-};
-
-const tmuxCheck = () => {
-  if (process.env.TMUX) {
-    return success(null);
-  }
-
-  const error = `错误：强制要求在 tmux 环境中运行。
-💡 建议做法：
-  1. 执行 tmux 进入环境后，再次运行本命令（推荐，可多窗口切换）；
-  2. 如果在脚本/CI 环境中运行，请添加 --ci 参数跳过此检查。
-`;
-  return failure(error);
 };
 
 async function checkEnv() {
@@ -103,18 +76,10 @@ function configureCommand() {
         }
       },
     })
-    .argument("<编号>", "Issue 编号")
-    .option(
-      "--ci",
-      "CI 模式：跳过 tmux 环境检查，直接在前台执行（适用于脚本调用）",
-      false,
-    )
-    .option("-d, --detach", "创建 tmux 窗口后，不自动进入该窗口");
+    .argument("<编号>", "Issue 编号");
 
   return program;
 }
-
-// Removed tryRecoverFromWip (moved to issue-agent.ts)
 
 /**
  * 自动检测执行阶段：
@@ -151,7 +116,7 @@ function detectPhase(paths: SessionPathManager, owner: string, repo: string, iss
   return "planning";
 }
 
-async function handleAction(num: string, options: any) {
+async function handleAction(num: string) {
   // 提前获取 owner/repo
   const repoInfoRes = await readRepoInfo();
   if (!repoInfoRes.success) {
@@ -169,7 +134,7 @@ async function handleAction(num: string, options: any) {
     if (!issueRes.success) {
       // WIP 标签智能恢复：检查是否为 WIP 阻断且任务实际已停止
       if (issueRes.error.includes("WIP")) {
-        const recovered = await tryRecoverFromWip(owner, repoName, taskNo, paths);
+        const recovered = await tryRecoverFromWip(owner, repoName, taskNo);
         if (recovered) {
           // WIP 已清理，重新检查 Issue
           issueRes = await checkIssue(taskNo);
@@ -249,8 +214,6 @@ async function handleAction(num: string, options: any) {
 
     // 直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
     const agentRes = await launchIssueAgent(owner, repoName, taskNo, phase, {
-      strategy: options.ci ? "direct" : "tmux",
-      detach: options.detach,
       taskData: { title: issueRes.data.title },
     });
 

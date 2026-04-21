@@ -7,8 +7,6 @@
 
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
-import chalk from "chalk";
 import { consola } from "consola";
 import {
   iso_timestamp,
@@ -24,11 +22,10 @@ import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { setupWorktree, initSessionFiles } from "./worktree-init";
 import { getAgentRole } from "./agent-config";
-import { readGithubToken, get_gh_client } from "./github-client";
+import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import { clearSessionDiagnostic, generateSessionDiagnostic, writeSessionDiagnostic } from "./session-diagnostics";
-import { $ } from "bun";
 import type { SessionPhase, SessionStep } from "./session-state-machine";
 
 const PHASE_START_STEP: Record<SessionPhase, SessionStep> = {
@@ -38,14 +35,6 @@ const PHASE_START_STEP: Record<SessionPhase, SessionStep> = {
   stabilization: "triage_review_feedback",
   done: "archive_result",
 };
-
-/**
- * 对字符串进行 shell 转义，防止注入
- * 使用单引号包裹，并转义内部的单引号
- */
-function shellEscape(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
 
 /** 是否启用 Dashboard 模式（启用时 agent 输出写入日志文件而非 stdout） */
 let _dashboardMode = false;
@@ -196,132 +185,9 @@ export async function execAgent(
   return success(exitCode);
 }
 
-// ─── execTmux ──────────────────────────────────────────────
-
-export async function execTmux(
-  worktreePath: string,
-  issueNumber: number,
-  paths: SessionPathManager,
-  sessionManager: SessionManager,
-  options: {
-    tmuxSessionName?: string;
-    detach?: boolean;
-    workflow: string;
-    phase: SessionPhase;
-  },
-): Promise<Result<void>> {
-  const logTagRes = config.getLogTag();
-  if (!logTagRes.success) return logTagRes;
-  const tag = logTagRes.data;
-
-  const num = String(issueNumber);
-  const session = options.tmuxSessionName || `${tag}-${num}`;
-  logger.info(`在 tmux 中创建新窗口并自动切换到会话: ${session}...`);
-
-  // 构建需要注入到 tmux 环境中的变量
-  const envExports: string[] = [];
-  const agentRole = getAgentRole();
-  if (agentRole) {
-    envExports.push(`export ALONG_AGENT_ROLE=${shellEscape(agentRole)}`);
-  }
-  const tokenRes = await readGithubToken();
-  if (tokenRes.success) {
-    envExports.push(`export GH_TOKEN=${shellEscape(tokenRes.data)}`);
-  }
-
-  // 日志文件路径
-  const logFile = paths.getAgentLogFile();
-  const owner = paths.getOwner();
-  const repo = paths.getRepo();
-
-  const editor = config.EDITORS.find((e) => e.id === tag);
-  let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
-  cmd = cmd
-    .replace("{tag}", tag)
-    .replace("{workflow}", options.workflow)
-    .replace("{num}", num);
-
-  sessionManager.writeStatus({
-    agentType: tag,
-    agentCommand: cmd,
-  });
-
-  // 对路径和参数进行 shell 转义
-  const esc = {
-    logFile: shellEscape(logFile),
-    worktreePath: shellEscape(worktreePath),
-    owner: shellEscape(owner),
-    repo: shellEscape(repo),
-    num: shellEscape(num),
-  };
-
-  // Agent 完成后更新数据库
-  const finalizeBinPath = shellEscape(path.join(config.BIN_DIR, "session-finalize.ts"));
-  const updateStatusScript = `bun ${finalizeBinPath} ${esc.owner} ${esc.repo} ${issueNumber} ${options.phase} \${EXIT_CODE} ${esc.logFile} 2>/dev/null || true`;
-
-  // 启动时将 shell PID 写入数据库
-  const pidBinPath = shellEscape(path.join(config.BIN_DIR, "session-update-pid.ts"));
-  const writePidScript = `bun ${pidBinPath} ${esc.owner} ${esc.repo} ${issueNumber} $$ 2>/dev/null || true`;
-
-  const scriptContent = `#!/bin/bash
-${envExports.join("\n")}
-prefix_log() {
-  while IFS= read -r line; do
-    printf '[%s] %s\\n' "$(date -Iseconds)" "$line"
-  done
-}
-echo "Starting at $(date)" > ${esc.logFile}
-${writePidScript}
-cd ${esc.worktreePath} && ${cmd} 2>&1 | prefix_log | tee -a ${esc.logFile}
-EXIT_CODE=\${PIPESTATUS[0]}
-${updateStatusScript}
-if [ \${EXIT_CODE} -ne 0 ]; then
-  echo ""
-  echo "⚠️ Agent 意外崩溃 (退出码: \${EXIT_CODE})"
-  echo "日志已保存到: ${esc.logFile}"
-  osascript -e "display notification \\"Agent 异常退出 (退出码: \${EXIT_CODE})\\" with title \\"Along 任务中断\\" subtitle \\"Issue #${esc.num}\\"" 2>/dev/null || true
-  printf "\\a" 2>/dev/null || true
-  echo "按 Enter 键关闭当前窗口..."
-  read
-  exit \${EXIT_CODE}
-fi
-`;
-
-  const issueDir = paths.getIssueDir();
-  const scriptFile = path.join(issueDir, `tmux-run-${num}.sh`);
-  const ensureRes = paths.ensureDir();
-  if (!ensureRes.success) return ensureRes;
-
-  try {
-    fs.writeFileSync(scriptFile, scriptContent, { mode: 0o755 });
-  } catch (e: any) {
-    return failure(`无法写入 tmux 脚本文件: ${e.message}`);
-  }
-
-  try {
-    await $`tmux new-window -n ${session} ${scriptFile}`;
-
-    if (!options.detach) {
-      await $`tmux select-window -t ${session}`;
-    } else {
-      logger.success(`Tmux 窗口已创建并在后台运行: ${session}`);
-      sessionManager.log(`Tmux window created and running in background: ${session}`);
-    }
-    return success(undefined);
-  } catch (error: any) {
-    const errorMsg = `Failed to create tmux window: ${error.message}`;
-    logger.error(errorMsg);
-    sessionManager.markAsCrashed(errorMsg, error.stack);
-    return failure(errorMsg, error.stack);
-  }
-}
-
 // ─── launchIssueAgent ───────────────────────────────────────
 
 export interface LaunchIssueAgentOptions {
-  strategy?: "direct" | "tmux";
-  tmuxSessionName?: string;
-  detach?: boolean;
   taskData?: { title: string };
 }
 
@@ -450,15 +316,6 @@ export async function launchIssueAgent(
   session.logEvent("agent-started", { phase, workflow });
   clearSessionDiagnostic(paths);
 
-  if (options.strategy === "tmux") {
-    return execTmux(worktreePath, issueNumber, paths, session, {
-      tmuxSessionName: options.tmuxSessionName,
-      detach: options.detach,
-      workflow,
-      phase,
-    });
-  }
-
   try {
     const logFile = paths.getAgentLogFile();
     const agentRes = await execAgent(
@@ -500,36 +357,14 @@ export async function launchIssueAgent(
 }
 
 /**
- * WIP 标签智能恢复：当 Issue 带有 WIP 标签但对应的 tmux 窗口已不存在且进程已退出时，
+ * WIP 标签智能恢复：当 Issue 带有 WIP 标签但对应的进程已退出时，
  * 自动清理 WIP 标签，允许用户重新启动任务
  */
 export async function tryRecoverFromWip(
   owner: string,
   repo: string,
   taskNo: number,
-  paths: SessionPathManager,
 ): Promise<boolean> {
-  // 检查 tmux 窗口是否存在
-  const tmuxWindowSuffix = `-${taskNo}`;
-  let windowAlive = false;
-  try {
-    const output = execSync("tmux list-windows -a -F '#{window_name}'", {
-      encoding: "utf-8",
-      timeout: 3000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    windowAlive = output
-      .split("\n")
-      .some((w) => w.trim().endsWith(tmuxWindowSuffix));
-  } catch {
-    // tmux 不可用，视为窗口不存在
-  }
-
-  if (windowAlive) {
-    logger.warn(`Issue #${taskNo} 的 tmux 窗口仍在运行，无法自动恢复`);
-    return false;
-  }
-
   // 检查数据库中的 PID 是否存活
   const sessionDataRes = readSession(owner, repo, taskNo);
   if (sessionDataRes.success && sessionDataRes.data) {
@@ -542,9 +377,9 @@ export async function tryRecoverFromWip(
     }
   }
 
-  // tmux 窗口不存在且进程已退出，自动清理 WIP 标签
+  // 进程已退出，自动清理 WIP 标签
   logger.warn(
-    `Issue #${taskNo} 的 WIP 标签残留（tmux 窗口已关闭、进程已退出），正在自动清理...`,
+    `Issue #${taskNo} 的 WIP 标签残留（进程已退出），正在自动清理...`,
   );
   try {
     const clientRes = await get_gh_client();
