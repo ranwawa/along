@@ -451,8 +451,32 @@ async function main() {
             });
           }
           logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
+
+          // 校验 approval 状态：检查是否存在 APPROVE review
+          const sessionRes = readSession(owner, repo, issueNumber);
+          if (sessionRes.success && sessionRes.data?.context?.prNumber) {
+            const prNumber = sessionRes.data.context.prNumber;
+            const tokenRes = await readGithubToken();
+            if (tokenRes.success) {
+              const client = new GitHubClient(tokenRes.data, owner, repo);
+              const reviewsRes = await client.listReviews(prNumber);
+              if (reviewsRes.success) {
+                const hasApproval = reviewsRes.data.some((r: any) => r.state === "APPROVED");
+                if (!hasApproval) {
+                  logger.warn(`Issue #${issueNumber} 重启被拒绝：PR #${prNumber} 尚无 APPROVE review`);
+                  return new Response(JSON.stringify({
+                    error: `Issue #${issueNumber} 重启被拒绝：PR #${prNumber} 尚无 APPROVE review。请先获得审批再重启。`,
+                  }), {
+                    status: 403,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+                  });
+                }
+                logger.info(`Issue #${issueNumber} 重启校验通过：PR #${prNumber} 已获得 APPROVE`);
+              }
+            }
+          }
+
           enqueueAgent(`Issue #${issueNumber} 手动重启`, async () => {
-            const sessionRes = readSession(owner, repo, issueNumber);
             const phase = sessionRes.success && sessionRes.data?.phase ? sessionRes.data.phase : "planning";
             const title = sessionRes.success && sessionRes.data?.title ? sessionRes.data.title : `Issue #${issueNumber}`;
             const res = await launchIssueAgent(owner, repo, issueNumber, phase, { taskData: { title } });
