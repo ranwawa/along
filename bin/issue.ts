@@ -40,12 +40,18 @@ export class Issue {
       return failure(`Issue#${this.taskNo}状态为${this.data.state}，无法处理（需为 open）`);
     }
 
-    // 标签检查（webhook 自动化流程可跳过 WIP 检查，因为 WIP 是系统自己打的）
-    if (!options?.skipWipCheck) {
-      const labels = (this.data.labels || []).map((l: any) =>
-        typeof l === "string" ? l : l.name
-      );
+    const labels = (this.data.labels || []).map((l: any) =>
+      typeof l === "string" ? l : l.name
+    );
 
+    // 阻断标签检查
+    const BLOCKED_LABELS = ["spam", "invalid"];
+    if (labels.some((l: string) => BLOCKED_LABELS.includes(l.toLowerCase()))) {
+      return failure(`Issue#${this.taskNo}已被标记为无效，跳过处理`);
+    }
+
+    // WIP 标签检查（webhook 自动化流程可跳过，因为 WIP 是系统自己打的）
+    if (!options?.skipWipCheck) {
       if (labels.some((l: string) => l.toUpperCase() === "WIP")) {
         return failure(`Issue#${this.taskNo}带有WIP标签，已主动阻断执行`);
       }

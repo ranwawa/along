@@ -162,14 +162,7 @@ async function handleEvent(
         enqueueAgent(`Issue #${issueNumber} 分类+处理`, async () => {
           const triageRes = await triageIssue(issueTitle, issueBody, issueLabels);
           if (!triageRes.success) {
-            logger.error(`Issue #${issueNumber} 分类失败，回退到 planning: ${triageRes.error}`);
-            // 回退逻辑
-            const tokenRes = await readGithubToken();
-            if (tokenRes.success) {
-                const client = new GitHubClient(tokenRes.data, owner, repo);
-                await client.addIssueLabels(issueNumber, ["bug", "WIP"]);
-            }
-            await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` } });
+            logger.error(`Issue #${issueNumber} 分类失败，终止处理: ${triageRes.error}`);
             return;
           }
 

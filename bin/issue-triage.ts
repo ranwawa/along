@@ -10,9 +10,6 @@
 
 import { ChatOpenAI } from "@langchain/openai";
 import { consola } from "consola";
-import fs from "fs";
-import os from "os";
-import path from "path";
 import { z } from "zod";
 import { GitHubClient, readGithubToken } from "./github-client";
 import { launchIssueAgent } from "./issue-agent";
@@ -56,34 +53,16 @@ const TriageResultSchema = z.object({
     .describe("仅 question/spam 时需要的友好中文回复消息，Markdown 格式"),
 });
 
-/**
- * 从 ~/.claude/settings.json 读取环境变量配置
- */
-function readClaudeSettings(): Record<string, string> {
-  const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
-  try {
-    const content = fs.readFileSync(settingsPath, "utf-8");
-    const settings = JSON.parse(content);
-    return settings.env || {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * 使用 AI 对 Issue 进行分类
- */
 export async function triageIssue(
   issueTitle: string,
   issueBody: string,
   issueLabels: string[],
 ): Promise<Result<TriageResult>> {
-  const claudeEnv = readClaudeSettings();
-  const apiKey = process.env.DEEPSEEK_API_KEY || claudeEnv.DEEPSEEK_API_KEY;
+  const apiKey = process.env.DEEPSEEK_API_KEY;
 
   if (!apiKey) {
-    logger.warn("未设置 DEEPSEEK_API_KEY，跳过分类，默认为 bug");
-    return success({ classification: "bug", reason: "缺少 API Key，默认为 bug" });
+    logger.warn("未设置 DEEPSEEK_API_KEY，无法进行分类");
+    return failure("缺少 DEEPSEEK_API_KEY，无法进行 Issue 分类");
   }
 
   const modelName = process.env.ALONG_TRIAGE_MODEL || "deepseek-chat";
@@ -127,7 +106,7 @@ export async function triageIssue(
     });
   } catch (error: any) {
     logger.error(`[triage] AI 分类失败: ${error.message}`);
-    return success({ classification: "bug", reason: `AI 分类异常，默认为 bug: ${error.message}` });
+    return failure(`AI 分类异常: ${error.message}`);
   }
 }
 
@@ -149,6 +128,7 @@ export async function handleTriagedIssue(
   repo: string,
   issueNumber: number,
   result: TriageResult,
+  options?: { skipAgentLaunch?: boolean },
 ): Promise<Result<void>> {
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
@@ -167,9 +147,11 @@ export async function handleTriagedIssue(
       if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
       logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}, WIP]`);
 
-      // 启动 planning 阶段（出方案）
-      const launchRes = await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` } });
-      if (!launchRes.success) return launchRes;
+      if (!options?.skipAgentLaunch) {
+        // 启动 planning 阶段（出方案）
+        const launchRes = await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` } });
+        if (!launchRes.success) return launchRes;
+      }
       break;
     }
 

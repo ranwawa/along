@@ -25,6 +25,7 @@ import { Issue } from "./issue";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { launchIssueAgent, tryRecoverFromWip } from "./issue-agent";
+import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { readSession } from "./db";
 import type { SessionPhase } from "./session-state-machine";
 
@@ -211,6 +212,40 @@ async function handleAction(num: string, options: any) {
 
     const phase = detectPhase(paths, owner, repoName, taskNo);
     logger.info(`执行阶段: ${phase}`);
+
+    // AI 分类门控（仅首次 planning 阶段执行）
+    if (phase === "planning") {
+      const issueData = issueRes.data!;
+      const issueLabels = (issueData.labels || []).map((l: any) =>
+        typeof l === "string" ? l : l.name
+      );
+
+      const hasActionableLabel = issueLabels.some((l: string) =>
+        l === "bug" || l === "enhancement"
+      );
+
+      if (!hasActionableLabel) {
+        sessionManager.writeStatus({ message: "正在对 Issue 进行 AI 分类" });
+        const triageRes = await triageIssue(issueData.title, issueData.body || "", issueLabels);
+        if (!triageRes.success) {
+          sessionManager.markAsError(`Issue 分类失败: ${triageRes.error}`);
+          logger.error(`Issue #${taskNo} 分类失败: ${triageRes.error}`);
+          process.exit(1);
+        }
+
+        const triageResult = triageRes.data;
+        logger.info(`Issue #${taskNo} 分类结果: ${triageResult.classification} (${triageResult.reason})`);
+
+        if (triageResult.classification !== "bug" && triageResult.classification !== "feature") {
+          await handleTriagedIssue(owner, repoName, taskNo, triageResult);
+          logger.info(`Issue #${taskNo} 分类为 ${triageResult.classification}，不启动 agent`);
+          process.exit(0);
+        }
+
+        await handleTriagedIssue(owner, repoName, taskNo, triageResult, { skipAgentLaunch: true });
+        logger.success("issue分类通过");
+      }
+    }
 
     // 直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
     const agentRes = await launchIssueAgent(owner, repoName, taskNo, phase, {
