@@ -121,3 +121,20 @@ export interface StatusCounts {
   zombie: number;
   total: number;
 }
+
+export interface ClaudeSessionEntry {
+  type: "user" | "assistant" | "attachment" | "system";
+  timestamp: string;
+  role?: string;
+  content: string;
+  thinking?: string;
+  uuid: string;
+  parentUuid?: string;
+}
+
+export interface ClaudeSession {
+  sessionId: string;
+  cwd: string;
+  startedAt: string;
+  entries: ClaudeSessionEntry[];
+}

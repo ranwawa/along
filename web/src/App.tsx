@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { SessionDiagnostic, SessionLogEntry, DashboardSession, StatusCounts } from './types';
+import type { SessionDiagnostic, SessionLogEntry, DashboardSession, StatusCounts, ClaudeSession, ClaudeSessionEntry } from './types';
 import './index.css';
 
 const statusFilters = [
@@ -17,12 +17,14 @@ function App() {
   const [sessions, setSessions] = useState<DashboardSession[]>([]);
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] = useState<DashboardSession | null>(null);
-  const [selectedLogTab, setSelectedLogTab] = useState<'system' | 'agent' | 'merged'>('merged');
+  const [selectedLogTab, setSelectedLogTab] = useState<'system' | 'agent' | 'merged' | 'conversation'>('merged');
   const [selectedSystemLogs, setSelectedSystemLogs] = useState<SessionLogEntry[]>([]);
   const [selectedAgentLogs, setSelectedAgentLogs] = useState<SessionLogEntry[]>([]);
   const [selectedMergedLogs, setSelectedMergedLogs] = useState<SessionLogEntry[]>([]);
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<SessionDiagnostic | null>(null);
   const [selectedLogsLoading, setSelectedLogsLoading] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<ClaudeSession | null>(null);
+  const [selectedConversationLoading, setSelectedConversationLoading] = useState(false);
   const [restartingIssues, setRestartingIssues] = useState<Set<string>>(new Set());
   const [cleaningIssues, setCleaningIssues] = useState<Set<string>>(new Set());
   const [deletingIssues, setDeletingIssues] = useState<Set<string>>(new Set());
@@ -60,12 +62,14 @@ function App() {
       setSelectedAgentLogs([]);
       setSelectedMergedLogs([]);
       setSelectedDiagnostic(null);
+      setSelectedConversation(null);
       return;
     }
 
     let active = true;
     setSelectedLogTab('merged');
     setSelectedLogsLoading(true);
+    setSelectedConversationLoading(true);
 
     const params = new URLSearchParams({
       owner: selectedSession.owner,
@@ -75,11 +79,12 @@ function App() {
 
     const loadDetails = async () => {
       try {
-        const [systemRes, agentRes, mergedRes, diagnosticRes] = await Promise.all([
+        const [systemRes, agentRes, mergedRes, diagnosticRes, conversationRes] = await Promise.all([
           fetch(`/api/session-log?${params.toString()}&source=system&maxLines=150`),
           fetch(`/api/session-log?${params.toString()}&source=agent&maxLines=250`),
           fetch(`/api/session-log?${params.toString()}&source=merged&maxLines=250`),
           fetch(`/api/session-diagnostic?${params.toString()}`),
+          fetch(`/api/claude-session?${params.toString()}&maxEntries=100`),
         ]);
 
         if (!active) return;
@@ -107,15 +112,23 @@ function App() {
         } else {
           setSelectedDiagnostic(null);
         }
+
+        if (conversationRes.ok) {
+          setSelectedConversation(await conversationRes.json());
+        } else {
+          setSelectedConversation(null);
+        }
       } catch {
         if (!active) return;
         setSelectedSystemLogs([]);
         setSelectedAgentLogs([]);
         setSelectedMergedLogs([]);
         setSelectedDiagnostic(null);
+        setSelectedConversation(null);
       } finally {
         if (active) {
           setSelectedLogsLoading(false);
+          setSelectedConversationLoading(false);
         }
       }
     };
@@ -349,6 +362,47 @@ function App() {
         <span>{entry.message}</span>
       </div>
     ));
+  };
+
+  const renderConversation = (session: ClaudeSession | null) => {
+    if (!session) {
+      return <div className="p-4 text-text-muted">No conversation yet.</div>;
+    }
+
+    return (
+      <div className="flex flex-col gap-3">
+        {session.entries.map((entry, i) => (
+          <div key={`conv-${i}`} className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-xs text-text-muted">
+              <span className={`font-semibold uppercase ${
+                entry.type === 'user' ? 'text-sky-400' :
+                entry.type === 'assistant' ? 'text-amber-400' :
+                entry.type === 'system' ? 'text-green-400' :
+                'text-purple-400'
+              }`}>
+                {entry.type}
+              </span>
+              <span>{entry.timestamp && new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(entry.timestamp))}</span>
+            </div>
+            {entry.type === 'assistant' && entry.thinking && (
+              <div className="bg-amber-900/20 border border-amber-500/30 rounded p-2 text-xs">
+                <div className="text-amber-400 font-semibold mb-1">Thinking:</div>
+                <div className="text-gray-300 whitespace-pre-wrap">{entry.thinking}</div>
+              </div>
+            )}
+            {entry.content && (
+              <div className={`rounded p-2 text-sm whitespace-pre-wrap ${
+                entry.type === 'user' ? 'bg-sky-900/30 border border-sky-500/30' :
+                entry.type === 'assistant' ? 'bg-black/30 border border-white/10' :
+                'bg-white/5 border border-white/5'
+              }`}>
+                {entry.content}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const currentSelectedLogs =
@@ -725,12 +779,26 @@ function App() {
                          >
                            Agent Log
                          </button>
+                         <button
+                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                             selectedLogTab === 'conversation'
+                               ? 'bg-white/10 text-white border-border-color'
+                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
+                           }`}
+                           onClick={() => setSelectedLogTab('conversation')}
+                         >
+                           Conversation
+                         </button>
                        </div>
                      </div>
                      <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] text-gray-300 overflow-auto flex-1 min-h-0 flex flex-col gap-1.5">
-                       {selectedLogsLoading
-                         ? <div className="p-4 text-text-muted">Loading logs...</div>
-                         : renderSessionLogLines(currentSelectedLogs, selectedLogTab)}
+                       {selectedLogTab === 'conversation'
+                         ? (selectedConversationLoading
+                             ? <div className="p-4 text-text-muted">Loading conversation...</div>
+                             : renderConversation(selectedConversation))
+                         : (selectedLogsLoading
+                             ? <div className="p-4 text-text-muted">Loading logs...</div>
+                             : renderSessionLogLines(currentSelectedLogs, selectedLogTab))}
                      </div>
                    </div>
                  </div>

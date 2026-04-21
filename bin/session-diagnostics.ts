@@ -1,4 +1,6 @@
 import fs from "fs";
+import path from "path";
+import os from "os";
 import type { SessionStatus } from "./session-manager";
 import type { SessionPhase } from "./session-state-machine";
 import { SessionPathManager } from "./session-paths";
@@ -242,6 +244,209 @@ export function clearSessionDiagnostic(paths: SessionPathManager): void {
       fs.unlinkSync(paths.getDiagnosticFile());
     }
   } catch {
+  }
+}
+
+/**
+ * Claude Code 会话条目
+ */
+export interface ClaudeSessionEntry {
+  type: "user" | "assistant" | "attachment" | "system";
+  timestamp: string;
+  role?: string;
+  content: string;
+  thinking?: string;
+  uuid: string;
+  parentUuid?: string;
+}
+
+/**
+ * Claude Code 会话数据
+ */
+export interface ClaudeSession {
+  sessionId: string;
+  cwd: string;
+  startedAt: string;
+  entries: ClaudeSessionEntry[];
+}
+
+const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
+
+/**
+ * 根据 worktree 路径查找 Claude Code 项目目录
+ * 项目目录格式：将路径中的 / 替换为 -
+ */
+function findClaudeProjectDir(worktreePath: string): string | null {
+  const projectName = worktreePath.replace(/\//g, "-");
+  const projectDir = path.join(CLAUDE_PROJECTS_DIR, projectName);
+  if (fs.existsSync(projectDir)) {
+    return projectDir;
+  }
+  return null;
+}
+
+/**
+ * 读取并解析 Claude Code 会话 .jsonl 文件
+ */
+export function readClaudeSessionLog(
+  worktreePath: string,
+  maxEntries?: number,
+): ClaudeSession | null {
+  const projectDir = findClaudeProjectDir(worktreePath);
+  if (!projectDir) {
+    return null;
+  }
+
+  try {
+    const files = fs.readdirSync(projectDir).filter((f) => f.endsWith(".jsonl"));
+    if (files.length === 0) {
+      return null;
+    }
+
+    // 按修改时间排序，取最新的文件（当前会话）
+    const sortedFiles = files
+      .map((f) => ({
+        name: f,
+        mtime: fs.statSync(path.join(projectDir, f)).mtime.getTime(),
+      }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    const latestFile = sortedFiles[0].name;
+    const filePath = path.join(projectDir, latestFile);
+    const content = fs.readFileSync(filePath, "utf-8");
+    const lines = content.split("\n").filter(Boolean);
+
+    const sessionId = latestFile.replace(".jsonl", "");
+    let cwd = worktreePath;
+    let startedAt = "";
+    const entries: ClaudeSessionEntry[] = [];
+
+    const limit = maxEntries || lines.length;
+    const linesToProcess = lines.slice(-limit);
+
+    for (const line of linesToProcess) {
+      try {
+        const entry = JSON.parse(line);
+        if (!startedAt && entry.timestamp) {
+          startedAt = entry.timestamp;
+        }
+        if (entry.cwd) {
+          cwd = entry.cwd;
+        }
+
+        const parsedEntry = parseClaudeEntry(entry);
+        if (parsedEntry) {
+          entries.push(parsedEntry);
+        }
+      } catch {
+        // Skip malformed JSON lines
+      }
+    }
+
+    return {
+      sessionId,
+      cwd,
+      startedAt,
+      entries,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 解析单个 Claude Code .jsonl 条目
+ */
+function parseClaudeEntry(entry: any): ClaudeSessionEntry | null {
+  const base = {
+    timestamp: entry.timestamp || "",
+    uuid: entry.uuid || "",
+    parentUuid: entry.parentUuid || undefined,
+  };
+
+  switch (entry.type) {
+    case "user":
+      return {
+        ...base,
+        type: "user",
+        role: entry.message?.role || "user",
+        content: extractUserContent(entry.message),
+      };
+
+    case "assistant":
+      return {
+        ...base,
+        type: "assistant",
+        role: "assistant",
+        content: extractAssistantContent(entry.message),
+        thinking: extractThinking(entry.message),
+      };
+
+    case "attachment":
+      return {
+        ...base,
+        type: "attachment",
+        role: "system",
+        content: extractAttachmentContent(entry),
+      };
+
+    case "queue-operation":
+    case "last-prompt":
+      return {
+        ...base,
+        type: "system",
+        role: "system",
+        content: `${entry.type}: ${entry.operation || ""}`,
+      };
+
+    default:
+      return null;
+  }
+}
+
+function extractUserContent(message: any): string {
+  if (!message || !message.content) return "";
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((c) => (c.type === "text" ? c.text : "")).filter(Boolean).join("\n");
+  }
+  return "";
+}
+
+function extractAssistantContent(message: any): string {
+  if (!message || !message.content) return "";
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+function extractThinking(message: any): string | undefined {
+  if (!message || !message.content) return undefined;
+  const content = message.content;
+  if (!Array.isArray(content)) return undefined;
+  const thinkingBlock = content.find((c) => c.type === "thinking");
+  return thinkingBlock?.thinking;
+}
+
+function extractAttachmentContent(entry: any): string {
+  const attachment = entry.attachment;
+  if (!attachment) return "";
+
+  switch (attachment.type) {
+    case "mcp_instructions_delta":
+      return `[MCP] ${attachment.addedNames?.join(", ") || "instructions updated"}`;
+    case "skill_listing":
+      return `[Skills] ${attachment.skillCount || 0} skills loaded`;
+    default:
+      return `[Attachment] ${attachment.type || "unknown"}`;
   }
 }
 

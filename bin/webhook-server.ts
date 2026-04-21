@@ -27,7 +27,7 @@ import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
 import { isActiveSessionStatus } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
-import { readSessionDiagnostic, readSessionLog, generateSessionDiagnostic, type SessionLogSource } from "./session-diagnostics";
+import { readSessionDiagnostic, readSessionLog, generateSessionDiagnostic, readClaudeSessionLog, type SessionLogSource } from "./session-diagnostics";
 
 const logger = consola.withTag("webhook-server");
 
@@ -576,6 +576,33 @@ async function main() {
         const paths = new SessionPathManager(query.owner, query.repo, query.issueNumber);
         const logs = readSessionLog(paths, source, maxLines);
         return new Response(JSON.stringify(logs), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      // ── API: /api/claude-session ──
+      if (url.pathname === "/api/claude-session" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "Missing owner, repo, or issueNumber" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const paths = new SessionPathManager(query.owner, query.repo, query.issueNumber);
+        const worktreePath = paths.getWorktreeDir();
+        const maxEntries = Number(url.searchParams.get("maxEntries") || "") || undefined;
+
+        const session = readClaudeSessionLog(worktreePath, maxEntries);
+        if (!session) {
+          return new Response(JSON.stringify({ error: "Session not found or not started" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        return new Response(JSON.stringify(session), {
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
       }
