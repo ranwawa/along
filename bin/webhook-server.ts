@@ -162,14 +162,14 @@ async function handleEvent(
         enqueueAgent(`Issue #${issueNumber} 分类+处理`, async () => {
           const triageRes = await triageIssue(issueTitle, issueBody, issueLabels);
           if (!triageRes.success) {
-            logger.error(`Issue #${issueNumber} 分类失败，回退到 phase1: ${triageRes.error}`);
+            logger.error(`Issue #${issueNumber} 分类失败，回退到 planning: ${triageRes.error}`);
             // 回退逻辑
             const tokenRes = await readGithubToken();
             if (tokenRes.success) {
                 const client = new GitHubClient(tokenRes.data, owner, repo);
                 await client.addIssueLabels(issueNumber, ["bug", "WIP"]);
             }
-            await launchIssueAgent(owner, repo, issueNumber, "phase1", { taskData: { title: `Issue #${issueNumber}` } });
+            await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` } });
             return;
           }
 
@@ -184,7 +184,7 @@ async function handleEvent(
       }
 
       if (action === "labeled" && payload.label?.name === "approved") {
-        // 类型守卫：只有 bug/enhancement 标签的 issue 才触发 phase2
+        // 类型守卫：只有 bug/enhancement 标签的 issue 才触发 implementation
         const issueLabels = (payload.issue?.labels || []).map((l: any) =>
           typeof l === "string" ? l : l.name
         );
@@ -192,12 +192,12 @@ async function handleEvent(
           return { status: 200, message: "非 bug/feature issue，忽略 approved 标签" };
         }
 
-        logger.info(`Issue #${issueNumber} 已审批，启动 Phase 2...`);
-        enqueueAgent(`Issue #${issueNumber} Phase 2`, async () => {
-          const res = await launchIssueAgent(owner, repo, issueNumber, "phase2", { taskData: { title: `Issue #${issueNumber}` } });
-          if (!res.success) logger.error(`启动 Phase 2 失败: ${res.error}`);
+        logger.info(`Issue #${issueNumber} 已审批，启动实现阶段...`);
+        enqueueAgent(`Issue #${issueNumber} 实现`, async () => {
+          const res = await launchIssueAgent(owner, repo, issueNumber, "implementation", { taskData: { title: `Issue #${issueNumber}` } });
+          if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
         });
-        return { status: 202, message: `已触发 Phase 2: Issue #${issueNumber}` };
+        return { status: 202, message: `已触发实现阶段: Issue #${issueNumber}` };
       }
 
       if (action === "deleted") {
@@ -460,7 +460,7 @@ async function main() {
           logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
           enqueueAgent(`Issue #${issueNumber} 手动重启`, async () => {
             const sessionRes = readSession(owner, repo, issueNumber);
-            const phase = sessionRes.success && sessionRes.data?.phase === "planning" ? "phase1" : "phase2";
+            const phase = sessionRes.success && sessionRes.data?.phase ? sessionRes.data.phase : "planning";
             const title = sessionRes.success && sessionRes.data?.title ? sessionRes.data.title : `Issue #${issueNumber}`;
             const res = await launchIssueAgent(owner, repo, issueNumber, phase, { taskData: { title } });
             if (!res.success) logger.error(`手动重启 Issue #${issueNumber} 失败: ${res.error}`);

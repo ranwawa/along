@@ -4,7 +4,6 @@ import { config } from "./config";
 import { success, failure } from "./result";
 import type { Result } from "./result";
 import type { SessionStatus } from "./session-manager";
-import { normalizeLegacySessionState } from "./session-state-machine";
 
 export interface SessionInfo {
   owner: string;
@@ -155,30 +154,10 @@ function rowToSessionStatus(row: any): SessionStatus {
   result.repo = { owner: row.owner, name: row.repo };
 
   if (!result.lifecycle || !result.phase || !result.step) {
-    const normalized = normalizeLegacySessionState({
-      status: row.status,
-      workflowPhase: row.workflow_phase,
-      currentStep: row.current_step,
-      lastMessage: row.last_message,
-      errorMessage: row.error_message,
-      crashLog: row.crash_log,
-      exitCode: row.exit_code,
-      prUrl: row.pr_url,
-      prNumber: row.pr_number,
-      branchName: row.branch_name,
-      reviewCommentCount: row.review_comment_count,
-      ciResults: result.ciResults,
-      issueNumber: row.issue_number,
-      title: row.title,
-      repo: result.repo,
-    });
-
-    result.lifecycle = normalized.lifecycle;
-    result.phase = normalized.phase;
-    result.step = normalized.step;
-    result.message = result.message || normalized.message;
-    result.context = result.context || normalized.context;
-    result.error = result.error || normalized.error;
+    result.lifecycle = result.lifecycle || "running";
+    result.phase = result.phase || "planning";
+    result.step = result.step || "read_issue";
+    result.message = result.message || undefined;
     result.phaseStartedAt = result.phaseStartedAt || row.last_update || row.start_time;
     result.stepStartedAt = result.stepStartedAt || row.last_update || row.start_time;
   }

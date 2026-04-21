@@ -179,7 +179,7 @@ webhook 服务器收到事件后，会自动调度以下命令：
 | GitHub 事件 | 条件 | 触发命令 |
 |---|---|---|
 | `issues` (opened) | 非 Bot 创建 | `along run <N> --ci` |
-| `issues` (labeled) | 标签名为 `approved` | `along run <N> --ci`（Phase 2） |
+| `issues` (labeled) | 标签名为 `approved` | `along run <N> --ci`（implementation 阶段） |
 | `pull_request` (opened / synchronize) | — | `reviewPr()` |
 | `pull_request_review` (submitted) | — | `resolveReview()` |
 | `check_run` (completed) | conclusion 为 failure 且关联了 PR | `resolveCi()` |

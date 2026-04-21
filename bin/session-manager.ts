@@ -5,8 +5,6 @@ import { SessionPathManager } from "./session-paths";
 import { readSession, upsertSession, transactSession } from "./db";
 import {
   applySessionStateEvent,
-  getWorkflowStartPoint,
-  type AgentWorkflow,
   type SessionContext,
   type SessionError,
   type SessionLifecycle,
@@ -75,12 +73,11 @@ export class SessionManager {
     const currentStatus = res.data;
 
     if (!currentStatus) {
-      const start = getWorkflowStartPoint("phase1");
       const defaults: Partial<SessionStatus> = {
         issueNumber: this.issueNumber,
         lifecycle: "running",
-        phase: start.phase,
-        step: start.step,
+        phase: "planning",
+        step: "read_issue",
         startTime: iso_timestamp(),
         worktreePath: "",
         title: "",
@@ -157,8 +154,8 @@ export class SessionManager {
     return writeRes;
   }
 
-  startWorkflow(workflow: AgentWorkflow, message?: string): Result<void> {
-    return this.transition({ type: "START_PHASE", workflow, message });
+  startWorkflow(phase: SessionPhase, step: SessionStep, message?: string): Result<void> {
+    return this.transition({ type: "START_PHASE", phase, step, message });
   }
 
   logEvent(event: string, details?: Record<string, any>): Result<void> {

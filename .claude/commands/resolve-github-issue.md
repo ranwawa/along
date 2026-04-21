@@ -31,11 +31,11 @@ description: 接收外部脚本传入的 Issue 编号并启动自动化修复 SO
 请先读取模式文件确定本次执行范围：
 
 ```bash
-cat ../.along-mode 2>/dev/null || echo "phase1"
+cat ../.along-mode 2>/dev/null || echo "planning"
 ```
 
-- **`phase1`**（默认）：仅执行第一步和第二步。完成后正常退出，等待人工审批。
-- **`phase2`**：跳过第一步和第二步（已完成），先读取 `../step2-issue-comment.md` 了解已审批的计划，然后从第三步开始执行。
+- **`planning`**（默认）：仅执行第一步和第二步。完成后正常退出，等待人工审批。
+- **`implementation`**（及之后阶段）：跳过第一步和第二步（已完成），先读取 `../step2-issue-comment.md` 了解已审批的计划，然后从第三步开始执行。
 
 ## 强制工作流程
 
@@ -151,7 +151,7 @@ cat ../.along-mode 2>/dev/null || echo "phase1"
 如果任务需要提前终止（无法完成或用户取消）：
 
 ```bash
-along issue-status $1 error --message="终止原因"
+along issue-status $1 failed --message="终止原因"
 ```
 
 ### 强制重新开始

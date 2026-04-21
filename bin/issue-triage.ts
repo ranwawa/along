@@ -167,8 +167,8 @@ export async function handleTriagedIssue(
       if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
       logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}, WIP]`);
 
-      // 启动 phase1（出方案）
-      const launchRes = await launchIssueAgent(owner, repo, issueNumber, "phase1", { taskData: { title: `Issue #${issueNumber}` } });
+      // 启动 planning 阶段（出方案）
+      const launchRes = await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` } });
       if (!launchRes.success) return launchRes;
       break;
     }

@@ -1,7 +1,5 @@
 import { iso_timestamp } from "./common";
 
-export type AgentWorkflow = "phase1" | "phase2";
-
 export type SessionLifecycle =
   | "running"
   | "waiting_human"
@@ -85,8 +83,8 @@ export interface SessionStateSnapshot {
 }
 
 export type SessionStateEvent =
-  | { type: "START_PHASE"; workflow: AgentWorkflow; message?: string }
-  | { type: "AGENT_EXITED_SUCCESS"; workflow: AgentWorkflow; message?: string }
+  | { type: "START_PHASE"; phase: SessionPhase; step: SessionStep; message?: string }
+  | { type: "AGENT_EXITED_SUCCESS"; message?: string }
   | { type: "AGENT_EXITED_FAILURE"; message: string; exitCode?: number; crashLog?: string }
   | { type: "RECOVERY_DETECTED_CRASH"; message: string }
   | { type: "BLOCKED"; message: string; exitCode?: number }
@@ -110,24 +108,6 @@ export type SessionStateEvent =
 export interface SessionStateTransition {
   nextLifecycle: SessionLifecycle;
   patch: Record<string, unknown>;
-}
-
-type LegacyStatus =
-  | "phase1_running"
-  | "awaiting_approval"
-  | "phase2_running"
-  | "awaiting_pr"
-  | "pr_open"
-  | "review_fixing"
-  | "ci_fixing"
-  | "merged"
-  | "error"
-  | "crashed";
-
-export function getWorkflowStartPoint(workflow: AgentWorkflow): { phase: SessionPhase; step: SessionStep } {
-  return workflow === "phase1"
-    ? { phase: "planning", step: "read_issue" }
-    : { phase: "implementation", step: "sync_approved_plan" };
 }
 
 export function isActiveSessionLifecycle(lifecycle?: SessionLifecycle): boolean {
@@ -270,121 +250,6 @@ function nextStatePatch(
   };
 }
 
-export function normalizeLegacySessionState(input: {
-  status?: string;
-  workflowPhase?: string;
-  currentStep?: string;
-  lastMessage?: string;
-  errorMessage?: string;
-  crashLog?: string;
-  exitCode?: number;
-  prUrl?: string;
-  prNumber?: number;
-  branchName?: string;
-  reviewCommentCount?: number;
-  ciResults?: { failed?: number };
-  issueNumber?: number;
-  title?: string;
-  repo?: { owner: string; name: string };
-}): Partial<SessionStateSnapshot> & {
-  lifecycle?: SessionLifecycle;
-  phase?: SessionPhase;
-  step?: SessionStep;
-  message?: string;
-  context?: SessionContext;
-  error?: SessionError;
-} {
-  const status = input.status as LegacyStatus | undefined;
-  const phase1 = input.workflowPhase === "phase1";
-  const context: SessionContext = {
-    issueNumber: input.issueNumber || 0,
-    title: input.title,
-    repo: input.repo ? `${input.repo.owner}/${input.repo.name}` : undefined,
-    branchName: input.branchName,
-    prNumber: input.prNumber,
-    prUrl: input.prUrl,
-    reviewCommentCount: input.reviewCommentCount,
-    failedCiCount: input.ciResults?.failed,
-  };
-
-  let lifecycle: SessionLifecycle = "running";
-  let phase: SessionPhase = phase1 ? "planning" : "implementation";
-  let step: SessionStep = phase1 ? "read_issue" : "sync_approved_plan";
-
-  switch (status) {
-    case "awaiting_approval":
-      lifecycle = "waiting_human";
-      phase = "planning";
-      step = "await_approval";
-      break;
-    case "phase2_running":
-      lifecycle = "running";
-      phase = "implementation";
-      step = input.currentStep?.includes("PR") ? "draft_pr" : "edit_code";
-      if (step === "draft_pr") phase = "delivery";
-      break;
-    case "awaiting_pr":
-      lifecycle = "waiting_human";
-      phase = "delivery";
-      step = "draft_pr";
-      break;
-    case "pr_open":
-      lifecycle = "waiting_external";
-      phase = "stabilization";
-      step = "await_merge";
-      break;
-    case "review_fixing":
-      lifecycle = "running";
-      phase = "stabilization";
-      step = "address_review_feedback";
-      break;
-    case "ci_fixing":
-      lifecycle = "running";
-      phase = "stabilization";
-      step = "fix_ci";
-      break;
-    case "merged":
-      lifecycle = "completed";
-      phase = "done";
-      step = "archive_result";
-      break;
-    case "error":
-      lifecycle = "failed";
-      phase = phase1 ? "planning" : "implementation";
-      step = phase1 ? "analyze_codebase" : "edit_code";
-      break;
-    case "crashed":
-      lifecycle = "interrupted";
-      phase = phase1 ? "planning" : "implementation";
-      step = phase1 ? "analyze_codebase" : "edit_code";
-      break;
-    case "phase1_running":
-    default:
-      lifecycle = "running";
-      phase = "planning";
-      step = input.currentStep?.includes("分析") ? "analyze_codebase" : "read_issue";
-      break;
-  }
-
-  const error = input.errorMessage
-    ? {
-      message: input.errorMessage,
-      details: input.crashLog,
-      code: input.exitCode ? `EXIT_${input.exitCode}` : undefined,
-      retryable: lifecycle !== "completed",
-    }
-    : undefined;
-
-  return {
-    lifecycle,
-    phase,
-    step,
-    message: input.lastMessage,
-    context,
-    error,
-  };
-}
-
 export function applySessionStateEvent(
   current: SessionStateSnapshot | null,
   event: SessionStateEvent,
@@ -393,12 +258,11 @@ export function applySessionStateEvent(
 
   switch (event.type) {
     case "START_PHASE": {
-      const start = getWorkflowStartPoint(event.workflow);
       return nextStatePatch(current, {
         lifecycle: "running",
-        phase: start.phase,
-        step: start.step,
-        message: event.message ?? `启动 ${event.workflow}`,
+        phase: event.phase,
+        step: event.step,
+        message: event.message ?? `启动 ${getPhaseLabel(event.phase)}`,
         progress: undefined,
         error: null,
         pid: undefined,
@@ -406,7 +270,7 @@ export function applySessionStateEvent(
     }
 
     case "AGENT_EXITED_SUCCESS":
-      if (event.workflow === "phase1") {
+      if (!current?.phase || current.phase === "planning") {
         return nextStatePatch(current, {
           lifecycle: "waiting_human",
           phase: "planning",

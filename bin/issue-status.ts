@@ -7,6 +7,14 @@ import {
   success,
   failure,
 } from "./common";
+const VALID_LIFECYCLES: Set<string> = new Set<string>([
+  "running",
+  "waiting_human",
+  "waiting_external",
+  "completed",
+  "failed",
+  "interrupted",
+]);
 
 const logger = consola.withTag("issue-status");
 import { readRepoInfo } from "./github-client";
@@ -57,6 +65,11 @@ async function main() {
 
   const [issueNumber, status, message] = program.args;
   const { step } = program.opts();
+
+  if (!VALID_LIFECYCLES.has(status)) {
+    logger.error(`无效的 lifecycle 值: "${status}". 合法值: ${[...VALID_LIFECYCLES].join(", ")}`);
+    process.exit(1);
+  }
 
   const gitResult = await checkGitRepo();
   if (!gitResult.success) {

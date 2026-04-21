@@ -34,7 +34,6 @@ try {
     clearSessionDiagnostic(paths);
     update = applySessionStateEvent(session, {
       type: "AGENT_EXITED_SUCCESS",
-      workflow: phase as "phase1" | "phase2",
     }).patch;
   } else {
     let crashLog: string | undefined;
