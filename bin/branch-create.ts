@@ -16,7 +16,7 @@ import { SessionManager } from "./session-manager";
  * 在 worktree 内执行：
  * 1. git checkout -B <branch-name>
  * 2. git push -u origin <branch-name>
- * 3. 更新数据库中的 branchName
+ * 3. 更新数据库中的 context.branchName
  */
 
 async function main() {
@@ -65,7 +65,13 @@ async function main() {
     session.logEvent("branch-pushed", { branchName });
 
     // 3. 更新数据库：写入 branchName + 自动推进 step
-    const writeRes = session.writeStatus({ branchName });
+    const currentRes = session.readStatus();
+    const writeRes = session.writeStatus({
+      context: {
+        ...(currentRes.success && currentRes.data?.context ? currentRes.data.context : { issueNumber: Number(issueNumber) }),
+        branchName,
+      },
+    });
     if (writeRes.success) {
       session.transition({ type: "BRANCH_PREPARED", branchName });
     }

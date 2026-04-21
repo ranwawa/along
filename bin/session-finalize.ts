@@ -5,7 +5,7 @@
  * Usage: bun bin/session-finalize.ts <owner> <repo> <issueNumber> <phase> <exitCode> [logFile]
  *
  * 轻量脚本，供 tmux shell 在 agent 退出后调用。
- * 根据 phase + exitCode 驱动状态机，而不是直接写死 completed。
+ * 根据 workflow + exitCode 驱动状态机，而不是直接写死 completed。
  */
 import fs from "fs";
 import { readSession, upsertSession } from "./db";
@@ -34,7 +34,7 @@ try {
     clearSessionDiagnostic(paths);
     update = applySessionStateEvent(session, {
       type: "AGENT_EXITED_SUCCESS",
-      phase: phase as "phase1" | "phase2",
+      workflow: phase as "phase1" | "phase2",
     }).patch;
   } else {
     let crashLog: string | undefined;

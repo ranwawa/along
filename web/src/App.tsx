@@ -4,16 +4,12 @@ import './index.css';
 
 const statusFilters = [
   'all',
-  'phase1_running',
-  'awaiting_approval',
-  'phase2_running',
-  'awaiting_pr',
-  'pr_open',
-  'review_fixing',
-  'ci_fixing',
-  'merged',
-  'error',
-  'crashed',
+  'running',
+  'waiting_human',
+  'waiting_external',
+  'completed',
+  'failed',
+  'interrupted',
   'zombie',
 ] as const;
 
@@ -135,51 +131,82 @@ function App() {
 
   const counts = useMemo<StatusCounts>(() => {
     const defaultCounts: StatusCounts = {
-      phase1_running: 0,
-      awaiting_approval: 0,
-      phase2_running: 0,
-      awaiting_pr: 0,
-      pr_open: 0,
-      review_fixing: 0,
-      ci_fixing: 0,
-      merged: 0,
-      error: 0,
-      crashed: 0,
+      running: 0,
+      waiting_human: 0,
+      waiting_external: 0,
+      completed: 0,
+      failed: 0,
+      interrupted: 0,
       zombie: 0,
       total: sessions.length,
     };
     for (const s of sessions) {
-      defaultCounts[s.status] += 1;
+      defaultCounts[s.lifecycle] += 1;
     }
     return defaultCounts;
   }, [sessions]);
 
   const filteredSessions = useMemo(() => {
     return sessions.filter(s => {
-      const matchesStatus = currentFilter === 'all' || s.status === currentFilter;
+      const matchesStatus = currentFilter === 'all' || s.lifecycle === currentFilter;
       const matchesRepo = !repoFilter || s.repo.toLowerCase().includes(repoFilter.toLowerCase());
       return matchesStatus && matchesRepo;
     });
   }, [sessions, currentFilter, repoFilter]);
 
-  const isFailedStatus = (status: string) => ['error', 'crashed', 'zombie'].includes(status);
+  const isFailedStatus = (lifecycle: string) => ['failed', 'interrupted', 'zombie'].includes(lifecycle);
   const getIssueKey = (session: DashboardSession) => `${session.owner}/${session.repo}#${session.issueNumber}`;
   const getFilterCount = (filter: typeof statusFilters[number]) => filter === 'all' ? counts.total : counts[filter];
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'phase1_running': return 'Phase 1';
-      case 'awaiting_approval': return 'Awaiting Approval';
-      case 'phase2_running': return 'Phase 2';
-      case 'awaiting_pr': return 'Awaiting PR';
-      case 'pr_open': return 'PR Open';
-      case 'review_fixing': return 'Review Fix';
-      case 'ci_fixing': return 'CI Fix';
-      case 'merged': return 'Merged';
-      case 'error': return 'Error';
-      case 'crashed': return 'Crashed';
+  const getLifecycleLabel = (lifecycle: string) => {
+    switch (lifecycle) {
+      case 'running': return 'Running';
+      case 'waiting_human': return 'Waiting Human';
+      case 'waiting_external': return 'Waiting External';
+      case 'completed': return 'Completed';
+      case 'failed': return 'Failed';
+      case 'interrupted': return 'Interrupted';
       case 'zombie': return 'Zombie';
-      default: return status;
+      default: return lifecycle;
+    }
+  };
+
+  const getPhaseLabel = (phase?: string) => {
+    switch (phase) {
+      case 'planning': return 'Planning';
+      case 'implementation': return 'Implementation';
+      case 'delivery': return 'Delivery';
+      case 'stabilization': return 'Stabilization';
+      case 'done': return 'Done';
+      default: return phase || 'Unknown';
+    }
+  };
+
+  const getStepLabel = (step?: string) => {
+    if (!step) return 'Unknown';
+    return step
+      .split('_')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  };
+
+  const getProgressLabel = (session: DashboardSession) => {
+    if (!session.progress?.total) return null;
+    return `${session.progress.current ?? 0}/${session.progress.total} ${session.progress.unit || ''}`.trim();
+  };
+
+  const getBranchName = (session: DashboardSession) => session.context?.branchName || '-';
+
+  const getStatusColor = (lifecycle: string) => {
+    switch(lifecycle) {
+      case 'running': return 'bg-sky-500/15 text-status-running border-sky-500/30';
+      case 'waiting_human': return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      case 'waiting_external': return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+      case 'completed': return 'bg-emerald-500/15 text-status-completed border-emerald-500/30';
+      case 'failed': return 'bg-red-500/15 text-status-error border-red-500/30';
+      case 'interrupted': return 'bg-orange-500/15 text-status-crashed border-orange-500/30';
+      case 'zombie': return 'bg-purple-500/15 text-status-zombie border-purple-500/30';
+      default: return 'bg-gray-500/15 text-gray-300 border-gray-500/30';
     }
   };
 
@@ -288,23 +315,6 @@ function App() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch(status) {
-      case 'phase1_running': return 'bg-sky-500/15 text-status-running border-sky-500/30';
-      case 'awaiting_approval': return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
-      case 'phase2_running': return 'bg-blue-500/15 text-status-running border-blue-500/30';
-      case 'awaiting_pr': return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
-      case 'pr_open': return 'bg-emerald-500/15 text-status-completed border-emerald-500/30';
-      case 'review_fixing': return 'bg-violet-500/15 text-violet-300 border-violet-500/30';
-      case 'ci_fixing': return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
-      case 'merged': return 'bg-emerald-500/15 text-status-completed border-emerald-500/30';
-      case 'error': return 'bg-red-500/15 text-status-error border-red-500/30';
-      case 'crashed': return 'bg-orange-500/15 text-status-crashed border-orange-500/30';
-      case 'zombie': return 'bg-purple-500/15 text-status-zombie border-purple-500/30';
-      default: return 'bg-gray-500/15 text-gray-300 border-gray-500/30';
-    }
-  };
-
   const getLogLevelColor = (level: string) => {
     if (level === 'info') return 'text-status-running';
     if (level === 'error') return 'text-status-error';
@@ -365,7 +375,7 @@ function App() {
               }`}
               onClick={() => setCurrentFilter(filter)}
             >
-              {filter === 'all' ? 'All' : getStatusLabel(filter)}
+              {filter === 'all' ? 'All' : getLifecycleLabel(filter)}
               {filter !== 'all' && <span className="opacity-60 ml-1.5">{getFilterCount(filter)}</span>}
             </button>
           ))}
@@ -415,17 +425,18 @@ function App() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.status)}`}>
-                        {getStatusLabel(session.status)}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}>
+                        {getLifecycleLabel(session.lifecycle)}
                       </span>
                       <span className="text-text-muted text-xs">{session.runtime}</span>
-                      {session.currentStep && (
-                        <span className="text-text-muted text-xs truncate">{session.currentStep}</span>
+                      <span className="text-text-muted text-xs truncate">{getPhaseLabel(session.phase)} / {getStepLabel(session.step)}</span>
+                      {getProgressLabel(session) && (
+                        <span className="text-text-muted text-xs truncate">{getProgressLabel(session)}</span>
                       )}
                     </div>
                   </div>
                   <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-                    {isFailedStatus(session.status) && (
+                    {isFailedStatus(session.lifecycle) && (
                       <button
                         className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
                           restartingIssues.has(getIssueKey(session))
@@ -485,16 +496,16 @@ function App() {
                        {session.hasWorktree && <span className="ml-2 opacity-70" title="Worktree exists">📁</span>}
                      </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.status)}`}>
-                          {getStatusLabel(session.status)}
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}>
+                          {getLifecycleLabel(session.lifecycle)}
                         </span>
                      </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">{session.runtime}</td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm max-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
-                        {session.currentStep || '-'}
+                        {getPhaseLabel(session.phase)} / {getStepLabel(session.step)}
                      </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm flex gap-2" onClick={e => e.stopPropagation()}>
-                       {isFailedStatus(session.status) && (
+                       {isFailedStatus(session.lifecycle) && (
                          <button
                            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
                              restartingIssues.has(getIssueKey(session))
@@ -553,7 +564,7 @@ function App() {
               <div className="flex-1 min-h-0 p-4 md:p-6">
                  <div className="h-full min-h-0 flex flex-col gap-4 md:gap-6 lg:grid lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)] lg:gap-6">
                    <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 md:gap-6 pr-0 lg:pr-3">
-                     {selectedDiagnostic && isFailedStatus(selectedSession.status) && (
+                     {selectedDiagnostic && isFailedStatus(selectedSession.lifecycle) && (
                         <div className="flex flex-col gap-3">
                            <div className="text-text-secondary font-medium text-xs md:text-sm">Failure Summary</div>
                            <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 flex flex-col gap-3">
@@ -588,10 +599,10 @@ function App() {
                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
                         <span className="text-text-secondary font-medium text-xs md:text-sm">Status</span>
                         <div className="flex items-center gap-3 flex-wrap">
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.status)}`}>
-                            {getStatusLabel(selectedSession.status)}
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.lifecycle)}`}>
+                            {getLifecycleLabel(selectedSession.lifecycle)}
                           </span>
-                          {isFailedStatus(selectedSession.status) && (
+                          {isFailedStatus(selectedSession.lifecycle) && (
                             <button
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                                 restartingIssues.has(getIssueKey(selectedSession))
@@ -623,11 +634,19 @@ function App() {
                      </div>
                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
                         <span className="text-text-secondary font-medium text-xs md:text-sm">Current Step</span>
-                        <span className="text-sm md:text-base">{selectedSession.currentStep || 'N/A'}</span>
+                        <span className="text-sm md:text-base">{getStepLabel(selectedSession.step)}</span>
                      </div>
                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                        <span className="text-text-secondary font-medium text-xs md:text-sm">Last Message</span>
-                        <span className="text-sm md:text-base">{selectedSession.lastMessage || 'N/A'}</span>
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Phase</span>
+                        <span className="text-sm md:text-base">{getPhaseLabel(selectedSession.phase)}</span>
+                     </div>
+                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Message</span>
+                        <span className="text-sm md:text-base">{selectedSession.message || 'N/A'}</span>
+                     </div>
+                     <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">Branch</span>
+                        <span className="text-sm md:text-base">{getBranchName(selectedSession)}</span>
                      </div>
 
                      {selectedSession.hasWorktree && (
@@ -650,20 +669,20 @@ function App() {
                         </div>
                      )}
 
-                     {selectedSession.errorMessage && (
+                     {selectedSession.error?.message && (
                         <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
                            <span className="text-text-secondary font-medium text-xs md:text-sm">Error</span>
                            <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-status-error overflow-x-auto">
-                             {selectedSession.errorMessage}
+                             {selectedSession.error.message}
                            </div>
                         </div>
                      )}
 
-                     {selectedSession.crashLog && (
+                     {selectedSession.error?.details && (
                         <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
                            <span className="text-text-secondary font-medium text-xs md:text-sm">Crash Log</span>
                            <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-white overflow-x-auto">
-                             {selectedSession.crashLog}
+                             {selectedSession.error.details}
                            </div>
                         </div>
                      )}

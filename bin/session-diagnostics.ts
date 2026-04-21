@@ -1,6 +1,6 @@
 import fs from "fs";
 import type { SessionStatus } from "./session-manager";
-import type { WorkflowPhase } from "./session-state-machine";
+import type { SessionPhase } from "./session-state-machine";
 import { SessionPathManager } from "./session-paths";
 
 export type SessionLogSource = "system" | "agent" | "merged";
@@ -18,7 +18,7 @@ export interface SessionDiagnostic {
   category: string;
   summary: string;
   failedAt?: string;
-  phase?: WorkflowPhase;
+  phase?: SessionPhase;
   exitCode?: number;
   command?: string;
   errorMessage?: string;
@@ -205,8 +205,8 @@ export function generateSessionDiagnostic(
   const lastSystemLines = readLastLines(paths.getLogFile(), 50);
   const lastAgentLines = readLastLines(paths.getAgentLogFile(), 100);
   const basis = [
-    session.errorMessage || "",
-    session.crashLog || "",
+    session.error?.message || "",
+    session.error?.details || "",
     ...lastAgentLines.slice(-20),
     ...lastSystemLines.slice(-20),
   ].join("\n");
@@ -216,10 +216,10 @@ export function generateSessionDiagnostic(
     category: classified.category,
     summary: classified.summary,
     failedAt: session.endTime || session.lastUpdate,
-    phase: session.workflowPhase,
-    exitCode: session.exitCode,
+    phase: session.phase,
+    exitCode: session.error?.code?.startsWith("EXIT_") ? Number(session.error.code.replace("EXIT_", "")) : undefined,
     command: session.agentCommand,
-    errorMessage: session.errorMessage,
+    errorMessage: session.error?.message,
     hints: classified.hints,
     lastSystemLines,
     lastAgentLines,

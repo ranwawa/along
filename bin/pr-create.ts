@@ -56,7 +56,7 @@ async function main() {
     process.exit(1);
   }
 
-  const branchName = statusData.branchName;
+  const branchName = statusData.context?.branchName;
   const repo = statusData.repo;
 
   if (!branchName) {

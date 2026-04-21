@@ -1,4 +1,4 @@
-import type { SessionLifecycleStatus } from "./session-state-machine";
+import type { SessionContext, SessionLifecycle, SessionPhase, SessionProgress, SessionStep } from "./session-state-machine";
 
 export interface LogEntry {
   timestamp: Date;
@@ -12,33 +12,34 @@ export interface DashboardSession {
   repo: string;
   issueNumber: number;
   title: string;
-  status: SessionLifecycleStatus | "zombie";
-  currentStep: string;
-  lastMessage: string;
+  lifecycle: SessionLifecycle | "zombie";
+  phase: SessionPhase;
+  step: SessionStep;
+  message?: string;
+  progress?: SessionProgress;
+  context?: SessionContext;
   startTime: string;
   endTime?: string;
   runtime: string;
   pid?: number;
-  prUrl?: string;
-  branchName: string;
   agentType?: string;
   retryCount?: number;
-  errorMessage?: string;
-  crashLog?: string;
-  workflowPhase?: "phase1" | "phase2";
+  error?: {
+    code?: string;
+    message: string;
+    retryable?: boolean;
+    details?: string;
+  };
+  hasWorktree?: boolean;
 }
 
 export interface StatusCounts {
-  phase1_running: number;
-  awaiting_approval: number;
-  phase2_running: number;
-  awaiting_pr: number;
-  pr_open: number;
-  review_fixing: number;
-  ci_fixing: number;
-  merged: number;
-  error: number;
-  crashed: number;
+  running: number;
+  waiting_human: number;
+  waiting_external: number;
+  completed: number;
+  failed: number;
+  interrupted: number;
   zombie: number;
   total: number;
 }

@@ -44,7 +44,7 @@ export async function checkAndKillProcess(
   if (!res.success) return { canProceed: false, error: res.error };
   const data = res.data;
   if (!data) return { canProceed: true };
-  if (!isActiveSessionStatus(data.status)) return { canProceed: true };
+  if (!isActiveSessionStatus(data.lifecycle)) return { canProceed: true };
 
   const pid = data.pid || 0;
   if (!pid || !(await check_process_running(pid))) return { canProceed: true };
@@ -102,7 +102,7 @@ export async function cleanupBranch(branchName: string, silent?: boolean, sessio
 export function readBranchName(owner: string, repo: string, issueNumber: number): string {
   const res = readSession(owner, repo, issueNumber);
   if (!res.success || !res.data) return "";
-  return res.data.branchName || "";
+  return res.data.context?.branchName || "";
 }
 
 /**
@@ -213,7 +213,7 @@ export async function cleanupIssueAssets(
   }
 
   const worktreePath = sessionRes.data?.worktreePath || paths.getWorktreeDir();
-  const branchName = sessionRes.data?.branchName || "";
+  const branchName = sessionRes.data?.context?.branchName || "";
 
   await cleanupWorktree(worktreePath, options.silent, session);
   await cleanupBranch(branchName, options.silent, session);

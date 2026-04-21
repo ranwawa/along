@@ -131,7 +131,7 @@ describe("task.ts", () => {
     it("活跃状态无 worktree 时返回 failure", () => {
       (readSession as any).mockReturnValue({
         success: true,
-        data: { status: "phase1_running" } as any,
+        data: { lifecycle: "running" } as any,
       } as any);
       (fs.existsSync as any).mockReturnValue(false);
 

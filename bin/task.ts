@@ -100,7 +100,7 @@ export class Task {
     if (!status && !this.todo && !this.worktree) return success(null);
 
     // 如果 session 处于活跃状态，但没有 worktree
-    if (isActiveSessionStatus(status?.status) && this.worktree === null) {
+    if (isActiveSessionStatus(status?.lifecycle) && this.worktree === null) {
       const msg = `Task#${this.taskNumber}正在运行，但没有worktree
       💡 建议做法：
       1. 运行along issue-clean ${this.taskNumber}, 清理任务后重新启动

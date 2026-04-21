@@ -29,7 +29,7 @@ import { readSession } from "./db";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import { clearSessionDiagnostic, generateSessionDiagnostic, writeSessionDiagnostic } from "./session-diagnostics";
 import { $ } from "bun";
-import type { WorkflowPhase } from "./session-state-machine";
+import { getWorkflowStartPoint, type AgentWorkflow } from "./session-state-machine";
 
 /**
  * 对字符串进行 shell 转义，防止注入
@@ -199,7 +199,7 @@ export async function execTmux(
     tmuxSessionName?: string;
     detach?: boolean;
     workflow: string;
-    phase: WorkflowPhase;
+    phase: AgentWorkflow;
   },
 ): Promise<Result<void>> {
   const logTagRes = config.getLogTag();
@@ -329,7 +329,7 @@ export async function launchIssueAgent(
   owner: string,
   repo: string,
   issueNumber: number,
-  phase: "phase1" | "phase2",
+  phase: AgentWorkflow,
   options: LaunchIssueAgentOptions = {},
 ): Promise<Result<void>> {
   const paths = new SessionPathManager(owner, repo, issueNumber);
@@ -366,15 +366,22 @@ export async function launchIssueAgent(
       return failure(wtResult.error);
     }
 
+    const startPoint = getWorkflowStartPoint(phase);
     const statusData: Record<string, any> = {
       issueNumber,
-      status: phase === "phase1" ? "phase1_running" : "phase2_running",
+      lifecycle: "running",
+      phase: startPoint.phase,
+      step: startPoint.step,
+      message: `启动 ${phase}`,
       startTime: iso_timestamp(),
-      branchName: "",
       worktreePath,
       title,
       repo: { owner, name: repo },
-      workflowPhase: phase,
+      context: {
+        issueNumber,
+        title,
+        repo: `${owner}/${repo}`,
+      },
     };
 
     const agentRole = getAgentRole();
@@ -402,7 +409,7 @@ export async function launchIssueAgent(
     await initSessionFiles(paths, worktreePath, statusData, session);
     logger.success("worktree 初始化完成");
   } else {
-    session.transition({ type: "START_PHASE", phase, message: `重新启动 ${phase}` });
+    session.transition({ type: "START_PHASE", workflow: phase, message: `重新启动 ${phase}` });
   }
 
   ensureEditorPermissions(worktreePath);
@@ -431,8 +438,8 @@ export async function launchIssueAgent(
     }
   } catch {
   }
-  session.transition({ type: "START_PHASE", phase, message: `启动 ${phase}` });
-  session.updateStep("启动 Agent", `phase=${phase}, workflow=${workflow}`);
+  session.transition({ type: "START_PHASE", workflow: phase, message: `启动 ${phase}` });
+  session.logEvent("agent-started", { phase, workflow });
   clearSessionDiagnostic(paths);
 
   if (options.strategy === "tmux") {
@@ -473,7 +480,7 @@ export async function launchIssueAgent(
         writeSessionDiagnostic(paths, generateSessionDiagnostic(currentRes.data, paths));
       }
     } else {
-      session.transition({ type: "AGENT_EXITED_SUCCESS", phase });
+      session.transition({ type: "AGENT_EXITED_SUCCESS", workflow: phase });
     }
     clearCurrentIssueContext();
     return success(undefined);

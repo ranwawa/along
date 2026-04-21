@@ -1,15 +1,44 @@
-export type DashboardStatus =
-  | "phase1_running"
-  | "awaiting_approval"
-  | "phase2_running"
-  | "awaiting_pr"
-  | "pr_open"
-  | "review_fixing"
-  | "ci_fixing"
-  | "merged"
-  | "error"
-  | "crashed"
+export type DashboardLifecycle =
+  | "running"
+  | "waiting_human"
+  | "waiting_external"
+  | "completed"
+  | "failed"
+  | "interrupted"
   | "zombie";
+
+export type DashboardPhase =
+  | "planning"
+  | "implementation"
+  | "delivery"
+  | "stabilization"
+  | "done";
+
+export type DashboardStep =
+  | "read_issue"
+  | "understand_scope"
+  | "prepare_workspace"
+  | "prepare_branch"
+  | "analyze_codebase"
+  | "identify_change_set"
+  | "draft_plan"
+  | "publish_plan"
+  | "await_approval"
+  | "sync_approved_plan"
+  | "edit_code"
+  | "update_tests"
+  | "run_targeted_validation"
+  | "record_progress"
+  | "prepare_commit"
+  | "push_commits"
+  | "draft_pr"
+  | "open_pr"
+  | "triage_review_feedback"
+  | "address_review_feedback"
+  | "triage_ci_failures"
+  | "fix_ci"
+  | "await_merge"
+  | "archive_result";
 
 export interface LogEntry {
   timestamp: string;
@@ -31,7 +60,7 @@ export interface SessionDiagnostic {
   category: string;
   summary: string;
   failedAt?: string;
-  phase?: "phase1" | "phase2";
+  phase?: DashboardPhase;
   exitCode?: number;
   command?: string;
   errorMessage?: string;
@@ -45,34 +74,50 @@ export interface DashboardSession {
   repo: string;
   issueNumber: number;
   title: string;
-  status: DashboardStatus;
-  currentStep: string;
-  lastMessage: string;
+  lifecycle: DashboardLifecycle;
+  phase?: DashboardPhase;
+  step?: DashboardStep;
+  message?: string;
+  progress?: {
+    current?: number;
+    total?: number;
+    unit?: string;
+    label?: string;
+  };
+  context?: {
+    issueNumber: number;
+    title?: string;
+    repo?: string;
+    branchName?: string;
+    commitShas?: string[];
+    prNumber?: number;
+    prUrl?: string;
+    reviewCommentCount?: number;
+    failedCiCount?: number;
+    changedFiles?: string[];
+  };
   startTime: string;
   endTime?: string;
   runtime: string;
   pid?: number;
-  prUrl?: string;
-  branchName: string;
   agentType?: string;
   retryCount?: number;
-  errorMessage?: string;
-  crashLog?: string;
+  error?: {
+    code?: string;
+    message: string;
+    retryable?: boolean;
+    details?: string;
+  };
   hasWorktree?: boolean;
-  workflowPhase?: "phase1" | "phase2";
 }
 
 export interface StatusCounts {
-  phase1_running: number;
-  awaiting_approval: number;
-  phase2_running: number;
-  awaiting_pr: number;
-  pr_open: number;
-  review_fixing: number;
-  ci_fixing: number;
-  merged: number;
-  error: number;
-  crashed: number;
+  running: number;
+  waiting_human: number;
+  waiting_external: number;
+  completed: number;
+  failed: number;
+  interrupted: number;
   zombie: number;
   total: number;
 }
