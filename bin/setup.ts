@@ -16,7 +16,7 @@ function printHelp(commands: string[], tag: string) {
   
   const descriptions: Record<string, string> = {
     "run": "一键启动（默认前台，支持 --ci）",
-    "webhook-server": "启动本地 webhook 服务器，接收 GitHub App webhook 事件",
+    "webhook-server": "启动本地 webhook 服务器，接收 GitHub App webhook 事件（支持 --watch 热重载）",
     "app-init": "引导配置 GitHub App 以接收仓库事件",
   };
 
@@ -40,9 +40,11 @@ function printHelp(commands: string[], tag: string) {
 async function dispatch(subCommand: string, args: string[], binDir: string, commands: string[], tag: string) {
   const scriptPath = path.join(binDir, `${subCommand}.ts`);
   const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue', 'webhook-handlers', 'issue-triage'].includes(subCommand);
+  const watch = args.includes("--watch");
+  const forwardedArgs = args.filter((arg) => arg !== "--watch");
 
   if (commands.includes(subCommand) && !isInternal) {
-    const proc = Bun.spawn([Bun.argv[0], scriptPath, ...args], {
+    const proc = Bun.spawn([Bun.argv[0], ...(watch ? ["--watch"] : []), scriptPath, ...forwardedArgs], {
       stdout: "inherit",
       stderr: "inherit",
       stdin: "inherit",
