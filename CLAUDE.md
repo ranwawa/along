@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Along
 
-Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding agents (OpenCode, PI, Claude Code) to resolve GitHub Issues end-to-end. It manages the full lifecycle: fetching issues, creating worktrees, launching agents in tmux sessions, tracking progress, committing code, creating PRs, and cleaning up.
+Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding agents (OpenCode, PI, Claude Code) to resolve GitHub Issues end-to-end. It manages the full lifecycle: fetching issues, creating worktrees, launching agents, tracking progress, committing code, creating PRs, and cleaning up.
 
 ## Runtime & Language
 
@@ -39,7 +39,7 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Data Flow
 
-1. `along run <N>` validates environment (git repo, GitHub remote, tmux), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, syncs skills/prompts into the worktree, then launches the configured AI agent in a tmux window.
+1. `along run <N>` validates environment (git repo, GitHub remote), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, syncs skills/prompts into the worktree, then launches the configured AI agent via Bun.spawn.
 2. The agent follows the SOP in `prompts/resolve-github-issue.md` — a 5-step workflow (understand issue → analyze code → implement fix → commit-push → create PR).
 3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates the session status in SQLite and `todo.md` in the issue directory.
 4. **Event-driven mode**: A GitHub App sends webhook events (issue opened, issue labeled, PR created, PR review submitted, check run completed) to the local `along webhook-server`. The server directly calls handler functions in `webhook-handlers.ts` (`reviewPr`, `resolveReview`, `resolveCi`) via fire-and-forget, without spawning subprocesses. Use `along app-init` to set up the GitHub App.
@@ -73,7 +73,6 @@ Along supports multiple AI editors via `config.EDITORS`. Each editor has directo
 - `issue.json` — Cached GitHub issue data
 - `step{M}-{script}.md` — Step output artifacts
 - `session.log` — Structured session log
-- `tmux.log` — Tmux output capture
 - `worktree/` — Git worktree directory
 
 ## Conventions
@@ -82,4 +81,3 @@ Along supports multiple AI editors via `config.EDITORS`. Each editor has directo
 - Logging uses `consola` with per-file tags: `consola.withTag("module-name")`.
 - CLI argument parsing uses `commander`.
 - Git operations use `simple-git` (imported as `git` from `common.ts`) and Bun's `$` shell for `gh` CLI calls.
-- The `tmux` environment is required for non-CI execution.

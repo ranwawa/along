@@ -69,7 +69,7 @@ function classifyFailure(text: string): {
       summary: "Agent 认证失败，凭证无效或权限不足",
       hints: [
         "检查对应 Agent 的 API Key 是否存在且未过期",
-        "确认环境变量已注入到 tmux 或前台执行环境",
+        "确认环境变量已注入到执行环境",
         "核对账号权限、模型权限或组织级限制",
       ],
     };
@@ -93,7 +93,7 @@ function classifyFailure(text: string): {
       summary: "任务执行失败：文件或环境权限不足",
       hints: [
         "检查 worktree、日志目录和凭证文件的访问权限",
-        "确认 tmux/子进程是否有相同的环境变量与目录权限",
+        "确认子进程是否有相同的环境变量与目录权限",
         "必要时在终端复现同一命令以确认权限边界",
       ],
     };
