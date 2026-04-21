@@ -35,6 +35,13 @@ bun install
 along webhook-server --port 9876
 ```
 
+开发时启动带热重载的 Webhook 服务器：
+```bash
+along webhook-server --watch --port 9876
+# 或
+bun run dev:server
+```
+
 配置 GitHub App：
 ```bash
 along app-init
@@ -51,8 +58,8 @@ Along 内置了一个 Web Dashboard，用于实时监控会话状态和查看日
 
 开发模式：
 ```bash
-# 1. 启动 Webhook 后端服务（端口 9876）
-along webhook-server --port 9876
+# 1. 启动 Webhook 后端服务（端口 9876，保存 server 代码后自动重启）
+along webhook-server --watch --port 9876
 
 # 2. 启动前端开发服务器（端口 5173）
 cd web && bun run dev
