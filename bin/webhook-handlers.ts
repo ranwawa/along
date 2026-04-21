@@ -19,6 +19,7 @@ import { findSessionByPr } from "./db";
 import { execAgent } from "./issue-agent";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import { cleanupIssueAssets } from "./cleanup-utils";
+import { STEP, EVENT, PHASE, type SessionContext } from "./session-state-machine";
 
 const logger = consola.withTag("webhook-handlers");
 
@@ -164,7 +165,7 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
 
   session.logEvent("reviewer-agent-launched", { trigger: "webhook", headSha: pr.head.sha, fileCount: files.length });
   const agentRes = await execAgent(statusData.worktreePath, issueNumber, "review-pr-diff", (pid) => {
-    session.writeStatus({ pid });
+    session.updateStep(statusData.step || STEP.AWAIT_MERGE, undefined, statusData.phase || PHASE.STABILIZATION, undefined, pid);
   });
 
   if (!agentRes.success) {
@@ -301,12 +302,11 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   const commentsFile = writeCommentsFile(paths, unresolvedComments, prNumber, statusData.repo, session);
   logger.info(`评论已写入: ${commentsFile}`);
 
-  session.transition({ type: "REVIEW_FIX_STARTED", commentCount: unresolvedComments.length });
-  session.writeStatus({ reviewCommentCount: unresolvedComments.length });
+  session.transition({ type: EVENT.REVIEW_FIX_STARTED, commentCount: unresolvedComments.length });
 
   session.logEvent("agent-launched", { trigger: "webhook-review", commentCount: unresolvedComments.length });
   const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review", (pid) => {
-    session.writeStatus({ pid });
+    session.updateStep(STEP.ADDRESS_REVIEW_FEEDBACK, undefined, PHASE.STABILIZATION, { reviewCommentCount: unresolvedComments.length } as Partial<SessionContext>, pid);
   });
 
   if (!agentRes.success) {
@@ -439,13 +439,13 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   const ciFile = writeCiFailureFile(paths, failedRuns, headSha, statusData.repo, session);
   logger.info(`CI 失败信息已写入: ${ciFile}`);
 
-  session.transition({ type: "CI_FIX_STARTED", failedCount: failedRuns.length });
+  session.transition({ type: EVENT.CI_FIX_STARTED, failedCount: failedRuns.length });
   session.updateCiResults(0, failedRuns.length, headSha);
 
   session.logEvent("agent-launched", { trigger: "webhook-ci", failedCount: failedRuns.length, headSha });
   setCurrentIssueContext(owner, repo, issueNumber);
   const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", (pid) => {
-    session.writeStatus({ pid });
+    session.updateStep(STEP.FIX_CI, undefined, PHASE.STABILIZATION, undefined, pid);
   });
   clearCurrentIssueContext();
 

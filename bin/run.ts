@@ -20,7 +20,9 @@ import { SessionPathManager } from "./session-paths";
 import { launchIssueAgent, tryRecoverFromWip } from "./issue-agent";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { readSession } from "./db";
-import type { SessionPhase } from "./session-state-machine";
+import { PHASE, LIFECYCLE, STEP, type SessionPhase } from "./session-state-machine";
+import { GitHubClient } from "./github-client";
+import { resolveAgentToken } from "./agent-config";
 
 /**
  * run - 极简一键启动入口
@@ -83,18 +85,33 @@ function configureCommand() {
 
 /**
  * 自动检测执行阶段：
- * - 如果数据库中 planning 已完成（waiting_human）→ 切换到 implementation
+ * - 如果数据库中 planning 已完成（waiting_human）→ 检查 approved 标签后决定是否切换到 implementation
  * - 否则 → 返回当前 phase 或默认 planning
  */
-function detectPhase(paths: SessionPathManager, owner: string, repo: string, issueNumber: number): SessionPhase {
+async function detectPhase(paths: SessionPathManager, owner: string, repo: string, issueNumber: number): Promise<SessionPhase> {
   // 优先从数据库读取 session 状态
   const sessionRes = readSession(owner, repo, issueNumber);
   if (sessionRes.success && sessionRes.data) {
     const { phase, lifecycle } = sessionRes.data;
-    // planning 阶段已完成且等待人工审批 → 下次启动进入 implementation
-    if (phase === "planning" && lifecycle === "waiting_human") {
+    // planning 阶段已完成且等待人工审批 → 检查 approved 标签
+    if (phase === PHASE.PLANNING && lifecycle === LIFECYCLE.WAITING_HUMAN) {
+      // 获取 Issue 标签，验证 approved 标签是否存在
+      const token = resolveAgentToken();
+      if (token) {
+        const client = new GitHubClient(token, owner, repo);
+        const issueRes = await client.getIssue(issueNumber);
+        if (issueRes.success) {
+          const labels = (issueRes.data.labels || []).map((l: any) =>
+            typeof l === "string" ? l : l.name
+          );
+          if (!labels.includes("approved")) {
+            logger.warn(`Issue #${issueNumber} 处于 waiting_human 但缺少 approved 标签，保持 planning 阶段`);
+            return PHASE.PLANNING;
+          }
+        }
+      }
       logger.info("检测到 planning 已完成（等待审批），切换到 implementation");
-      return "implementation";
+      return PHASE.IMPLEMENTATION;
     }
     if (phase) {
       logger.info(`从数据库恢复阶段: ${phase}`);
@@ -106,14 +123,14 @@ function detectPhase(paths: SessionPathManager, owner: string, repo: string, iss
   const modeFile = path.join(paths.getIssueDir(), ".along-mode");
   try {
     if (fs.existsSync(modeFile)) {
-      const current = fs.readFileSync(modeFile, "utf-8").trim() as SessionPhase;
-      if (current === "planning" || current === "implementation" || current === "delivery" || current === "stabilization") {
+      const current = fs.readFileSync(modeFile, "utf-8").trim();
+      if (current === PHASE.PLANNING || current === PHASE.IMPLEMENTATION || current === PHASE.DELIVERY || current === PHASE.STABILIZATION) {
         logger.info(`从 .along-mode 恢复阶段: ${current}`);
         return current;
       }
     }
   } catch {}
-  return "planning";
+  return PHASE.PLANNING;
 }
 
 async function handleAction(num: string) {
@@ -164,7 +181,7 @@ async function handleAction(num: string) {
     }
     logger.success("task检测通过");
 
-    sessionManager.writeStatus({ message: "正在检查 Git 仓库和 Issue 状态" });
+    sessionManager.updateStep(STEP.READ_ISSUE, "正在检查 Git 仓库和 Issue 状态");
 
     try {
       await runGc({ silent: true });
@@ -173,13 +190,13 @@ async function handleAction(num: string) {
       sessionManager.log("GC failed, but continuing anyway", "warn");
     }
 
-    sessionManager.writeStatus({ message: "开始执行任务流程" });
+    sessionManager.updateStep(STEP.READ_ISSUE, "开始执行任务流程");
 
-    const phase = detectPhase(paths, owner, repoName, taskNo);
+    const phase = await detectPhase(paths, owner, repoName, taskNo);
     logger.info(`执行阶段: ${phase}`);
 
     // AI 分类门控（仅首次 planning 阶段执行）
-    if (phase === "planning") {
+    if (phase === PHASE.PLANNING) {
       const issueData = issueRes.data!;
       const issueLabels = (issueData.labels || []).map((l: any) =>
         typeof l === "string" ? l : l.name
@@ -190,7 +207,7 @@ async function handleAction(num: string) {
       );
 
       if (!hasActionableLabel) {
-        sessionManager.writeStatus({ message: "正在对 Issue 进行 AI 分类" });
+        sessionManager.updateStep(STEP.READ_ISSUE, "正在对 Issue 进行 AI 分类");
         const triageRes = await triageIssue(issueData.title, issueData.body || "", issueLabels);
         if (!triageRes.success) {
           sessionManager.markAsError(`Issue 分类失败: ${triageRes.error}`);
@@ -214,7 +231,7 @@ async function handleAction(num: string) {
 
     // 直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
     const agentRes = await launchIssueAgent(owner, repoName, taskNo, phase, {
-      taskData: { title: issueRes.data.title },
+      taskData: { title: issueRes.data!.title },
     });
 
     if (!agentRes.success) {

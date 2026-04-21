@@ -5,6 +5,9 @@ import { SessionPathManager } from "./session-paths";
 import { readSession, upsertSession, transactSession } from "./db";
 import {
   applySessionStateEvent,
+  PHASE,
+  STEP,
+  EVENT,
   type SessionContext,
   type SessionError,
   type SessionLifecycle,
@@ -140,15 +143,17 @@ export class SessionManager {
     return writeRes;
   }
 
-  updateStep(step: SessionStep, message?: string, phase?: SessionPhase): Result<void> {
+  updateStep(step: SessionStep, message?: string, phase?: SessionPhase, context?: Partial<SessionContext>, pid?: number): Result<void> {
     const currentRes = this.readStatus();
     if (!currentRes.success) return currentRes;
-    const currentPhase = phase || currentRes.data?.phase || "planning";
+    const currentPhase = phase || currentRes.data?.phase || PHASE.PLANNING;
     const writeRes = this.transition({
-      type: "STEP_CHANGED",
+      type: EVENT.STEP_CHANGED,
       phase: currentPhase,
       step,
       message,
+      context,
+      pid,
     });
     this.log(`Step: ${step}${message ? ` - ${message}` : ""}`, "info");
     return writeRes;
@@ -181,8 +186,15 @@ export class SessionManager {
   }
 
   updateCiResults(passed: number, failed: number, sha?: string): Result<void> {
-    return this.writeStatus({
-      ciResults: { passed, failed, lastSha: sha },
+    const currentRes = this.readStatus();
+    if (!currentRes.success) return currentRes;
+    return this.transition({
+      type: EVENT.STEP_CHANGED,
+      phase: currentRes.data?.phase || PHASE.STABILIZATION,
+      step: currentRes.data?.step || STEP.FIX_CI,
+      context: {
+        ciResults: JSON.stringify({ passed, failed, lastSha: sha }),
+      } as Partial<SessionContext>,
     });
   }
 

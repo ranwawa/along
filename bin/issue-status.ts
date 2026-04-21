@@ -2,23 +2,15 @@
 import { consola } from "consola";
 import {
   checkGitRepo,
-  iso_timestamp,
-  Result,
   success,
   failure,
 } from "./common";
-const VALID_LIFECYCLES: Set<string> = new Set<string>([
-  "running",
-  "waiting_human",
-  "waiting_external",
-  "completed",
-  "failed",
-  "interrupted",
-]);
+import type { Result } from "./common";
 
 const logger = consola.withTag("issue-status");
 import { readRepoInfo } from "./github-client";
-import { readSession, upsertSession } from "./db";
+import { SessionManager } from "./session-manager";
+import { LIFECYCLE, STEP, EVENT, type SessionLifecycle, type SessionStep } from "./session-state-machine";
 
 import { Command } from "commander";
 
@@ -30,24 +22,23 @@ async function updateStatus(
   message?: string,
   step?: string,
 ): Promise<Result<null>> {
-  const res = readSession(owner, repo, issueNumber);
-  if (!res.success) {
-    return failure(`读取会话状态失败: ${res.error}`);
+  const session = new SessionManager(owner, repo, issueNumber);
+  const currentRes = session.readStatus();
+  if (!currentRes.success) {
+    return failure(`读取会话状态失败: ${currentRes.error}`);
   }
-  if (!res.data) {
+  if (!currentRes.data) {
     return failure(`会话状态不存在: ${owner}/${repo}#${issueNumber}`);
   }
 
-  const update: Record<string, any> = {
-    lifecycle,
-    lastUpdate: iso_timestamp(),
-  };
-  if (message) update.message = message;
-  if (step) update.step = step;
-
-  const upRes = upsertSession(owner, repo, issueNumber, update);
-  if (!upRes.success) {
-    return failure(`更新会话状态失败: ${upRes.error}`);
+  const transitionRes = session.transition({
+    type: EVENT.MANUAL_STATUS_UPDATE,
+    lifecycle: lifecycle as SessionLifecycle,
+    message,
+    step: step as SessionStep | undefined,
+  });
+  if (!transitionRes.success) {
+    return failure(`更新会话状态失败: ${transitionRes.error}`);
   }
   return success(null);
 }
@@ -66,8 +57,9 @@ async function main() {
   const [issueNumber, status, message] = program.args;
   const { step } = program.opts();
 
-  if (!VALID_LIFECYCLES.has(status)) {
-    logger.error(`无效的 lifecycle 值: "${status}". 合法值: ${[...VALID_LIFECYCLES].join(", ")}`);
+  const validLifecycleValues = Object.values(LIFECYCLE) as string[];
+  if (!validLifecycleValues.includes(status)) {
+    logger.error(`无效的 lifecycle 值: "${status}". 合法值: ${validLifecycleValues.join(", ")}`);
     process.exit(1);
   }
 

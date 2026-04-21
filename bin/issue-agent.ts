@@ -26,14 +26,14 @@ import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import { clearSessionDiagnostic, generateSessionDiagnostic, writeSessionDiagnostic } from "./session-diagnostics";
-import type { SessionPhase, SessionStep } from "./session-state-machine";
+import { PHASE, STEP, EVENT, type SessionPhase, type SessionStep, type SessionContext } from "./session-state-machine";
 
 const PHASE_START_STEP: Record<SessionPhase, SessionStep> = {
-  planning: "read_issue",
-  implementation: "edit_code",
-  delivery: "prepare_commit",
-  stabilization: "triage_review_feedback",
-  done: "archive_result",
+  [PHASE.PLANNING]: STEP.READ_ISSUE,
+  [PHASE.IMPLEMENTATION]: STEP.EDIT_CODE,
+  [PHASE.DELIVERY]: STEP.PREPARE_COMMIT,
+  [PHASE.STABILIZATION]: STEP.TRIAGE_REVIEW_FEEDBACK,
+  [PHASE.DONE]: STEP.ARCHIVE_RESULT,
 };
 
 /** 是否启用 Dashboard 模式（启用时 agent 输出写入日志文件而非 stdout） */
@@ -305,14 +305,20 @@ export async function launchIssueAgent(
         .replace("{tag}", tag)
         .replace("{workflow}", workflow)
         .replace("{num}", String(issueNumber));
-      session.writeStatus({
-        agentType: tag,
-        agentCommand,
+      session.transition({
+        type: EVENT.STEP_CHANGED,
+        phase,
+        step: PHASE_START_STEP[phase] || STEP.READ_ISSUE,
+        message: `启动 ${phase}`,
+        context: {
+          agentType: tag,
+          agentCommand,
+        } as Partial<SessionContext>,
       });
     }
   } catch {
   }
-  session.transition({ type: "START_PHASE", phase, step: PHASE_START_STEP[phase] || "read_issue", message: `启动 ${phase}` });
+  session.transition({ type: EVENT.START_PHASE, phase, step: PHASE_START_STEP[phase] || STEP.READ_ISSUE, message: `启动 ${phase}` });
   session.logEvent("agent-started", { phase, workflow });
   clearSessionDiagnostic(paths);
 
@@ -323,7 +329,7 @@ export async function launchIssueAgent(
       issueNumber,
       workflow,
       (pid) => {
-        session.writeStatus({ pid });
+        session.updateStep(STEP.READ_ISSUE, undefined, undefined, undefined, pid);
       },
       logFile,
     );
