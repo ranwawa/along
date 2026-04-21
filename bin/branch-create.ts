@@ -9,6 +9,7 @@ const logger = consola.withTag("branch-create");
 import { saveStepOutput, completeTodoStep } from "./todo-helper";
 import { SessionPathManager } from "./session-paths";
 import { SessionManager } from "./session-manager";
+import { EVENT } from "./session-state-machine";
 
 /**
  * branch-create.ts - 创建语义化分支
@@ -64,22 +65,8 @@ async function main() {
     logger.success("分支已推送到远端");
     session.logEvent("branch-pushed", { branchName });
 
-    // 3. 更新数据库：写入 branchName + 自动推进 step
-    const currentRes = session.readStatus();
-    const writeRes = session.writeStatus({
-      context: {
-        ...(currentRes.success && currentRes.data?.context ? currentRes.data.context : { issueNumber: Number(issueNumber) }),
-        branchName,
-      },
-    });
-    if (writeRes.success) {
-      session.transition({ type: "BRANCH_PREPARED", branchName });
-    }
-    if (!writeRes.success) {
-      logger.error(`更新分支状态失败: ${writeRes.error}`);
-      process.exit(1);
-    }
-    logger.success("状态已更新");
+    // 3. 更新数据库：通过 BRANCH_PREPARED 事件写入 branchName + 自动推进 step
+    session.transition({ type: EVENT.BRANCH_PREPARED, branchName });
 
     // 4. 自动更新 todo
     const outputContent = [

@@ -24,7 +24,7 @@ import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
-import { isActiveSessionStatus } from "./session-state-machine";
+import { isActiveSessionStatus, EVENT } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { readSessionDiagnostic, readSessionLog, generateSessionDiagnostic, type SessionLogSource } from "./session-diagnostics";
@@ -183,6 +183,13 @@ async function handleEvent(
         );
         if (!issueLabels.some((l: string) => l === "bug" || l === "enhancement")) {
           return { status: 200, message: "非 bug/feature issue，忽略 approved 标签" };
+        }
+
+        logger.info(`Issue #${issueNumber} 已审批，触发 APPROVED 事件...`);
+        const session = new SessionManager(owner, repo, issueNumber);
+        const transitionRes = session.transition({ type: EVENT.APPROVED });
+        if (!transitionRes.success) {
+          logger.error(`触发 APPROVED 事件失败: ${transitionRes.error}`);
         }
 
         logger.info(`Issue #${issueNumber} 已审批，启动实现阶段...`);
