@@ -7,10 +7,10 @@ vi.mock("../common", () => ({
 import { applySessionStateEvent, isActiveSessionStatus } from "../session-state-machine";
 
 describe("session-state-machine.ts", () => {
-  it("phase1 成功后进入 waiting_human/planning/await_approval", () => {
+  it("planning 阶段成功后进入 waiting_human/planning/await_approval", () => {
     const result = applySessionStateEvent(
       { lifecycle: "running", phase: "planning", step: "draft_plan", context: { issueNumber: 1 } },
-      { type: "AGENT_EXITED_SUCCESS", workflow: "phase1" },
+      { type: "AGENT_EXITED_SUCCESS" },
     );
 
     expect(result.nextLifecycle).toBe("waiting_human");
@@ -20,7 +20,7 @@ describe("session-state-machine.ts", () => {
     expect(result.patch.endTime).toBe("2026-04-20T12:00:00.000Z");
   });
 
-  it("phase2 成功且已有 PR 时进入 waiting_external/stabilization/await_merge", () => {
+  it("delivery 阶段成功且已有 PR 时进入 waiting_external/stabilization/await_merge", () => {
     const result = applySessionStateEvent(
       {
         lifecycle: "running",
@@ -28,7 +28,7 @@ describe("session-state-machine.ts", () => {
         step: "open_pr",
         context: { issueNumber: 1, prUrl: "https://example.com/pull/1" },
       },
-      { type: "AGENT_EXITED_SUCCESS", workflow: "phase2" },
+      { type: "AGENT_EXITED_SUCCESS" },
     );
 
     expect(result.nextLifecycle).toBe("waiting_external");

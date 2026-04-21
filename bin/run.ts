@@ -25,6 +25,8 @@ import { Issue } from "./issue";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { launchIssueAgent, tryRecoverFromWip } from "./issue-agent";
+import { readSession } from "./db";
+import type { SessionPhase } from "./session-state-machine";
 
 /**
  * run - 极简一键启动入口
@@ -115,21 +117,37 @@ function configureCommand() {
 
 /**
  * 自动检测执行阶段：
- * - 如果 .along-mode 存在且为 phase1 → 说明 phase1 已完成，切换到 phase2
- * - 否则 → phase1（首次执行或无状态）
+ * - 如果数据库中 planning 已完成（waiting_human）→ 切换到 implementation
+ * - 否则 → 返回当前 phase 或默认 planning
  */
-function detectPhase(paths: SessionPathManager): "phase1" | "phase2" {
+function detectPhase(paths: SessionPathManager, owner: string, repo: string, issueNumber: number): SessionPhase {
+  // 优先从数据库读取 session 状态
+  const sessionRes = readSession(owner, repo, issueNumber);
+  if (sessionRes.success && sessionRes.data) {
+    const { phase, lifecycle } = sessionRes.data;
+    // planning 阶段已完成且等待人工审批 → 下次启动进入 implementation
+    if (phase === "planning" && lifecycle === "waiting_human") {
+      logger.info("检测到 planning 已完成（等待审批），切换到 implementation");
+      return "implementation";
+    }
+    if (phase) {
+      logger.info(`从数据库恢复阶段: ${phase}`);
+      return phase;
+    }
+  }
+
+  // 回退：读取 .along-mode 文件
   const modeFile = path.join(paths.getIssueDir(), ".along-mode");
   try {
     if (fs.existsSync(modeFile)) {
-      const current = fs.readFileSync(modeFile, "utf-8").trim();
-      if (current === "phase1") {
-        logger.info("检测到 phase1 已完成，切换到 phase2");
-        return "phase2";
+      const current = fs.readFileSync(modeFile, "utf-8").trim() as SessionPhase;
+      if (current === "planning" || current === "implementation" || current === "delivery" || current === "stabilization") {
+        logger.info(`从 .along-mode 恢复阶段: ${current}`);
+        return current;
       }
     }
   } catch {}
-  return "phase1";
+  return "planning";
 }
 
 async function handleAction(num: string, options: any) {
@@ -191,7 +209,7 @@ async function handleAction(num: string, options: any) {
 
     sessionManager.writeStatus({ message: "开始执行任务流程" });
 
-    const phase = detectPhase(paths);
+    const phase = detectPhase(paths, owner, repoName, taskNo);
     logger.info(`执行阶段: ${phase}`);
 
     // 直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
