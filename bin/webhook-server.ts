@@ -28,6 +28,7 @@ import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
+import { syncLifecycleLabel } from "./github-client";
 import { isActiveSessionStatus, EVENT, LIFECYCLE, COMMAND } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
@@ -302,6 +303,7 @@ async function handleEvent(
           fireAndForget(async () => {
             const session = new SessionManager(owner, repo, linkedIssue);
             await session.transition({ type: "PR_MERGED" });
+            await syncLifecycleLabel(owner, repo, linkedIssue, LIFECYCLE.COMPLETED);
 
             logger.info(`PR #${prNumber} 已合并，开始清理 Issue #${linkedIssue} 的本地资源...`);
             const cleanRes = await cleanupIssue(String(linkedIssue), { reason: "pr-merged", silent: false }, owner, repo);
