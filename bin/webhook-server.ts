@@ -617,6 +617,111 @@ async function main() {
         });
       }
 
+      // ── API: /api/agent-conversation ──
+      if (url.pathname === "/api/agent-conversation" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "Missing owner, repo, or issueNumber" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const sessionRes = readSession(query.owner, query.repo, query.issueNumber);
+        if (!sessionRes.success || !sessionRes.data) {
+          return new Response(JSON.stringify({ error: "Session not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const claudeSessionId = (sessionRes.data as any).claudeSessionId;
+        const worktreePath = sessionRes.data.worktreePath;
+        if (!claudeSessionId || !worktreePath) {
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const encodedPath = worktreePath.replace(/\//g, "-");
+        const jsonlPath = path.join(
+          process.env.HOME || "~",
+          ".claude",
+          "projects",
+          encodedPath,
+          `${claudeSessionId}.jsonl`,
+        );
+
+        if (!fs.existsSync(jsonlPath)) {
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        try {
+          const content = fs.readFileSync(jsonlPath, "utf-8");
+          const messages: any[] = [];
+          for (const line of content.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const record = JSON.parse(trimmed);
+              const type = record.type;
+              if (type === "user") {
+                const text = Array.isArray(record.message?.content)
+                  ? record.message.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n")
+                  : typeof record.message?.content === "string" ? record.message.content : "";
+                if (text) {
+                  messages.push({ type: "user", content: text, timestamp: record.timestamp });
+                }
+              } else if (type === "assistant") {
+                const content = record.message?.content;
+                if (Array.isArray(content)) {
+                  const texts = content.filter((c: any) => c.type === "text" && c.text).map((c: any) => c.text);
+                  const toolUses = content.filter((c: any) => c.type === "tool_use");
+                  if (texts.length > 0) {
+                    messages.push({ type: "assistant", content: texts.join("\n"), timestamp: record.timestamp });
+                  }
+                  for (const tool of toolUses) {
+                    messages.push({
+                      type: "tool_use",
+                      toolName: tool.name,
+                      toolInput: JSON.stringify(tool.input).slice(0, 500),
+                      timestamp: record.timestamp,
+                    });
+                  }
+                }
+              } else if (type === "tool_result") {
+                const content = record.message?.content;
+                if (Array.isArray(content)) {
+                  for (const c of content) {
+                    if (c.type === "tool_result") {
+                      const text = typeof c.content === "string" ? c.content : JSON.stringify(c.content);
+                      messages.push({
+                        type: "tool_result",
+                        content: text.slice(0, 1000),
+                        isError: c.is_error || false,
+                        timestamp: record.timestamp,
+                      });
+                    }
+                  }
+                }
+              }
+            } catch {
+              // skip malformed lines
+            }
+          }
+          return new Response(JSON.stringify(messages), {
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        } catch (e: any) {
+          return new Response(JSON.stringify({ error: `Failed to read conversation: ${e.message}` }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+      }
+
       // ── Static Web UI ──
       if (req.method === "GET" && useDashboard) {
          try {
