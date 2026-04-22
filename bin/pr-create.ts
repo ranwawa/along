@@ -85,13 +85,18 @@ async function main() {
     ? { ...process.env, GH_TOKEN: tokenRes.data }
     : { ...process.env };
 
+  // 自动追加 fixes: #issueNumber 确保 PR 与 Issue 关联
+  const linkedBody = body.endsWith(`fixes: #${issueNumber}`)
+    ? body
+    : `${body}\n\nfixes: #${issueNumber}`;
+
   try {
     const result = await $`gh pr create \
       --repo ${repo.owner}/${repo.name} \
       --head ${branchName} \
       --base ${defaultBranch} \
       --title ${title} \
-      --body ${body}`.cwd(worktreePath).env(ghEnv).text();
+      --body ${linkedBody}`.cwd(worktreePath).env(ghEnv).text();
 
     const prUrl = result.trim();
     logger.success(`PR 创建成功: ${prUrl}`);
@@ -132,7 +137,7 @@ async function main() {
       ``,
       `## PR 描述`,
       ``,
-      body,
+      linkedBody,
     ].join("\n");
     const outputFile = saveStepOutput(paths, 5, "pr-create", outputContent);
     completeTodoStep(paths, 5, `PR: ${prUrl}`, outputFile);
