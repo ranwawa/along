@@ -15,6 +15,7 @@ import {
 const logger = consola.withTag("worktree-init");
 import type { Result } from "./common";
 import { config } from "./config";
+import type { EditorConfig } from "./config";
 import type { SessionPathManager } from "./session-paths";
 import type { SessionManager } from "./session-manager";
 import { upsertSession } from "./db";
@@ -71,29 +72,60 @@ export async function setupWorktree(worktreePath: string, session?: SessionManag
   return success(null);
 }
 
-function copyDirectory(src: string, dest: string) {
-  if (!fs.existsSync(src)) {
-    return;
+function removeTargetPath(targetPath: string): Result<void> {
+  if (!fs.existsSync(targetPath)) {
+    return success(undefined);
   }
 
-  const lstat = fs.lstatSync(dest, { throwIfNoEntry: false });
-  if (lstat && (lstat.isSymbolicLink() || !lstat.isDirectory())) {
-    fs.rmSync(dest, { force: true });
-  }
-  fs.mkdirSync(dest, { recursive: true });
-
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDirectory(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
+  try {
+    fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 3 });
+    return success(undefined);
+  } catch (rmError: any) {
+    logger.warn(`删除目标失败，尝试强制移除: ${rmError.message}`);
+    const backupPath = `${targetPath}.backup-${Date.now()}`;
+    try {
+      fs.renameSync(targetPath, backupPath);
+      fs.rmSync(backupPath, { recursive: true, force: true });
+      return success(undefined);
+    } catch (renameError: any) {
+      return failure(`无法清理目标路径 ${targetPath}: ${renameError.message}`);
     }
   }
+}
+
+function ensureMappingSymlink(sourceDir: string, targetPath: string): Result<void> {
+  if (!fs.existsSync(sourceDir)) {
+    return failure(`源目录不存在: ${sourceDir}`);
+  }
+
+  const removeRes = removeTargetPath(targetPath);
+  if (!removeRes.success) return removeRes;
+
+  const targetParentDir = path.dirname(targetPath);
+  if (!fs.existsSync(targetParentDir)) {
+    fs.mkdirSync(targetParentDir, { recursive: true });
+  }
+
+  const relativeSource = path.relative(targetParentDir, sourceDir);
+  fs.symlinkSync(relativeSource, targetPath, "dir");
+  return success(undefined);
+}
+
+export function syncEditorMappings(worktreePath: string, editor: EditorConfig): Result<void> {
+  for (const mapping of editor.mappings) {
+    const sourceDir = path.join(config.ROOT_DIR, mapping.from);
+    const targetPath = path.join(worktreePath, mapping.to);
+
+    const linkRes = ensureMappingSymlink(sourceDir, targetPath);
+    if (!linkRes.success) {
+      logger.error(`  同步失败 (${mapping.to}): ${linkRes.error}`);
+      return failure(`同步编辑器环境 ${mapping.to} 失败: ${linkRes.error}`);
+    }
+
+    logger.info(`  已软链: ${chalk.cyan(mapping.to)}`);
+  }
+
+  return success(undefined);
 }
 
 export async function initSessionFiles(paths: SessionPathManager, worktreePath: string, statusData: any, session?: SessionManager): Promise<Result<void>> {
@@ -106,7 +138,7 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
   fs.writeFileSync(path.join(worktreePath, ".along/issue-mark"), issueNumber);
   console.log(chalk.green("✓"), "创建 worktree 标记完成");
 
-  // 2. 自动环境同步（从 along 源目录复制 skills 和 prompts）
+  // 2. 自动环境同步（按编辑器映射软链 skills 和 prompts）
   logger.info("同步编辑器环境...");
   const tagRes = config.getLogTag();
   if (!tagRes.success) return tagRes;
@@ -114,43 +146,8 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
 
   const currentEditor = config.EDITORS.find(e => e.id === currentTag) || config.EDITORS[0];
   logger.info(`检测到编辑器环境: ${currentEditor.name}`);
-
-  for (const mapping of currentEditor.mappings) {
-    const sourceDir = path.join(config.ROOT_DIR, mapping.from);
-    const targetPath = path.join(worktreePath, mapping.to);
-
-    if (!fs.existsSync(sourceDir)) {
-      return failure(`源目录不存在: ${sourceDir}`);
-    }
-
-    try {
-      if (fs.existsSync(targetPath)) {
-        try {
-          fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 3 });
-        } catch (rmError: any) {
-          logger.warn(`删除目标失败，尝试强制移除: ${rmError.message}`);
-          const backupPath = `${targetPath}.backup-${Date.now()}`;
-          try {
-            fs.renameSync(targetPath, backupPath);
-            fs.rmSync(backupPath, { recursive: true, force: true });
-          } catch (renameError: any) {
-            return failure(`无法清理目标路径 ${targetPath}: ${renameError.message}`);
-          }
-        }
-      }
-
-      const targetParentDir = path.dirname(targetPath);
-      if (!fs.existsSync(targetParentDir)) {
-        fs.mkdirSync(targetParentDir, { recursive: true });
-      }
-
-      copyDirectory(sourceDir, targetPath);
-      logger.info(`  已同步: ${chalk.cyan(mapping.to)}`);
-    } catch (e: any) {
-      logger.error(`  同步失败 (${mapping.to}): ${e.message}`);
-      return failure(`同步编辑器环境 ${mapping.to} 失败: ${e.message}`);
-    }
-  }
+  const syncRes = syncEditorMappings(worktreePath, currentEditor);
+  if (!syncRes.success) return syncRes;
   console.log(chalk.green("✓"), "同步编辑器环境完成");
 
   logger.info("创建会话状态...");

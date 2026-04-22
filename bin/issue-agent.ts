@@ -20,7 +20,7 @@ import type { Result } from "./common";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
-import { setupWorktree, initSessionFiles } from "./worktree-init";
+import { setupWorktree, initSessionFiles, syncEditorMappings } from "./worktree-init";
 import { getAgentRole } from "./agent-config";
 import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
@@ -65,8 +65,8 @@ const logger = consola.withTag("issue-agent");
 // ─── syncPromptsToWorktree ─────────────────────────────────
 
 /**
- * 将 prompts/skills 同步到 worktree（增量覆盖，不删除已有文件）
- * 用于 webhook 触发的二次同步（worktree 已存在时刷新 prompt 内容）
+ * 按编辑器映射刷新 worktree 内的 prompts/skills 软链
+ * 用于 webhook 触发的二次同步，确保现有 worktree 始终指向最新源目录
  */
 export function syncPromptsToWorktree(worktreePath: string): Result<void> {
   const logTagRes = config.getLogTag();
@@ -76,23 +76,8 @@ export function syncPromptsToWorktree(worktreePath: string): Result<void> {
   const editor =
     config.EDITORS.find((e) => e.id === logTag) || config.EDITORS[0];
 
-  for (const mapping of editor.mappings) {
-    const sourceDir = path.join(config.ROOT_DIR, mapping.from);
-    const targetPath = path.join(worktreePath, mapping.to);
-
-    if (!fs.existsSync(sourceDir)) continue;
-
-    fs.mkdirSync(targetPath, { recursive: true });
-    const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        fs.copyFileSync(
-          path.join(sourceDir, entry.name),
-          path.join(targetPath, entry.name),
-        );
-      }
-    }
-  }
+  const syncRes = syncEditorMappings(worktreePath, editor);
+  if (!syncRes.success) return syncRes;
 
   logger.info(`已同步 prompts/skills 到 worktree (${editor.name})`);
   return success(undefined);

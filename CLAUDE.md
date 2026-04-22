@@ -39,8 +39,8 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Data Flow
 
-1. `along run <N>` validates environment (git repo, GitHub remote), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, syncs skills/prompts into the worktree, then launches the configured AI agent via Bun.spawn.
-2. The agent follows the SOP in `prompts/resolve-github-issue.md` — a 5-step workflow (understand issue → analyze code → implement fix → commit-push → create PR).
+1. `along run <N>` validates environment (git repo, GitHub remote), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, then creates editor-path symlinks back to the repo `skills/` and `prompts/` directories before launching the configured AI agent via Bun.spawn.
+2. The agent follows the phase-specific SOP in `prompts/resolve-github-issue-planning.md` and `prompts/resolve-github-issue-implementation.md`.
 3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates the session status in SQLite and `todo.md` in the issue directory.
 4. **Event-driven mode**: A GitHub App sends webhook events (issue opened, issue labeled, PR created, PR review submitted, check run completed) to the local `along webhook-server`. The server directly calls handler functions in `webhook-handlers.ts` (`reviewPr`, `resolveReview`, `resolveCi`) via fire-and-forget, without spawning subprocesses. Use `along app-init` to set up the GitHub App.
 

@@ -81,7 +81,7 @@ along webhook-server --port 9876
 - `bin/`: CLI 核心逻辑及子命令实现。
 - `web/`: Dashboard 前端（React + Vite）。
 - `prompts/`: AI 代理使用的 SOP 模板。
-- `skills/`: 可重用的技能定义，自动同步至工作区。
+- `skills/`: 可重用的技能定义，按编辑器映射软链到工作区。
 - `types/`: 外部代理 SDK 的类型声明。
 
 ## 开发规范

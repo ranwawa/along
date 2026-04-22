@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import path from "path";
 
 vi.mock("../common", () => ({
   success: (data: any) => ({ success: true, data }),
@@ -12,7 +13,13 @@ vi.mock("../common", () => ({
 vi.mock("../config", () => ({
   config: {
     ROOT_DIR: "/mock/along",
-    EDITORS: [{ id: "opencode", name: "OpenCode", mappings: [] }],
+    EDITORS: [
+      {
+        id: "opencode",
+        name: "OpenCode",
+        mappings: [{ from: "skills", to: ".opencode/skills" }],
+      },
+    ],
     getLogTag: vi.fn(() => ({ success: true, data: "opencode" })),
   },
 }));
@@ -31,6 +38,9 @@ vi.mock("fs", () => ({
   default: {
     existsSync: vi.fn(),
     mkdirSync: vi.fn(),
+    renameSync: vi.fn(),
+    rmSync: vi.fn(),
+    symlinkSync: vi.fn(),
     writeFileSync: vi.fn(),
   },
 }));
@@ -40,7 +50,7 @@ vi.mock("../db", () => ({
 }));
 
 // Now that we fixed the source code syntax, we can import it properly!
-import { getDefaultBranch, setupWorktree } from "../worktree-init";
+import { getDefaultBranch, setupWorktree, syncEditorMappings } from "../worktree-init";
 import { git } from "../common";
 import fs from "fs";
 
@@ -64,6 +74,31 @@ describe("worktree-init.ts", () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       const result = await setupWorktree("/mock/path");
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe("syncEditorMappings()", () => {
+    it("按映射创建目录软链", () => {
+      vi.mocked(fs.existsSync).mockImplementation((target: any) =>
+        target === "/mock/along/skills"
+      );
+
+      const result = syncEditorMappings("/mock/worktree", {
+        id: "opencode",
+        name: "OpenCode",
+        mappings: [{ from: "skills", to: ".opencode/skills" }],
+        runTemplate: "",
+      });
+
+      expect(result.success).toBe(true);
+      expect(fs.mkdirSync).toHaveBeenCalledWith("/mock/worktree/.opencode", {
+        recursive: true,
+      });
+      expect(fs.symlinkSync).toHaveBeenCalledWith(
+        path.relative("/mock/worktree/.opencode", "/mock/along/skills"),
+        "/mock/worktree/.opencode/skills",
+        "dir",
+      );
     });
   });
 });
