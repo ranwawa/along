@@ -28,7 +28,13 @@ import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
-import { isActiveSessionStatus, EVENT, LIFECYCLE, COMMAND } from "./session-state-machine";
+import { syncLifecycleLabel } from "./github-client";
+import {
+  isActiveSessionStatus,
+  EVENT,
+  LIFECYCLE,
+  COMMAND,
+} from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import {
@@ -238,7 +244,8 @@ async function handleEvent(
     }
 
     case "issue_comment": {
-      if (action !== "created") return { status: 200, message: `忽略 issue_comment.${action} 事件` };
+      if (action !== "created")
+        return { status: 200, message: `忽略 issue_comment.${action} 事件` };
 
       const issueNumber = payload.issue?.number;
       if (!issueNumber) return { status: 400, message: "缺少 issue number" };
@@ -248,23 +255,39 @@ async function handleEvent(
 
       if (command === COMMAND.APPROVE) {
         const issueLabels = (payload.issue?.labels || []).map((l: any) =>
-          typeof l === "string" ? l : l.name
+          typeof l === "string" ? l : l.name,
         );
-        if (!issueLabels.some((l: string) => l === "bug" || l === "enhancement")) {
-          return { status: 200, message: "非 bug/feature issue，忽略 /approve 指令" };
+        if (
+          !issueLabels.some((l: string) => l === "bug" || l === "enhancement")
+        ) {
+          return {
+            status: 200,
+            message: "非 bug/feature issue，忽略 /approve 指令",
+          };
         }
 
-        logger.info(`Issue #${issueNumber} 收到 /approve 指令，触发实现阶段...`);
+        logger.info(
+          `Issue #${issueNumber} 收到 /approve 指令，触发实现阶段...`,
+        );
         const session = new SessionManager(owner, repo, issueNumber);
         await session.transition({ type: EVENT.APPROVED });
 
         enqueueAgent(`Issue #${issueNumber} 实现`, async () => {
-          const res = await launchIssueAgent(owner, repo, issueNumber, "implementation", {
-            taskData: { title: `Issue #${issueNumber}` },
-          });
+          const res = await launchIssueAgent(
+            owner,
+            repo,
+            issueNumber,
+            "implementation",
+            {
+              taskData: { title: `Issue #${issueNumber}` },
+            },
+          );
           if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
         });
-        return { status: 202, message: `已触发实现阶段: Issue #${issueNumber}` };
+        return {
+          status: 202,
+          message: `已触发实现阶段: Issue #${issueNumber}`,
+        };
       }
 
       if (command === COMMAND.REJECT) {
@@ -275,7 +298,10 @@ async function handleEvent(
           lifecycle: LIFECYCLE.FAILED,
           message: "方案被拒绝",
         });
-        return { status: 200, message: `Issue #${issueNumber} 已标记为 failed` };
+        return {
+          status: 200,
+          message: `Issue #${issueNumber} 已标记为 failed`,
+        };
       }
 
       return { status: 200, message: "忽略非指令评论" };
@@ -301,15 +327,31 @@ async function handleEvent(
           logger.info(`PR #${prNumber} 已合并，处理 Issue #${linkedIssue}...`);
           fireAndForget(async () => {
             const session = new SessionManager(owner, repo, linkedIssue);
-            await session.transition({ type: "PR_MERGED" });
+            await session.transition({ type: EVENT.PR_MERGED });
+            await syncLifecycleLabel(
+              owner,
+              repo,
+              linkedIssue,
+              LIFECYCLE.COMPLETED,
+            );
 
-            logger.info(`PR #${prNumber} 已合并，开始清理 Issue #${linkedIssue} 的本地资源...`);
-            const cleanRes = await cleanupIssue(String(linkedIssue), { reason: "pr-merged", silent: false }, owner, repo);
+            logger.info(
+              `PR #${prNumber} 已合并，开始清理 Issue #${linkedIssue} 的本地资源...`,
+            );
+            const cleanRes = await cleanupIssue(
+              String(linkedIssue),
+              { reason: "pr-merged", silent: false },
+              owner,
+              repo,
+            );
             if (!cleanRes.success) {
               logger.warn(`清理 Issue #${linkedIssue} 失败: ${cleanRes.error}`);
             }
           });
-          return { status: 202, message: `已触发资产回收: Issue #${linkedIssue}` };
+          return {
+            status: 202,
+            message: `已触发资产回收: Issue #${linkedIssue}`,
+          };
         }
         return { status: 200, message: "PR 已合并但未关联 issue" };
       }
