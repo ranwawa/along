@@ -426,7 +426,10 @@ export async function launchIssueAgent(
   session.logEvent("along-mode-written", { phase, modeFile });
 
   // 4. 启动 agent
-  const workflow = "resolve-github-issue";
+  const workflow =
+    phase === "planning"
+      ? "resolve-github-issue-planning"
+      : "resolve-github-issue-implementation";
   try {
     const tagRes = config.getLogTag();
     if (tagRes.success) {
