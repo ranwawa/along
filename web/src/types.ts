@@ -111,6 +111,15 @@ export interface DashboardSession {
   hasWorktree?: boolean;
 }
 
+export interface ConversationMessage {
+  type: "user" | "assistant" | "tool_use" | "tool_result";
+  content?: string;
+  toolName?: string;
+  toolInput?: string;
+  isError?: boolean;
+  timestamp?: string;
+}
+
 export interface StatusCounts {
   running: number;
   waiting_human: number;

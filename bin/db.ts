@@ -32,6 +32,7 @@ const CAMEL_TO_SNAKE: Record<string, string> = {
   agentCommand: "agent_command",
   lastUpdate: "last_update",
   ciResults: "ci_results",
+  claudeSessionId: "claude_session_id",
 };
 
 const SNAKE_TO_CAMEL: Record<string, string> = {};
@@ -114,6 +115,7 @@ function initSchema(db: Database) {
       crash_log TEXT,
       review_comment_count INTEGER,
       workflow_phase TEXT,
+      claude_session_id TEXT,
       UNIQUE(owner, repo, issue_number)
     );
   `);
@@ -131,6 +133,7 @@ function initSchema(db: Database) {
   tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN error TEXT");
   tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN phase_started_at TEXT");
   tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN step_started_at TEXT");
+  tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN claude_session_id TEXT");
 }
 
 function rowToSessionStatus(row: any): SessionStatus {
