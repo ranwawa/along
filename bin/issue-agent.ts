@@ -118,12 +118,97 @@ async function drainStream(stream: ReadableStream<Uint8Array>, out: WritableTarg
   }
 }
 
+interface DrainJsonStreamResult {
+  sessionId?: string;
+}
+
+async function drainJsonStream(stream: ReadableStream<Uint8Array>, out: WritableTarget): Promise<DrainJsonStreamResult> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let sessionId: string | undefined;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      try {
+        const record = JSON.parse(trimmed);
+        if (!sessionId && record.sessionId) {
+          sessionId = record.sessionId;
+        }
+        const formatted = formatJsonRecord(record);
+        if (formatted) {
+          out.write(formatted + "\n");
+        }
+      } catch {
+        out.write(trimmed + "\n");
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    out.write(buffer.trim() + "\n");
+  }
+
+  return { sessionId };
+}
+
+function formatJsonRecord(record: any): string | null {
+  const type = record.type;
+  if (type === "assistant") {
+    const content = record.message?.content;
+    if (Array.isArray(content)) {
+      const texts = content
+        .filter((c: any) => c.type === "text" && c.text)
+        .map((c: any) => c.text);
+      if (texts.length > 0) return `[assistant] ${texts.join("\n")}`;
+    }
+    return null;
+  }
+  if (type === "tool_use") {
+    const msg = record.message;
+    if (msg?.content) {
+      const tools = Array.isArray(msg.content) ? msg.content : [msg.content];
+      return tools
+        .filter((c: any) => c.type === "tool_use")
+        .map((c: any) => `[tool_use] ${c.name}: ${JSON.stringify(c.input).slice(0, 200)}`)
+        .join("\n") || null;
+    }
+    return null;
+  }
+  if (type === "tool_result") {
+    const msg = record.message;
+    if (msg?.content) {
+      const results = Array.isArray(msg.content) ? msg.content : [msg.content];
+      return results
+        .filter((c: any) => c.type === "tool_result")
+        .map((c: any) => {
+          const text = typeof c.content === "string" ? c.content : JSON.stringify(c.content);
+          return `[tool_result] ${text.slice(0, 200)}`;
+        })
+        .join("\n") || null;
+    }
+    return null;
+  }
+  return null;
+}
+
 export async function execAgent(
   worktreePath: string,
   issueNumber: number,
   workflow: string,
   onPid?: (pid: number) => void,
   logFile?: string,
+  sessionManager?: SessionManager,
 ): Promise<Result<number>> {
   const syncRes = syncPromptsToWorktree(worktreePath);
   if (!syncRes.success) return syncRes;
@@ -167,12 +252,23 @@ export async function execAgent(
 
   const out: WritableTarget = fileWriter || process.stdout;
   const err: WritableTarget = fileWriter || process.stderr;
+  const isClaude = editor?.id === "claude";
 
   try {
+    let jsonResult: DrainJsonStreamResult | undefined;
     await Promise.all([
-      proc.stdout ? drainStream(proc.stdout, out) : Promise.resolve(),
+      proc.stdout
+        ? (isClaude
+            ? drainJsonStream(proc.stdout, out).then(r => { jsonResult = r; })
+            : drainStream(proc.stdout, out))
+        : Promise.resolve(),
       proc.stderr ? drainStream(proc.stderr, err) : Promise.resolve(),
     ]);
+
+    if (isClaude && jsonResult?.sessionId && sessionManager) {
+      sessionManager.updateClaudeSessionId(jsonResult.sessionId);
+      logger.info(`已捕获 Claude sessionId: ${jsonResult.sessionId}`);
+    }
   } finally {
     fileWriter?.flush();
     fileHandle?.end();
@@ -332,6 +428,7 @@ export async function launchIssueAgent(
         session.updateStep(STEP.READ_ISSUE, undefined, undefined, undefined, pid);
       },
       logFile,
+      session,
     );
 
     if (!agentRes.success) return agentRes;
