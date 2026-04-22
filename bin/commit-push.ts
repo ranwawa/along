@@ -28,14 +28,14 @@ interface Commit {
   files: string[];
 }
 
-function updateStatusAfterPush(branchName: string): { issueNumber: string; owner: string; repo: string } | null {
+async function updateStatusAfterPush(branchName: string): Promise<{ issueNumber: string; owner: string; repo: string } | null> {
   // 通过 branchName 在数据库中找到对应的 session
   const foundRes = findSessionByBranch(branchName);
   if (!foundRes.success || !foundRes.data) return null;
   const found = foundRes.data;
 
   const session = new SessionManager(found.owner, found.repo, found.issueNumber);
-  const res = session.transition({ type: "COMMITS_PUSHED" });
+  const res = await session.transition({ type: "COMMITS_PUSHED" });
   if (res.success) {
     logger.success("状态已自动更新");
   }
@@ -212,7 +212,7 @@ async function main() {
     logger.success(`成功提交并推送到分支 ${currentBranch}`);
 
     // 自动更新数据库 + todo + session.log
-    const sessionInfo = updateStatusAfterPush(currentBranch);
+    const sessionInfo = await updateStatusAfterPush(currentBranch);
     if (sessionInfo) {
       const { owner, repo } = sessionInfo;
       const paths = new SessionPathManager(owner, repo, Number(sessionInfo.issueNumber));

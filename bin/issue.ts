@@ -1,6 +1,7 @@
 import { get_gh_client, GitHubIssue } from "./github-client";
 import { failure, success } from "./common";
 import type { Result } from "./common";
+import { LIFECYCLE } from "./session-state-machine";
 
 /**
  * Issue 类，用于管理 GitHub Issue 数据和健康状态检查
@@ -50,10 +51,10 @@ export class Issue {
       return failure(`Issue#${this.taskNo}已被标记为无效，跳过处理`);
     }
 
-    // WIP 标签检查（webhook 自动化流程可跳过，因为 WIP 是系统自己打的）
+    // running 标签检查（webhook 自动化流程可跳过，因为标签是系统自己打的）
     if (!options?.skipWipCheck) {
-      if (labels.some((l: string) => l.toUpperCase() === "WIP")) {
-        return failure(`Issue#${this.taskNo}带有WIP标签，已主动阻断执行`);
+      if (labels.some((l: string) => l === LIFECYCLE.RUNNING)) {
+        return failure(`Issue#${this.taskNo}带有${LIFECYCLE.RUNNING}标签（agent正在运行），已主动阻断执行`);
       }
     }
 

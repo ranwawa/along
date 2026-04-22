@@ -41,6 +41,10 @@ vi.mock("../db", () => ({
   transactSession: vi.fn(),
 }));
 
+vi.mock("../github-client", () => ({
+  syncLifecycleLabel: vi.fn(() => Promise.resolve()),
+}));
+
 // Mock common dependencies
 vi.mock("../common", () => ({
   iso_timestamp: () => "2026-04-11T12:00:00.000Z",
@@ -89,13 +93,13 @@ describe("session-manager.ts", () => {
   });
 
   describe("updateStep()", () => {
-    it("更新当前步骤和消息", () => {
+    it("更新当前步骤和消息", async () => {
       (readSession as any).mockReturnValue({
         success: true,
         data: { lifecycle: "running", phase: "planning", step: "read_issue", context: { issueNumber } },
       } as any);
 
-      sm.updateStep("analyze_codebase" as any, "开始分析");
+      await sm.updateStep("analyze_codebase" as any, "开始分析");
       expect(upsertSession).toHaveBeenCalledWith(
         owner,
         repo,

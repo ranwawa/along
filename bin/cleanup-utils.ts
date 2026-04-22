@@ -6,7 +6,7 @@ import {
   failure,
 } from "./common";
 import type { Result } from "./common";
-import { get_gh_client, readRepoInfo } from "./github-client";
+import { readRepoInfo } from "./github-client";
 
 const logger = consola.withTag("cleanup-utils");
 import { config } from "./config";
@@ -137,20 +137,6 @@ export async function cleanupIssue(
   if (!processCheck.canProceed) {
     if (processCheck.error) logger.error(processCheck.error);
     return failure(processCheck.error || "进程检查失败，无法继续清理");
-  }
-
-  // PR 合并时兜底移除 WIP 标签
-  if (reason === "pr-merged") {
-    try {
-      const clientRes = await get_gh_client();
-      if (clientRes.success) {
-        await clientRes.data.removeIssueLabel(issueNumber, "WIP");
-        info("WIP 标签已移除", options.silent);
-        session.logEvent("label-removed", { issueNumber, label: "WIP" });
-      }
-    } catch {
-      // 标签可能已被移除，忽略错误
-    }
   }
 
   // 读取分支名（必须在归档前读取）

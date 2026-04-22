@@ -26,7 +26,7 @@ import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import { clearSessionDiagnostic, generateSessionDiagnostic, writeSessionDiagnostic } from "./session-diagnostics";
-import { PHASE, STEP, EVENT, type SessionPhase, type SessionStep, type SessionContext } from "./session-state-machine";
+import { PHASE, STEP, EVENT, LIFECYCLE, type SessionPhase, type SessionStep, type SessionContext } from "./session-state-machine";
 
 const PHASE_START_STEP: Record<SessionPhase, SessionStep> = {
   [PHASE.PLANNING]: STEP.READ_ISSUE,
@@ -283,7 +283,7 @@ export async function launchIssueAgent(
     await initSessionFiles(paths, worktreePath, statusData, session);
     logger.success("worktree 初始化完成");
   } else {
-    session.transition({ type: "START_PHASE", phase, step: PHASE_START_STEP[phase] || "read_issue", message: `重新启动 ${phase}` });
+    await session.transition({ type: "START_PHASE", phase, step: PHASE_START_STEP[phase] || "read_issue", message: `重新启动 ${phase}` });
   }
 
   ensureEditorPermissions(worktreePath);
@@ -305,7 +305,7 @@ export async function launchIssueAgent(
         .replace("{tag}", tag)
         .replace("{workflow}", workflow)
         .replace("{num}", String(issueNumber));
-      session.transition({
+      await session.transition({
         type: EVENT.STEP_CHANGED,
         phase,
         step: PHASE_START_STEP[phase] || STEP.READ_ISSUE,
@@ -318,7 +318,7 @@ export async function launchIssueAgent(
     }
   } catch {
   }
-  session.transition({ type: EVENT.START_PHASE, phase, step: PHASE_START_STEP[phase] || STEP.READ_ISSUE, message: `启动 ${phase}` });
+  await session.transition({ type: EVENT.START_PHASE, phase, step: PHASE_START_STEP[phase] || STEP.READ_ISSUE, message: `启动 ${phase}` });
   session.logEvent("agent-started", { phase, workflow });
   clearSessionDiagnostic(paths);
 
@@ -345,18 +345,18 @@ export async function launchIssueAgent(
           crashLog = content.length > 3000 ? "..." + content.slice(-3000) : content;
         }
       } catch (e) {}
-      session.markAsCrashed(`Agent 意外退出 (退出码: ${exitCode})`, crashLog || "无法获取日志文件内容", exitCode);
+      await session.markAsCrashed(`Agent 意外退出 (退出码: ${exitCode})`, crashLog || "无法获取日志文件内容", exitCode);
       const currentRes = session.readStatus();
       if (currentRes.success && currentRes.data) {
         writeSessionDiagnostic(paths, generateSessionDiagnostic(currentRes.data, paths));
       }
     } else {
-      session.transition({ type: "AGENT_EXITED_SUCCESS" });
+      await session.transition({ type: "AGENT_EXITED_SUCCESS" });
     }
     clearCurrentIssueContext();
     return success(undefined);
   } catch (error: any) {
-    session.markAsCrashed(error.message, error.stack);
+    await session.markAsCrashed(error.message, error.stack);
     clearCurrentIssueContext();
     return failure(error.message, error.stack);
   }
@@ -366,7 +366,7 @@ export async function launchIssueAgent(
  * WIP 标签智能恢复：当 Issue 带有 WIP 标签但对应的进程已退出时，
  * 自动清理 WIP 标签，允许用户重新启动任务
  */
-export async function tryRecoverFromWip(
+export async function tryRecoverFromStaleLabel(
   owner: string,
   repo: string,
   taskNo: number,
@@ -390,8 +390,8 @@ export async function tryRecoverFromWip(
   try {
     const clientRes = await get_gh_client();
     if (clientRes.success) {
-      await clientRes.data.removeIssueLabel(taskNo, "WIP");
-      logger.success(`Issue #${taskNo} 的 WIP 标签已自动清理，任务将重新启动`);
+      await clientRes.data.removeIssueLabel(taskNo, LIFECYCLE.RUNNING);
+      logger.success(`Issue #${taskNo} 的 ${LIFECYCLE.RUNNING} 标签已自动清理，任务将重新启动`);
       return true;
     }
   } catch (e: any) {

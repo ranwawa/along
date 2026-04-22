@@ -99,9 +99,10 @@ async function main() {
   // ─── Step 4: 订阅事件 ───
   console.log(chalk.bold.cyan("─── Step 4: 订阅事件 (Subscribe to events) ───"));
   console.log("");
-  console.log("  勾选以下 4 个事件（设置权限后才会出现对应选项）:");
+  console.log("  勾选以下 5 个事件（设置权限后才会出现对应选项）:");
   console.log("");
   console.log(`  ${chalk.green("☑")} Issues                    Issue 创建、标签变更等`);
+  console.log(`  ${chalk.green("☑")} Issue comments             Issue 评论（/approve 等指令）`);
   console.log(`  ${chalk.green("☑")} Pull request              PR 创建、代码更新等`);
   console.log(`  ${chalk.green("☑")} Pull request review       PR Review 提交`);
   console.log(`  ${chalk.green("☑")} Check run                 CI 运行完成`);
@@ -148,8 +149,9 @@ async function main() {
   console.log("");
   console.log("  GitHub App 推送的事件将自动触发以下命令:");
   console.log("");
-  console.log(`  ${chalk.yellow("issues.opened")}              → along run <N> --ci          ${chalk.dim("新 Issue 自动处理")}`);
-  console.log(`  ${chalk.yellow("issues.labeled (approved)")}  → along run <N> --ci          ${chalk.dim("Phase 2 自动启动")}`);
+  console.log(`  ${chalk.yellow("issues.opened")}              → triageIssue + agent         ${chalk.dim("新 Issue 自动分类处理")}`);
+  console.log(`  ${chalk.yellow("issue_comment (/approve)")}   → launchIssueAgent(impl)      ${chalk.dim("Phase 2 自动启动")}`);
+  console.log(`  ${chalk.yellow("issue_comment (/reject)")}    → session.failed               ${chalk.dim("方案被拒绝")}`);
   console.log(`  ${chalk.yellow("pull_request.opened")}        → reviewPr()                  ${chalk.dim("自动代码审查")}`);
   console.log(`  ${chalk.yellow("pull_request.synchronize")}   → reviewPr()                  ${chalk.dim("代码更新后重新审查")}`);
   console.log(`  ${chalk.yellow("pull_request_review")}        → resolveReview()             ${chalk.dim("处理 Review 反馈")}`);

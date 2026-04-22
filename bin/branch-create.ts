@@ -66,7 +66,7 @@ async function main() {
     session.logEvent("branch-pushed", { branchName });
 
     // 3. 更新数据库：通过 BRANCH_PREPARED 事件写入 branchName + 自动推进 step
-    session.transition({ type: EVENT.BRANCH_PREPARED, branchName });
+    await session.transition({ type: EVENT.BRANCH_PREPARED, branchName });
 
     // 4. 自动更新 todo
     const outputContent = [

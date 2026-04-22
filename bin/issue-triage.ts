@@ -15,6 +15,7 @@ import { GitHubClient, readGithubToken } from "./github-client";
 import { launchIssueAgent } from "./issue-agent";
 import { success, failure } from "./common";
 import type { Result } from "./common";
+import { LIFECYCLE } from "./session-state-machine";
 
 const logger = consola.withTag("issue-triage");
 
@@ -40,7 +41,7 @@ const TRIAGE_SYSTEM_PROMPT = `你是一个 GitHub Issue 分类助手。你的任
 - 如果无法确定是否需要代码修改，请分类为 bug
 - question 的 replyMessage 应友好、专业，尽量给出有帮助的回答方向
 - spam 的 replyMessage 应简短说明关闭原因
-- question/spam 的 replyMessage 末尾必须加上提示："\\n\\n---\\n> 如果你认为这个 Issue 确实需要代码修改，请添加 \`approved\` 标签以重新触发处理流程。"`;
+- question/spam 的 replyMessage 末尾必须加上提示："\\n\\n---\\n> 如果你认为这个 Issue 确实需要代码修改，请在 Issue 中评论 \`/approve\` 以重新触发处理流程。"`;
 
 const VALID_CLASSIFICATIONS: TriageClassification[] = ["bug", "feature", "question", "spam"];
 
@@ -143,9 +144,9 @@ export async function handleTriagedIssue(
     case "bug":
     case "feature": {
       // 打类型标签 + WIP 标签
-      const addRes = await client.addIssueLabels(issueNumber, [typeLabel, "WIP"]);
+      const addRes = await client.addIssueLabels(issueNumber, [typeLabel, LIFECYCLE.RUNNING]);
       if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
-      logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}, WIP]`);
+      logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}, ${LIFECYCLE.RUNNING}]`);
 
       if (!options?.skipAgentLaunch) {
         // 启动 planning 阶段（出方案）

@@ -17,12 +17,10 @@ import { Task } from "./task";
 import { Issue } from "./issue";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
-import { launchIssueAgent, tryRecoverFromWip } from "./issue-agent";
+import { launchIssueAgent, tryRecoverFromStaleLabel } from "./issue-agent";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { readSession } from "./db";
 import { PHASE, LIFECYCLE, STEP, type SessionPhase } from "./session-state-machine";
-import { GitHubClient } from "./github-client";
-import { resolveAgentToken } from "./agent-config";
 
 /**
  * run - 极简一键启动入口
@@ -85,7 +83,7 @@ function configureCommand() {
 
 /**
  * 自动检测执行阶段：
- * - 如果数据库中 planning 已完成（waiting_human）→ 检查 approved 标签后决定是否切换到 implementation
+ * - 如果数据库中 planning 已完成（waiting_human）→ 保持 planning（等待 /approve 指令）
  * - 否则 → 返回当前 phase 或默认 planning
  */
 async function detectPhase(paths: SessionPathManager, owner: string, repo: string, issueNumber: number): Promise<SessionPhase> {
@@ -93,25 +91,9 @@ async function detectPhase(paths: SessionPathManager, owner: string, repo: strin
   const sessionRes = readSession(owner, repo, issueNumber);
   if (sessionRes.success && sessionRes.data) {
     const { phase, lifecycle } = sessionRes.data;
-    // planning 阶段已完成且等待人工审批 → 检查 approved 标签
     if (phase === PHASE.PLANNING && lifecycle === LIFECYCLE.WAITING_HUMAN) {
-      // 获取 Issue 标签，验证 approved 标签是否存在
-      const token = resolveAgentToken();
-      if (token) {
-        const client = new GitHubClient(token, owner, repo);
-        const issueRes = await client.getIssue(issueNumber);
-        if (issueRes.success) {
-          const labels = (issueRes.data.labels || []).map((l: any) =>
-            typeof l === "string" ? l : l.name
-          );
-          if (!labels.includes("approved")) {
-            logger.warn(`Issue #${issueNumber} 处于 waiting_human 但缺少 approved 标签，保持 planning 阶段`);
-            return PHASE.PLANNING;
-          }
-        }
-      }
-      logger.info("检测到 planning 已完成（等待审批），切换到 implementation");
-      return PHASE.IMPLEMENTATION;
+      logger.info(`Issue #${issueNumber} 处于 waiting_human，保持 planning 阶段（等待 /approve 指令）`);
+      return PHASE.PLANNING;
     }
     if (phase) {
       logger.info(`从数据库恢复阶段: ${phase}`);
@@ -150,15 +132,15 @@ async function handleAction(num: string) {
     let issueRes = await checkIssue(taskNo);
     if (!issueRes.success) {
       // WIP 标签智能恢复：检查是否为 WIP 阻断且任务实际已停止
-      if (issueRes.error.includes("WIP")) {
-        const recovered = await tryRecoverFromWip(owner, repoName, taskNo);
+      if (issueRes.error.includes(LIFECYCLE.RUNNING)) {
+        const recovered = await tryRecoverFromStaleLabel(owner, repoName, taskNo);
         if (recovered) {
           // WIP 已清理，重新检查 Issue
           issueRes = await checkIssue(taskNo);
         }
       }
       if (!issueRes.success) {
-        sessionManager.markAsError(issueRes.error);
+        await sessionManager.markAsError(issueRes.error);
         logger.error(`任务检测失败: ${issueRes.error}`);
         process.exit(1);
       }
@@ -175,13 +157,13 @@ async function handleAction(num: string) {
 
     const taskRes = checkTask(owner, repoName, taskNo);
     if (!taskRes.success) {
-      sessionManager.markAsError(taskRes.error);
+      await sessionManager.markAsError(taskRes.error);
       logger.error(`Task 检查失败: ${taskRes.error}`);
       process.exit(1);
     }
     logger.success("task检测通过");
 
-    sessionManager.updateStep(STEP.READ_ISSUE, "正在检查 Git 仓库和 Issue 状态");
+    await sessionManager.updateStep(STEP.READ_ISSUE, "正在检查 Git 仓库和 Issue 状态");
 
     try {
       await runGc({ silent: true });
@@ -190,7 +172,7 @@ async function handleAction(num: string) {
       sessionManager.log("GC failed, but continuing anyway", "warn");
     }
 
-    sessionManager.updateStep(STEP.READ_ISSUE, "开始执行任务流程");
+    await sessionManager.updateStep(STEP.READ_ISSUE, "开始执行任务流程");
 
     const phase = await detectPhase(paths, owner, repoName, taskNo);
     logger.info(`执行阶段: ${phase}`);
@@ -207,10 +189,10 @@ async function handleAction(num: string) {
       );
 
       if (!hasActionableLabel) {
-        sessionManager.updateStep(STEP.READ_ISSUE, "正在对 Issue 进行 AI 分类");
+        await sessionManager.updateStep(STEP.READ_ISSUE, "正在对 Issue 进行 AI 分类");
         const triageRes = await triageIssue(issueData.title, issueData.body || "", issueLabels);
         if (!triageRes.success) {
-          sessionManager.markAsError(`Issue 分类失败: ${triageRes.error}`);
+          await sessionManager.markAsError(`Issue 分类失败: ${triageRes.error}`);
           logger.error(`Issue #${taskNo} 分类失败: ${triageRes.error}`);
           process.exit(1);
         }
@@ -235,13 +217,13 @@ async function handleAction(num: string) {
     });
 
     if (!agentRes.success) {
-      sessionManager.markAsError(agentRes.error);
+      await sessionManager.markAsError(agentRes.error);
       logger.error(`任务执行失败: ${agentRes.error}`);
       process.exit(1);
     }
   } catch (error: any) {
     const errorMsg = error.message || String(error);
-    sessionManager.markAsCrashed(errorMsg, error.stack);
+    await sessionManager.markAsCrashed(errorMsg, error.stack);
     logger.error(`任务执行异常: ${errorMsg}`);
     console.error(error.stack);
     process.exit(1);
