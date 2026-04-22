@@ -431,6 +431,37 @@ export function getOpenDiscussionRound(
   return getDiscussionRound(owner, repo, issueNumber, threadRes.data.openRoundId);
 }
 
+function getPlanRevisionByCommentId(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  commentId: number,
+): Result<PlanRevisionRecord | null> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const row = dbRes.data
+      .prepare(
+        "SELECT * FROM plan_revisions WHERE owner = ? AND repo = ? AND issue_number = ? AND comment_id = ?",
+      )
+      .get(owner, repo, issueNumber, commentId) as any;
+    return success(row ? mapPlanRow(row) : null);
+  } catch (error: any) {
+    return failure(`读取 plan revision 失败: ${error.message}`);
+  }
+}
+
+function formatCurrentPlanLabel(
+  thread: PlanningThreadRecord | null,
+  currentPlan: PlanRevisionRecord | null,
+): string {
+  if (!thread?.currentPlanId || !currentPlan) {
+    return thread?.currentPlanId ? thread.currentPlanId : "none";
+  }
+  return `Plan v${currentPlan.version} (${currentPlan.planId})`;
+}
+
 export function listCommentMirrors(
   owner: string,
   repo: string,
@@ -1017,6 +1048,64 @@ function resolveRoundAfterAgentComment(
   }
 }
 
+function classifyPlanningAgentComment(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  metadata: AlongMetadata,
+  commentId: number,
+): Result<"apply" | "replay" | "ignore"> {
+  if (metadata.kind === "plan") {
+    const existingPlanRes = getPlanRevisionByCommentId(
+      owner,
+      repo,
+      issueNumber,
+      commentId,
+    );
+    if (!existingPlanRes.success) return existingPlanRes;
+    if (existingPlanRes.data?.planId === metadata.planId) {
+      return success("replay");
+    }
+  }
+
+  if (!("roundId" in metadata) || !metadata.roundId) {
+    return success("apply");
+  }
+
+  const roundRes = getDiscussionRound(owner, repo, issueNumber, metadata.roundId);
+  if (!roundRes.success) return roundRes;
+  const round = roundRes.data;
+  if (!round) return success("apply");
+
+  if (metadata.kind === "plan") {
+    if (round.producedPlanId) {
+      return success(
+        round.producedPlanId === metadata.planId ? "replay" : "ignore",
+      );
+    }
+
+    if (
+      round.status !== ROUND_STATUS.OPEN &&
+      round.status !== ROUND_STATUS.PROCESSING
+    ) {
+      return success("ignore");
+    }
+
+    return success("apply");
+  }
+
+  if (
+    round.status !== ROUND_STATUS.OPEN &&
+    round.status !== ROUND_STATUS.PROCESSING
+  ) {
+    return success(
+      round.resolution === ROUND_RESOLUTION.ANSWER_ONLY ? "replay" : "ignore",
+    );
+  }
+
+  return success("apply");
+}
+
 export function recordPlanningAgentComment(input: {
   owner: string;
   repo: string;
@@ -1027,6 +1116,19 @@ export function recordPlanningAgentComment(input: {
 }): Result<"plan" | "planning-update" | "ignored"> {
   const metadata = parseAlongMetadata(input.body);
   if (!metadata) return success("ignored");
+
+  const classifyRes = classifyPlanningAgentComment(
+    input.owner,
+    input.repo,
+    input.issueNumber,
+    metadata,
+    input.commentId,
+  );
+  if (!classifyRes.success) return classifyRes;
+  if (classifyRes.data === "ignore") return success("ignored");
+  if (classifyRes.data === "replay") {
+    return success(metadata.kind === "plan" ? "plan" : "planning-update");
+  }
 
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -1121,7 +1223,11 @@ export function approvePlan(
   }
 
   if (thread.openRoundId) {
-    return failure("当前仍有待处理的讨论轮次，不能批准");
+    const currentPlanRes = getCurrentPlanRevision(owner, repo, issueNumber);
+    if (!currentPlanRes.success) return currentPlanRes;
+    return failure(
+      `当前仍有待处理的讨论轮次（round=${thread.openRoundId}，currentPlan=${formatCurrentPlanLabel(thread, currentPlanRes.data)}），不能批准`,
+    );
   }
 
   let planId = thread.currentPlanId;
@@ -1210,4 +1316,3 @@ export function collectPlanningContext(
   if (!payloadRes.success) return payloadRes;
   return success(payloadRes.data);
 }
-

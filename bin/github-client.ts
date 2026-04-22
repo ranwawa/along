@@ -12,6 +12,10 @@ export type GitHubIssue = RestEndpointMethodTypes["issues"]["get"]["response"]["
 export type GitHubPullRequest = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
 export type GitHubReviewComment = RestEndpointMethodTypes["pulls"]["listReviewComments"]["response"]["data"][number];
 export type GitHubCheckRun = RestEndpointMethodTypes["checks"]["listForRef"]["response"]["data"]["check_runs"][number];
+export interface CreatedIssueComment {
+  commentId: number;
+  createdAt?: string;
+}
 
 /**
  * GitHub API 客户端 (基于官方 Octokit 实现)
@@ -113,14 +117,20 @@ export class GitHubClient {
     }
   }
 
-  async addIssueComment(number: string | number, body: string): Promise<Result<void>> {
+  async addIssueComment(
+    number: string | number,
+    body: string,
+  ): Promise<Result<CreatedIssueComment>> {
     try {
-      await this.octokit.issues.createComment({
+      const { data } = await this.octokit.issues.createComment({
         ...this.repoParams,
         issue_number: Number(number),
         body,
       });
-      return success(undefined);
+      return success({
+        commentId: data.id,
+        createdAt: data.created_at || undefined,
+      });
     } catch (e: any) {
       return failure(`添加 Issue #${number} 评论失败: ${e.message}`);
     }
@@ -520,4 +530,3 @@ export async function syncLifecycleLabel(
     await client.removeIssueLabel(issueNumber, label);
   }
 }
-
