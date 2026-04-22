@@ -124,7 +124,7 @@ export const config = {
     {
       id: "claude",
       name: "Claude Code",
-      runTemplate: '{tag} "请解决 GitHub Issue #{num}，严格按照系统提示中的工作流执行" --append-system-prompt-file .claude/commands/{workflow}.md --dangerously-skip-permissions --verbose --print',
+      runTemplate: '{tag} "请解决 GitHub Issue #{num}，严格按照系统提示中的工作流执行" --append-system-prompt-file .claude/commands/{workflow}.md --dangerously-skip-permissions --output-format stream-json --verbose --print',
       mappings: [
         { from: "skills", to: ".claude/skills" },
         { from: "prompts", to: ".claude/commands" },

@@ -25,8 +25,20 @@ import { getAgentRole } from "./agent-config";
 import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
 import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
-import { clearSessionDiagnostic, generateSessionDiagnostic, writeSessionDiagnostic } from "./session-diagnostics";
-import { PHASE, STEP, EVENT, LIFECYCLE, type SessionPhase, type SessionStep, type SessionContext } from "./session-state-machine";
+import {
+  clearSessionDiagnostic,
+  generateSessionDiagnostic,
+  writeSessionDiagnostic,
+} from "./session-diagnostics";
+import {
+  PHASE,
+  STEP,
+  EVENT,
+  LIFECYCLE,
+  type SessionPhase,
+  type SessionStep,
+  type SessionContext,
+} from "./session-state-machine";
 
 const PHASE_START_STEP: Record<SessionPhase, SessionStep> = {
   [PHASE.PLANNING]: STEP.READ_ISSUE,
@@ -55,7 +67,8 @@ export function syncPromptsToWorktree(worktreePath: string): Result<void> {
   if (!logTagRes.success) return logTagRes;
   const logTag = logTagRes.data;
 
-  const editor = config.EDITORS.find((e) => e.id === logTag) || config.EDITORS[0];
+  const editor =
+    config.EDITORS.find((e) => e.id === logTag) || config.EDITORS[0];
 
   for (const mapping of editor.mappings) {
     const sourceDir = path.join(config.ROOT_DIR, mapping.from);
@@ -83,7 +96,9 @@ export function syncPromptsToWorktree(worktreePath: string): Result<void> {
 
 type WritableTarget = { write(data: string): any };
 
-function createTimestampedWriter(out: WritableTarget): WritableTarget & { flush(): void } {
+function createTimestampedWriter(
+  out: WritableTarget,
+): WritableTarget & { flush(): void } {
   let buffer = "";
 
   const writeLine = (line: string) => {
@@ -108,7 +123,10 @@ function createTimestampedWriter(out: WritableTarget): WritableTarget & { flush(
   };
 }
 
-async function drainStream(stream: ReadableStream<Uint8Array>, out: WritableTarget): Promise<void> {
+async function drainStream(
+  stream: ReadableStream<Uint8Array>,
+  out: WritableTarget,
+): Promise<void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   while (true) {
@@ -118,12 +136,110 @@ async function drainStream(stream: ReadableStream<Uint8Array>, out: WritableTarg
   }
 }
 
+interface DrainJsonStreamResult {
+  sessionId?: string;
+}
+
+async function drainJsonStream(
+  stream: ReadableStream<Uint8Array>,
+  out: WritableTarget,
+): Promise<DrainJsonStreamResult> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let sessionId: string | undefined;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      try {
+        const record = JSON.parse(trimmed);
+        if (!sessionId && record.sessionId) {
+          sessionId = record.sessionId;
+        }
+        const formatted = formatJsonRecord(record);
+        if (formatted) {
+          out.write(formatted + "\n");
+        }
+      } catch {
+        out.write(trimmed + "\n");
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    out.write(buffer.trim() + "\n");
+  }
+
+  return { sessionId };
+}
+
+function formatJsonRecord(record: any): string | null {
+  const type = record.type;
+  if (type === "assistant") {
+    const content = record.message?.content;
+    if (Array.isArray(content)) {
+      const texts = content
+        .filter((c: any) => c.type === "text" && c.text)
+        .map((c: any) => c.text);
+      if (texts.length > 0) return `[assistant] ${texts.join("\n")}`;
+    }
+    return null;
+  }
+  if (type === "tool_use") {
+    const msg = record.message;
+    if (msg?.content) {
+      const tools = Array.isArray(msg.content) ? msg.content : [msg.content];
+      return (
+        tools
+          .filter((c: any) => c.type === "tool_use")
+          .map(
+            (c: any) =>
+              `[tool_use] ${c.name}: ${JSON.stringify(c.input ?? {}).slice(0, 200)}`,
+          )
+          .join("\n") || null
+      );
+    }
+    return null;
+  }
+  if (type === "tool_result") {
+    const msg = record.message;
+    if (msg?.content) {
+      const results = Array.isArray(msg.content) ? msg.content : [msg.content];
+      return (
+        results
+          .filter((c: any) => c.type === "tool_result")
+          .map((c: any) => {
+            const text =
+              typeof c.content === "string"
+                ? c.content
+                : JSON.stringify(c.content);
+            return `[tool_result] ${text.slice(0, 200)}`;
+          })
+          .join("\n") || null
+      );
+    }
+    return null;
+  }
+  return null;
+}
+
 export async function execAgent(
   worktreePath: string,
   issueNumber: number,
   workflow: string,
   onPid?: (pid: number) => void,
   logFile?: string,
+  sessionManager?: SessionManager,
 ): Promise<Result<number>> {
   const syncRes = syncPromptsToWorktree(worktreePath);
   if (!syncRes.success) return syncRes;
@@ -167,12 +283,25 @@ export async function execAgent(
 
   const out: WritableTarget = fileWriter || process.stdout;
   const err: WritableTarget = fileWriter || process.stderr;
+  const isClaude = editor?.id === "claude";
 
   try {
+    let jsonResult: DrainJsonStreamResult | undefined;
     await Promise.all([
-      proc.stdout ? drainStream(proc.stdout, out) : Promise.resolve(),
+      proc.stdout
+        ? isClaude
+          ? drainJsonStream(proc.stdout, out).then((r) => {
+              jsonResult = r;
+            })
+          : drainStream(proc.stdout, out)
+        : Promise.resolve(),
       proc.stderr ? drainStream(proc.stderr, err) : Promise.resolve(),
     ]);
+
+    if (isClaude && jsonResult?.sessionId && sessionManager) {
+      sessionManager.updateClaudeSessionId(jsonResult.sessionId);
+      logger.info(`已捕获 Claude sessionId: ${jsonResult.sessionId}`);
+    }
   } finally {
     fileWriter?.flush();
     fileHandle?.end();
@@ -267,7 +396,9 @@ export async function launchIssueAgent(
       const tagRes = config.getLogTag();
       const tag = tagRes.success ? tagRes.data : "unknown";
       const gitHeadSha = (await git.raw(["rev-parse", "HEAD"])).trim();
-      const pkg = JSON.parse(fs.readFileSync(path.join(config.ROOT_DIR, "package.json"), "utf-8"));
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(config.ROOT_DIR, "package.json"), "utf-8"),
+      );
       statusData.agentType = tag;
       statusData.environment = {
         agentType: tag,
@@ -301,7 +432,9 @@ export async function launchIssueAgent(
     if (tagRes.success) {
       const tag = tagRes.data;
       const editor = config.EDITORS.find((e) => e.id === tag);
-      const agentCommand = (editor?.runTemplate || "{tag} --prompt-template {workflow} {num}")
+      const agentCommand = (
+        editor?.runTemplate || "{tag} --prompt-template {workflow} {num}"
+      )
         .replace("{tag}", tag)
         .replace("{workflow}", workflow)
         .replace("{num}", String(issueNumber));
@@ -329,9 +462,16 @@ export async function launchIssueAgent(
       issueNumber,
       workflow,
       (pid) => {
-        session.updateStep(STEP.READ_ISSUE, undefined, undefined, undefined, pid);
+        session.updateStep(
+          STEP.READ_ISSUE,
+          undefined,
+          undefined,
+          undefined,
+          pid,
+        );
       },
       logFile,
+      session,
     );
 
     if (!agentRes.success) return agentRes;
@@ -342,13 +482,21 @@ export async function launchIssueAgent(
       try {
         if (fs.existsSync(logFile)) {
           const content = fs.readFileSync(logFile, "utf-8");
-          crashLog = content.length > 3000 ? "..." + content.slice(-3000) : content;
+          crashLog =
+            content.length > 3000 ? "..." + content.slice(-3000) : content;
         }
       } catch (e) {}
-      await session.markAsCrashed(`Agent 意外退出 (退出码: ${exitCode})`, crashLog || "无法获取日志文件内容", exitCode);
+      await session.markAsCrashed(
+        `Agent 意外退出 (退出码: ${exitCode})`,
+        crashLog || "无法获取日志文件内容",
+        exitCode,
+      );
       const currentRes = session.readStatus();
       if (currentRes.success && currentRes.data) {
-        writeSessionDiagnostic(paths, generateSessionDiagnostic(currentRes.data, paths));
+        writeSessionDiagnostic(
+          paths,
+          generateSessionDiagnostic(currentRes.data, paths),
+        );
       }
     } else {
       await session.transition({ type: "AGENT_EXITED_SUCCESS" });
