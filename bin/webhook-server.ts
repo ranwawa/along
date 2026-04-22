@@ -288,8 +288,7 @@ async function handleEvent(
       if (action === "opened" || action === "synchronize") {
         logger.info(`PR #${prNumber} 事件: ${action}，启动代码审查...`);
         fireAndForget(async () => {
-          const res = await reviewPr(owner, repo, prNumber);
-          if (!res.success) logger.error(`代码审查失败: ${res.error}`);
+          await reviewPr(owner, repo, prNumber);
         });
         return { status: 202, message: `已触发代码审查 PR #${prNumber}` };
       }
@@ -325,8 +324,7 @@ async function handleEvent(
       if (action === "submitted") {
         logger.info(`PR #${prNumber} 收到 review，启动评论处理...`);
         enqueueAgent(`PR #${prNumber} review 处理`, async () => {
-          const res = await resolveReview(owner, repo, prNumber);
-          if (!res.success) logger.error(`评论处理失败: ${res.error}`);
+          await resolveReview(owner, repo, prNumber);
         });
         return { status: 202, message: `已触发评论处理 PR #${prNumber}` };
       }
@@ -352,8 +350,7 @@ async function handleEvent(
       const prNumber = pullRequests[0].number;
       logger.info(`PR #${prNumber} CI 失败，启动修复...`);
       enqueueAgent(`PR #${prNumber} CI 修复`, async () => {
-        const res = await resolveCi(owner, repo, prNumber);
-        if (!res.success) logger.error(`CI 修复失败: ${res.error}`);
+        await resolveCi(owner, repo, prNumber);
       });
       return { status: 202, message: `已触发 CI 修复 PR #${prNumber}` };
     }

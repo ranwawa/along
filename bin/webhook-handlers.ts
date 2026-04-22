@@ -9,7 +9,7 @@
 
 import fs from "fs";
 import { consola } from "consola";
-import { iso_timestamp, failure } from "./common";
+import { iso_timestamp } from "./common";
 import type { Result } from "./common";
 import { GitHubClient, readGithubToken } from "./github-client";
 import type { GitHubReviewComment, GitHubCheckRun } from "./github-client";

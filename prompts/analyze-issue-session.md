@@ -1,5 +1,5 @@
 ---
-description: 针对 resolve-github-issue.md 的执行结果进行深度分析与 SOP 优化建议
+description: 针对 resolve-github-issue-*.md 的执行结果进行深度分析与 SOP 优化建议
 ---
 
 # 角色
@@ -16,9 +16,11 @@ description: 针对 resolve-github-issue.md 的执行结果进行深度分析与
 
 [此处请粘贴 Issue 的标题、描述及相关上下文]
 
-## 2. 约束 SOP (resolve-github-issue.md)
+## 2. 约束 SOP (resolve-github-issue-planning.md / resolve-github-issue-implementation.md)
 
-[此处请粘贴 /Users/macbookpro/Documents/rww/kinkeeper/.pi/prompts/resolve-github-issue.md 的完整内容]
+[此处请粘贴对应阶段 SOP 的完整内容：
+- Planning 阶段：`resolve-github-issue-planning.md`
+- Implementation 阶段：`resolve-github-issue-implementation.md`]
 
 ## 3. 简化后的执行日志 (Simplified Timeline)
 
@@ -52,7 +54,7 @@ description: 针对 resolve-github-issue.md 的执行结果进行深度分析与
 - **## 违规/异常点**: 逐条列出发现的指令违反、逻辑错误或低效行为。
 - **## 关键环节复盘**: 对分析、修复、测试这三个核心阶段的执行质量进行点评。
 - **## 调优建议 (Action Items)**:
-  - **对提示词 (Prompt)**: `resolve-github-issue.md` 中哪些描述容易造成歧义，需要如何加固？
+  - **对提示词 (Prompt)**: `resolve-github-issue-planning.md` 或 `resolve-github-issue-implementation.md` 中哪些描述容易造成歧义，需要如何加固？
   - **对 Agent 行为**: 在处理此类问题时，Agent 应该增加哪些预判或防御逻辑？
   - **对配套脚本**: `analyze-session.py` 或其它工具是否需要增加更多维度？
 
