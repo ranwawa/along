@@ -220,44 +220,6 @@ async function handleEvent(
         return { status: 202, message: `已触发 Issue #${issueNumber} 分类` };
       }
 
-      if (action === "labeled" && payload.label?.name === "approved") {
-        // 类型守卫：只有 bug/enhancement 标签的 issue 才触发 implementation
-        const issueLabels = (payload.issue?.labels || []).map((l: any) =>
-          typeof l === "string" ? l : l.name,
-        );
-        if (
-          !issueLabels.some((l: string) => l === "bug" || l === "enhancement")
-        ) {
-          return {
-            status: 200,
-            message: "非 bug/feature issue，忽略 approved 标签",
-          };
-        }
-
-        logger.info(`Issue #${issueNumber} 已审批，触发 APPROVED 事件...`);
-        const session = new SessionManager(owner, repo, issueNumber);
-        const transitionRes = session.transition({ type: EVENT.APPROVED });
-        if (!transitionRes.success) {
-          logger.error(`触发 APPROVED 事件失败: ${transitionRes.error}`);
-        }
-
-        logger.info(`Issue #${issueNumber} 已审批，启动实现阶段...`);
-        enqueueAgent(`Issue #${issueNumber} 实现`, async () => {
-          const res = await launchIssueAgent(
-            owner,
-            repo,
-            issueNumber,
-            "implementation",
-            { taskData: { title: `Issue #${issueNumber}` } },
-          );
-          if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
-        });
-        return {
-          status: 202,
-          message: `已触发实现阶段: Issue #${issueNumber}`,
-        };
-      }
-
       if (action === "deleted") {
         logger.info(`收到 Issue #${issueNumber} 删除事件，启动资产清理...`);
         fireAndForget(async () => {
@@ -337,45 +299,18 @@ async function handleEvent(
         const issueMatch = body.match(/(?:fixes|closes|resolves)\s+#(\d+)/i);
         if (issueMatch) {
           const linkedIssue = Number(issueMatch[1]);
-          logger.info(
-            `PR #${prNumber} 已合并，清理 Issue #${linkedIssue} 的 WIP 标签...`,
-          );
+          logger.info(`PR #${prNumber} 已合并，处理 Issue #${linkedIssue}...`);
           fireAndForget(async () => {
             const session = new SessionManager(owner, repo, linkedIssue);
-            session.transition({ type: "PR_MERGED" });
-            const tokenRes = await readGithubToken();
-            if (!tokenRes.success) {
-              logger.error(`获取 Token 失败: ${tokenRes.error}`);
-              return;
-            }
-            const client = new GitHubClient(tokenRes.data, owner, repo);
-            const res = await client.removeIssueLabel(linkedIssue, "WIP");
-            if (!res.success) {
-              logger.warn(
-                `移除 Issue #${linkedIssue} 的 WIP 标签失败: ${res.error}`,
-              );
-            } else {
-              logger.info(`已移除 Issue #${linkedIssue} 的 WIP 标签`);
-            }
+            await session.transition({ type: "PR_MERGED" });
 
-            // 自动清理 worktree
-            logger.info(
-              `PR #${prNumber} 已合并，开始清理 Issue #${linkedIssue} 的本地资源...`,
-            );
-            const cleanRes = await cleanupIssue(
-              String(linkedIssue),
-              { reason: "pr-merged", silent: false },
-              owner,
-              repo,
-            );
+            logger.info(`PR #${prNumber} 已合并，开始清理 Issue #${linkedIssue} 的本地资源...`);
+            const cleanRes = await cleanupIssue(String(linkedIssue), { reason: "pr-merged", silent: false }, owner, repo);
             if (!cleanRes.success) {
               logger.warn(`清理 Issue #${linkedIssue} 失败: ${cleanRes.error}`);
             }
           });
-          return {
-            status: 202,
-            message: `已触发 WIP 清理与资产回收: Issue #${linkedIssue}`,
-          };
+          return { status: 202, message: `已触发资产回收: Issue #${linkedIssue}` };
         }
         return { status: 200, message: "PR 已合并但未关联 issue" };
       }
@@ -967,12 +902,12 @@ async function main() {
                   });
                 }
               } else if (type === "assistant") {
-                const content = record.message?.content;
-                if (Array.isArray(content)) {
-                  const texts = content
+                const msgContent = record.message?.content;
+                if (Array.isArray(msgContent)) {
+                  const texts = msgContent
                     .filter((c: any) => c.type === "text" && c.text)
                     .map((c: any) => c.text);
-                  const toolUses = content.filter(
+                  const toolUses = msgContent.filter(
                     (c: any) => c.type === "tool_use",
                   );
                   if (texts.length > 0) {
@@ -986,15 +921,15 @@ async function main() {
                     messages.push({
                       type: "tool_use",
                       toolName: tool.name,
-                      toolInput: JSON.stringify(tool.input).slice(0, 500),
+                      toolInput: JSON.stringify(tool.input ?? {}).slice(0, 500),
                       timestamp: record.timestamp,
                     });
                   }
                 }
               } else if (type === "tool_result") {
-                const content = record.message?.content;
-                if (Array.isArray(content)) {
-                  for (const c of content) {
+                const msgContent = record.message?.content;
+                if (Array.isArray(msgContent)) {
+                  for (const c of msgContent) {
                     if (c.type === "tool_result") {
                       const text =
                         typeof c.content === "string"
