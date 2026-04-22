@@ -492,10 +492,32 @@ export async function syncLifecycleLabel(
   if (!clientRes.success) return;
   const client = clientRes.data;
 
-  const removePromises = LIFECYCLE_LABELS
-    .filter(l => l !== newLifecycle)
-    .map(l => client.removeIssueLabel(issueNumber, l));
-  await Promise.all(removePromises);
-  await client.addIssueLabels(issueNumber, [newLifecycle]);
+  // 获取 Issue 当前数据，获取所有标签
+  const issueRes = await client.getIssue(issueNumber);
+  if (!issueRes.success) return;
+
+  // 提取当前 lifecycle 标签（Issue labels 可能是对象或字符串）
+  const currentLifecycleLabels: string[] = issueRes.data.labels
+    .map(l => typeof l === "string" ? l : l.name)
+    .filter((name): name is string => LIFECYCLE_LABELS.includes(name as SessionLifecycle));
+
+  // 计算期望的标签集合
+  const expectedLabels = [newLifecycle];
+
+  // 计算需要添加的标签（只在当前不存在时添加）
+  const labelsToAdd = expectedLabels.filter(l => !currentLifecycleLabels.includes(l));
+
+  // 计算需要删除的标签（只删当前存在的）
+  const labelsToRemove = currentLifecycleLabels.filter(l => l !== newLifecycle);
+
+  // 先添加新标签，确保新状态存在
+  if (labelsToAdd.length > 0) {
+    await client.addIssueLabels(issueNumber, labelsToAdd);
+  }
+
+  // 再删除旧标签
+  for (const label of labelsToRemove) {
+    await client.removeIssueLabel(issueNumber, label);
+  }
 }
 
