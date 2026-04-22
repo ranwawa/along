@@ -140,8 +140,9 @@ function ensureClaudePermissions(worktreePath: string) {
   const alongBashPattern = `Bash(along *)`;
   const alongReadPattern = `Read(${config.USER_ALONG_DIR}/**)`;
   const alongEditPattern = `Edit(${config.USER_ALONG_DIR}/**)`;
+  const alongWritePattern = `Write(${config.USER_ALONG_DIR}/**)`;
 
-  const requiredPatterns = [alongBashPattern, alongReadPattern, alongEditPattern];
+  const requiredPatterns = [alongBashPattern, alongReadPattern, alongEditPattern, alongWritePattern];
   const missing = requiredPatterns.filter((p) => !allow.includes(p));
 
   if (missing.length === 0) return;
