@@ -12,6 +12,15 @@ export const LIFECYCLE = {
 
 export type SessionLifecycle = typeof LIFECYCLE[keyof typeof LIFECYCLE];
 
+export const LIFECYCLE_LABELS = Object.values(LIFECYCLE);
+
+export const COMMAND = {
+  APPROVE: "/approve",
+  REJECT: "/reject",
+} as const;
+
+export type CommandType = typeof COMMAND[keyof typeof COMMAND];
+
 export const PHASE = {
   PLANNING: "planning",
   IMPLEMENTATION: "implementation",

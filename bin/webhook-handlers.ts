@@ -164,13 +164,13 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
   logger.info(`Diff 数据已写入: ${diffFile} (${files.length} 个文件)`);
 
   session.logEvent("reviewer-agent-launched", { trigger: "webhook", headSha: pr.head.sha, fileCount: files.length });
-  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "review-pr-diff", (pid) => {
-    session.updateStep(statusData.step || STEP.AWAIT_MERGE, undefined, statusData.phase || PHASE.STABILIZATION, undefined, pid);
+  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "review-pr-diff", async (pid) => {
+    await session.updateStep(statusData.step || STEP.AWAIT_MERGE, undefined, statusData.phase || PHASE.STABILIZATION, undefined, pid);
   });
 
   if (!agentRes.success) {
     logger.error(`Reviewer Agent 启动失败: ${agentRes.error}`);
-    session.markAsCrashed(agentRes.error);
+    await session.markAsCrashed(agentRes.error);
     return;
   }
 
@@ -302,21 +302,21 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   const commentsFile = writeCommentsFile(paths, unresolvedComments, prNumber, statusData.repo, session);
   logger.info(`评论已写入: ${commentsFile}`);
 
-  session.transition({ type: EVENT.REVIEW_FIX_STARTED, commentCount: unresolvedComments.length });
+  await session.transition({ type: EVENT.REVIEW_FIX_STARTED, commentCount: unresolvedComments.length });
 
   session.logEvent("agent-launched", { trigger: "webhook-review", commentCount: unresolvedComments.length });
-  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review", (pid) => {
-    session.updateStep(STEP.ADDRESS_REVIEW_FEEDBACK, undefined, PHASE.STABILIZATION, { reviewCommentCount: unresolvedComments.length } as Partial<SessionContext>, pid);
+  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-pr-review", async (pid) => {
+    await session.updateStep(STEP.ADDRESS_REVIEW_FEEDBACK, undefined, PHASE.STABILIZATION, { reviewCommentCount: unresolvedComments.length } as Partial<SessionContext>, pid);
   });
 
   if (!agentRes.success) {
     logger.error(`Agent 启动失败: ${agentRes.error}`);
-    session.markAsCrashed(agentRes.error);
+    await session.markAsCrashed(agentRes.error);
     return;
   }
 
   session.logEvent("agent-completed", { trigger: "webhook-review" });
-  session.transition({ type: "REVIEW_FIX_COMPLETED" });
+  await session.transition({ type: "REVIEW_FIX_COMPLETED" });
 
   logger.info(`PR #${prNumber} 评论处理完成`);
 
@@ -439,24 +439,24 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   const ciFile = writeCiFailureFile(paths, failedRuns, headSha, statusData.repo, session);
   logger.info(`CI 失败信息已写入: ${ciFile}`);
 
-  session.transition({ type: EVENT.CI_FIX_STARTED, failedCount: failedRuns.length });
-  session.updateCiResults(0, failedRuns.length, headSha);
+  await session.transition({ type: EVENT.CI_FIX_STARTED, failedCount: failedRuns.length });
+  await session.updateCiResults(0, failedRuns.length, headSha);
 
   session.logEvent("agent-launched", { trigger: "webhook-ci", failedCount: failedRuns.length, headSha });
   setCurrentIssueContext(owner, repo, issueNumber);
-  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", (pid) => {
-    session.updateStep(STEP.FIX_CI, undefined, PHASE.STABILIZATION, undefined, pid);
+  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", async (pid) => {
+    await session.updateStep(STEP.FIX_CI, undefined, PHASE.STABILIZATION, undefined, pid);
   });
   clearCurrentIssueContext();
 
   if (!agentRes.success) {
     logger.error(`Agent 启动失败: ${agentRes.error}`);
-    session.markAsCrashed(agentRes.error);
+    await session.markAsCrashed(agentRes.error);
     return;
   }
 
   session.logEvent("agent-completed", { trigger: "webhook-ci" });
-  session.transition({ type: "CI_FIX_COMPLETED" });
+  await session.transition({ type: "CI_FIX_COMPLETED" });
 
   logger.info(`PR #${prNumber} CI 修复完成`);
 }

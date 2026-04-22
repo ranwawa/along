@@ -32,40 +32,40 @@ describe("issue.ts", () => {
       }
     });
 
-    it("open 且无 WIP 标签时返回 success", () => {
+    it("open 且无 running 标签时返回 success", () => {
       const issue = new Issue(42, {});
       issue.data = { state: "open", labels: [{ name: "bug" }] } as any;
       const result = issue.checkHealth();
       expect(result.success).toBe(true);
     });
 
-    it("有 WIP 标签时返回 failure", () => {
+    it("有 running 标签时返回 failure", () => {
       const issue = new Issue(42, {});
-      issue.data = { state: "open", labels: [{ name: "WIP" }] } as any;
+      issue.data = { state: "open", labels: [{ name: "running" }] } as any;
       const result = issue.checkHealth();
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error).toContain("WIP");
+        expect(result.error).toContain("running");
       }
     });
 
-    it("WIP 标签大小写不敏感（wip）", () => {
-      const issue = new Issue(42, {});
-      issue.data = { state: "open", labels: [{ name: "wip" }] } as any;
-      const result = issue.checkHealth();
-      expect(result.success).toBe(false);
-    });
-
-    it("skipWipCheck=true 时跳过 WIP 检查", () => {
+    it("WIP 标签不再触发阻断", () => {
       const issue = new Issue(42, {});
       issue.data = { state: "open", labels: [{ name: "WIP" }] } as any;
+      const result = issue.checkHealth();
+      expect(result.success).toBe(true);
+    });
+
+    it("skipWipCheck=true 时跳过 running 检查", () => {
+      const issue = new Issue(42, {});
+      issue.data = { state: "open", labels: [{ name: "running" }] } as any;
       const result = issue.checkHealth({ skipWipCheck: true });
       expect(result.success).toBe(true);
     });
 
-    it("标签为纯字符串格式时也能正确检测 WIP", () => {
+    it("标签为纯字符串格式时也能正确检测 running", () => {
       const issue = new Issue(42, {});
-      issue.data = { state: "open", labels: ["WIP"] } as any;
+      issue.data = { state: "open", labels: ["running"] } as any;
       const result = issue.checkHealth();
       expect(result.success).toBe(false);
     });

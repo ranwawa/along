@@ -31,7 +31,7 @@ async function updateStatus(
     return failure(`会话状态不存在: ${owner}/${repo}#${issueNumber}`);
   }
 
-  const transitionRes = session.transition({
+  const transitionRes = await session.transition({
     type: EVENT.MANUAL_STATUS_UPDATE,
     lifecycle: lifecycle as SessionLifecycle,
     message,

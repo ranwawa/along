@@ -4,6 +4,7 @@ import { success, failure, git } from "./common";
 import type { Result } from "./common";
 import { resolveAgentToken } from "./agent-config";
 import { consola } from "consola";
+import { LIFECYCLE_LABELS, type SessionLifecycle } from "./session-state-machine";
 
 const apiLogger = consola.withTag("github-api");
 
@@ -479,5 +480,22 @@ export async function checkGithubAuth(): Promise<Result<boolean>> {
   if (!tokenRes.success) return failure(tokenRes.error);
 
   return success(true);
+}
+
+export async function syncLifecycleLabel(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  newLifecycle: SessionLifecycle,
+): Promise<void> {
+  const clientRes = await get_gh_client(owner, repo);
+  if (!clientRes.success) return;
+  const client = clientRes.data;
+
+  const removePromises = LIFECYCLE_LABELS
+    .filter(l => l !== newLifecycle)
+    .map(l => client.removeIssueLabel(issueNumber, l));
+  await Promise.all(removePromises);
+  await client.addIssueLabels(issueNumber, [newLifecycle]);
 }
 

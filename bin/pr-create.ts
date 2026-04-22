@@ -101,7 +101,7 @@ async function main() {
     const prNum = prNumberMatch ? Number(prNumberMatch[1]) : undefined;
 
     // 更新数据库：记录 PR URL，保持 running 状态
-    const writeRes = session.transition({
+    const writeRes = await session.transition({
       type: "PR_CREATED",
       prUrl,
       prNumber: prNum,

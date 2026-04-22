@@ -3,6 +3,7 @@ import { iso_timestamp, success, failure } from "./common";
 import type { Result } from "./common";
 import { SessionPathManager } from "./session-paths";
 import { readSession, upsertSession, transactSession } from "./db";
+import { syncLifecycleLabel } from "./github-client";
 import {
   applySessionStateEvent,
   PHASE,
@@ -113,24 +114,38 @@ export class SessionManager {
     }
   }
 
-  transition(event: SessionStateEvent): Result<void> {
-    return transactSession(this.owner, this.repo, this.issueNumber, (current) => {
+  async transition(event: SessionStateEvent): Promise<Result<void>> {
+    const oldRes = this.readStatus();
+    const oldLifecycle = oldRes.success ? oldRes.data?.lifecycle : undefined;
+
+    const dbRes = transactSession(this.owner, this.repo, this.issueNumber, (current) => {
       const { patch } = applySessionStateEvent(current, event);
       return {
         ...patch,
         lastUpdate: iso_timestamp(),
       };
     });
+    if (!dbRes.success) return dbRes;
+
+    const newRes = this.readStatus();
+    const newLifecycle = newRes.success ? newRes.data?.lifecycle : undefined;
+    if (newLifecycle && newLifecycle !== oldLifecycle) {
+      try {
+        await syncLifecycleLabel(this.owner, this.repo, this.issueNumber, newLifecycle);
+      } catch {}
+    }
+
+    return dbRes;
   }
 
-  markAsError(errorMessage: string, exitCode?: number): Result<void> {
-    const writeRes = this.transition({ type: "BLOCKED", message: errorMessage, exitCode });
+  async markAsError(errorMessage: string, exitCode?: number): Promise<Result<void>> {
+    const writeRes = await this.transition({ type: "BLOCKED", message: errorMessage, exitCode });
     this.log(`Error: ${errorMessage}`, "error");
     return writeRes;
   }
 
-  markAsCrashed(errorMessage: string, crashLog?: string, exitCode?: number): Result<void> {
-    const writeRes = this.transition({
+  async markAsCrashed(errorMessage: string, crashLog?: string, exitCode?: number): Promise<Result<void>> {
+    const writeRes = await this.transition({
       type: "AGENT_EXITED_FAILURE",
       message: errorMessage,
       crashLog,
@@ -143,11 +158,11 @@ export class SessionManager {
     return writeRes;
   }
 
-  updateStep(step: SessionStep, message?: string, phase?: SessionPhase, context?: Partial<SessionContext>, pid?: number): Result<void> {
+  async updateStep(step: SessionStep, message?: string, phase?: SessionPhase, context?: Partial<SessionContext>, pid?: number): Promise<Result<void>> {
     const currentRes = this.readStatus();
     if (!currentRes.success) return currentRes;
     const currentPhase = phase || currentRes.data?.phase || PHASE.PLANNING;
-    const writeRes = this.transition({
+    const writeRes = await this.transition({
       type: EVENT.STEP_CHANGED,
       phase: currentPhase,
       step,
@@ -159,8 +174,8 @@ export class SessionManager {
     return writeRes;
   }
 
-  startWorkflow(phase: SessionPhase, step: SessionStep, message?: string): Result<void> {
-    return this.transition({ type: "START_PHASE", phase, step, message });
+  async startWorkflow(phase: SessionPhase, step: SessionStep, message?: string): Promise<Result<void>> {
+    return await this.transition({ type: "START_PHASE", phase, step, message });
   }
 
   logEvent(event: string, details?: Record<string, any>): Result<void> {
@@ -185,10 +200,10 @@ export class SessionManager {
     });
   }
 
-  updateCiResults(passed: number, failed: number, sha?: string): Result<void> {
+  async updateCiResults(passed: number, failed: number, sha?: string): Promise<Result<void>> {
     const currentRes = this.readStatus();
     if (!currentRes.success) return currentRes;
-    return this.transition({
+    return await this.transition({
       type: EVENT.STEP_CHANGED,
       phase: currentRes.data?.phase || PHASE.STABILIZATION,
       step: currentRes.data?.step || STEP.FIX_CI,

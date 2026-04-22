@@ -18,13 +18,12 @@ import crypto from "crypto";
 import { reviewPr, resolveReview, resolveCi, cleanupIssueSession } from "./webhook-handlers";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { launchIssueAgent, setDashboardMode } from "./issue-agent";
-import { readGithubToken, GitHubClient } from "./github-client";
 import { config } from "./config";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
-import { isActiveSessionStatus, EVENT } from "./session-state-machine";
+import { isActiveSessionStatus, EVENT, LIFECYCLE, COMMAND } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { readSessionDiagnostic, readSessionLog, generateSessionDiagnostic, type SessionLogSource } from "./session-diagnostics";
@@ -176,30 +175,6 @@ async function handleEvent(
         return { status: 202, message: `已触发 Issue #${issueNumber} 分类` };
       }
 
-      if (action === "labeled" && payload.label?.name === "approved") {
-        // 类型守卫：只有 bug/enhancement 标签的 issue 才触发 implementation
-        const issueLabels = (payload.issue?.labels || []).map((l: any) =>
-          typeof l === "string" ? l : l.name
-        );
-        if (!issueLabels.some((l: string) => l === "bug" || l === "enhancement")) {
-          return { status: 200, message: "非 bug/feature issue，忽略 approved 标签" };
-        }
-
-        logger.info(`Issue #${issueNumber} 已审批，触发 APPROVED 事件...`);
-        const session = new SessionManager(owner, repo, issueNumber);
-        const transitionRes = session.transition({ type: EVENT.APPROVED });
-        if (!transitionRes.success) {
-          logger.error(`触发 APPROVED 事件失败: ${transitionRes.error}`);
-        }
-
-        logger.info(`Issue #${issueNumber} 已审批，启动实现阶段...`);
-        enqueueAgent(`Issue #${issueNumber} 实现`, async () => {
-          const res = await launchIssueAgent(owner, repo, issueNumber, "implementation", { taskData: { title: `Issue #${issueNumber}` } });
-          if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
-        });
-        return { status: 202, message: `已触发实现阶段: Issue #${issueNumber}` };
-      }
-
       if (action === "deleted") {
         logger.info(`收到 Issue #${issueNumber} 删除事件，启动资产清理...`);
         fireAndForget(async () => {
@@ -212,6 +187,50 @@ async function handleEvent(
       }
 
       return { status: 200, message: `忽略 issues.${action} 事件` };
+    }
+
+    case "issue_comment": {
+      if (action !== "created") return { status: 200, message: `忽略 issue_comment.${action} 事件` };
+
+      const issueNumber = payload.issue?.number;
+      if (!issueNumber) return { status: 400, message: "缺少 issue number" };
+
+      const body = (payload.comment?.body || "").trim();
+      const command = body.split(/\s/)[0]?.toLowerCase();
+
+      if (command === COMMAND.APPROVE) {
+        const issueLabels = (payload.issue?.labels || []).map((l: any) =>
+          typeof l === "string" ? l : l.name
+        );
+        if (!issueLabels.some((l: string) => l === "bug" || l === "enhancement")) {
+          return { status: 200, message: "非 bug/feature issue，忽略 /approve 指令" };
+        }
+
+        logger.info(`Issue #${issueNumber} 收到 /approve 指令，触发实现阶段...`);
+        const session = new SessionManager(owner, repo, issueNumber);
+        await session.transition({ type: EVENT.APPROVED });
+
+        enqueueAgent(`Issue #${issueNumber} 实现`, async () => {
+          const res = await launchIssueAgent(owner, repo, issueNumber, "implementation", {
+            taskData: { title: `Issue #${issueNumber}` },
+          });
+          if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
+        });
+        return { status: 202, message: `已触发实现阶段: Issue #${issueNumber}` };
+      }
+
+      if (command === COMMAND.REJECT) {
+        logger.info(`Issue #${issueNumber} 收到 /reject 指令`);
+        const session = new SessionManager(owner, repo, issueNumber);
+        await session.transition({
+          type: EVENT.MANUAL_STATUS_UPDATE,
+          lifecycle: LIFECYCLE.FAILED,
+          message: "方案被拒绝",
+        });
+        return { status: 200, message: `Issue #${issueNumber} 已标记为 failed` };
+      }
+
+      return { status: 200, message: "忽略非指令评论" };
     }
 
     case "pull_request": {
@@ -228,36 +247,22 @@ async function handleEvent(
       }
 
       if (action === "closed" && payload.pull_request?.merged) {
-        // PR 合并后，从关联 issue 移除 WIP 标签
         const body = payload.pull_request?.body || "";
         const issueMatch = body.match(/(?:fixes|closes|resolves)\s+#(\d+)/i);
         if (issueMatch) {
           const linkedIssue = Number(issueMatch[1]);
-          logger.info(`PR #${prNumber} 已合并，清理 Issue #${linkedIssue} 的 WIP 标签...`);
+          logger.info(`PR #${prNumber} 已合并，处理 Issue #${linkedIssue}...`);
           fireAndForget(async () => {
             const session = new SessionManager(owner, repo, linkedIssue);
-            session.transition({ type: "PR_MERGED" });
-            const tokenRes = await readGithubToken();
-            if (!tokenRes.success) {
-              logger.error(`获取 Token 失败: ${tokenRes.error}`);
-              return;
-            }
-            const client = new GitHubClient(tokenRes.data, owner, repo);
-            const res = await client.removeIssueLabel(linkedIssue, "WIP");
-            if (!res.success) {
-              logger.warn(`移除 Issue #${linkedIssue} 的 WIP 标签失败: ${res.error}`);
-            } else {
-              logger.info(`已移除 Issue #${linkedIssue} 的 WIP 标签`);
-            }
+            await session.transition({ type: "PR_MERGED" });
 
-            // 自动清理 worktree
             logger.info(`PR #${prNumber} 已合并，开始清理 Issue #${linkedIssue} 的本地资源...`);
             const cleanRes = await cleanupIssue(String(linkedIssue), { reason: "pr-merged", silent: false }, owner, repo);
             if (!cleanRes.success) {
               logger.warn(`清理 Issue #${linkedIssue} 失败: ${cleanRes.error}`);
             }
           });
-          return { status: 202, message: `已触发 WIP 清理与资产回收: Issue #${linkedIssue}` };
+          return { status: 202, message: `已触发资产回收: Issue #${linkedIssue}` };
         }
         return { status: 200, message: "PR 已合并但未关联 issue" };
       }
