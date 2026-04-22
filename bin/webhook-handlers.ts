@@ -180,6 +180,11 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
     await session.markAsCrashed(agentRes.error);
     return;
   }
+  if (agentRes.data !== 0) {
+    logger.error(`Reviewer Agent 异常退出 (退出码: ${agentRes.data})`);
+    await session.markAsCrashed(`Reviewer Agent 异常退出 (退出码: ${agentRes.data})`);
+    return;
+  }
 
   session.logEvent("reviewer-agent-completed", { trigger: "webhook" });
 
@@ -321,6 +326,11 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
     await session.markAsCrashed(agentRes.error);
     return;
   }
+  if (agentRes.data !== 0) {
+    logger.error(`Agent 异常退出 (退出码: ${agentRes.data})`);
+    await session.markAsCrashed(`Agent 异常退出 (退出码: ${agentRes.data})`);
+    return;
+  }
 
   session.logEvent("agent-completed", { trigger: "webhook-review" });
   await session.transition({ type: "REVIEW_FIX_COMPLETED" });
@@ -459,6 +469,11 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   if (!agentRes.success) {
     logger.error(`Agent 启动失败: ${agentRes.error}`);
     await session.markAsCrashed(agentRes.error);
+    return;
+  }
+  if (agentRes.data !== 0) {
+    logger.error(`Agent 异常退出 (退出码: ${agentRes.data})`);
+    await session.markAsCrashed(`Agent 异常退出 (退出码: ${agentRes.data})`);
     return;
   }
 
