@@ -34,9 +34,18 @@ import {
   EVENT,
   LIFECYCLE,
   COMMAND,
+  PHASE,
 } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
+import {
+  approvePlan,
+  ensureOpenDiscussionRound,
+  isHumanFeedbackComment,
+  mirrorIssueComment,
+  parseApprovalCommand,
+  recordPlanningAgentComment,
+} from "./planning-state";
 import {
   readSessionDiagnostic,
   readSessionLog,
@@ -90,6 +99,7 @@ function runAgent(label: string, fn: () => Promise<any>) {
 // ── Webhook 事件去重（防止 GitHub 超时重发） ──
 const DEDUP_MAX_SIZE = 1000;
 const processedDeliveries = new Set<string>();
+const issueCommentLocks = new Map<string, Promise<any>>();
 
 function isDuplicateDelivery(deliveryId: string): boolean {
   if (!deliveryId || deliveryId === "-") return false;
@@ -101,6 +111,24 @@ function isDuplicateDelivery(deliveryId: string): boolean {
     if (first) processedDeliveries.delete(first);
   }
   return false;
+}
+
+function withIssueCommentLock<T>(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = `${owner}/${repo}#${issueNumber}`;
+  const previous = issueCommentLocks.get(key) || Promise.resolve();
+  const next = previous.then(fn, fn);
+  issueCommentLocks.set(key, next);
+  next.finally(() => {
+    if (issueCommentLocks.get(key) === next) {
+      issueCommentLocks.delete(key);
+    }
+  });
+  return next;
 }
 
 /**
@@ -250,61 +278,176 @@ async function handleEvent(
       const issueNumber = payload.issue?.number;
       if (!issueNumber) return { status: 400, message: "缺少 issue number" };
 
-      const body = (payload.comment?.body || "").trim();
-      const command = body.split(/\s/)[0]?.toLowerCase();
+      return withIssueCommentLock(owner, repo, issueNumber, async () => {
+        const body = (payload.comment?.body || "").trim();
+        const command = body.split(/\s/)[0]?.toLowerCase();
+        const commentId = Number(payload.comment?.id || 0);
+        const commentUser = payload.comment?.user || payload.sender || {};
+        const mirrorRes = mirrorIssueComment({
+          owner,
+          repo,
+          issueNumber,
+          commentId,
+          authorLogin: commentUser.login || "unknown",
+          senderType: commentUser.type,
+          body,
+          createdAt: payload.comment?.created_at,
+        });
+        if (!mirrorRes.success) {
+          logger.error(`镜像 Issue 评论失败: ${mirrorRes.error}`);
+          return { status: 500, message: mirrorRes.error };
+        }
 
-      if (command === COMMAND.APPROVE) {
+        const planningCommentRes = recordPlanningAgentComment({
+          owner,
+          repo,
+          issueNumber,
+          commentId,
+          body,
+          createdAt: payload.comment?.created_at,
+        });
+        if (!planningCommentRes.success) {
+          logger.error(`记录 planning comment 失败: ${planningCommentRes.error}`);
+          return { status: 500, message: planningCommentRes.error };
+        }
+
         const issueLabels = (payload.issue?.labels || []).map((l: any) =>
           typeof l === "string" ? l : l.name,
         );
-        if (
-          !issueLabels.some((l: string) => l === "bug" || l === "enhancement")
-        ) {
-          return {
-            status: 200,
-            message: "非 bug/feature issue，忽略 /approve 指令",
-          };
-        }
-
-        logger.info(
-          `Issue #${issueNumber} 收到 /approve 指令，触发实现阶段...`,
+        const isActionableIssue = issueLabels.some(
+          (l: string) => l === "bug" || l === "enhancement",
         );
         const session = new SessionManager(owner, repo, issueNumber);
-        await session.transition({ type: EVENT.APPROVED });
+        const sessionRes = session.readStatus();
+        const sessionStatus = sessionRes.success ? sessionRes.data : null;
 
-        enqueueAgent(`Issue #${issueNumber} 实现`, async () => {
-          const res = await launchIssueAgent(
+        if (command === COMMAND.APPROVE) {
+          if (!isActionableIssue) {
+            return {
+              status: 200,
+              message: "非 bug/feature issue，忽略 /approve 指令",
+            };
+          }
+
+          if (sessionStatus?.phase !== PHASE.PLANNING) {
+            return {
+              status: 200,
+              message: "当前不在 planning 阶段，忽略 /approve",
+            };
+          }
+
+          const target = parseApprovalCommand(body);
+          if (!target) {
+            return {
+              status: 200,
+              message: "无法解析 /approve 指令，请使用 /approve、/approve vN 或 /approve plan:<id>",
+            };
+          }
+
+          const approveRes = approvePlan(
             owner,
             repo,
             issueNumber,
-            "implementation",
-            {
-              taskData: { title: `Issue #${issueNumber}` },
-            },
+            target,
+            commentId,
           );
-          if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
-        });
-        return {
-          status: 202,
-          message: `已触发实现阶段: Issue #${issueNumber}`,
-        };
-      }
+          if (!approveRes.success) {
+            logger.warn(`Issue #${issueNumber} /approve 未通过: ${approveRes.error}`);
+            return {
+              status: 200,
+              message: `审批未通过: ${approveRes.error}`,
+            };
+          }
 
-      if (command === COMMAND.REJECT) {
-        logger.info(`Issue #${issueNumber} 收到 /reject 指令`);
-        const session = new SessionManager(owner, repo, issueNumber);
-        await session.transition({
-          type: EVENT.MANUAL_STATUS_UPDATE,
-          lifecycle: LIFECYCLE.FAILED,
-          message: "方案被拒绝",
-        });
-        return {
-          status: 200,
-          message: `Issue #${issueNumber} 已标记为 failed`,
-        };
-      }
+          logger.info(
+            `Issue #${issueNumber} 收到有效 /approve，批准 Plan v${approveRes.data.version} 并触发实现阶段`,
+          );
+          await session.transition({ type: EVENT.APPROVED });
 
-      return { status: 200, message: "忽略非指令评论" };
+          enqueueAgent(`Issue #${issueNumber} 实现`, async () => {
+            const res = await launchIssueAgent(
+              owner,
+              repo,
+              issueNumber,
+              "implementation",
+              {
+                taskData: { title: `Issue #${issueNumber}` },
+              },
+            );
+            if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
+          });
+          return {
+            status: 202,
+            message: `已批准当前正式计划并触发实现阶段: Issue #${issueNumber}`,
+          };
+        }
+
+        if (command === COMMAND.REJECT) {
+          logger.info(`Issue #${issueNumber} 收到 /reject 指令`);
+          await session.transition({
+            type: EVENT.MANUAL_STATUS_UPDATE,
+            lifecycle: LIFECYCLE.FAILED,
+            message: "方案被拒绝",
+          });
+          return {
+            status: 200,
+            message: `Issue #${issueNumber} 已标记为 failed`,
+          };
+        }
+
+        if (
+          isActionableIssue &&
+          sessionStatus?.phase === PHASE.PLANNING &&
+          isHumanFeedbackComment(mirrorRes.data)
+        ) {
+          const roundRes = ensureOpenDiscussionRound(owner, repo, issueNumber);
+          if (!roundRes.success) {
+            logger.error(`创建/读取 discussion round 失败: ${roundRes.error}`);
+            return { status: 500, message: roundRes.error };
+          }
+
+          if (sessionStatus.lifecycle !== LIFECYCLE.RUNNING && roundRes.data) {
+            logger.info(
+              `Issue #${issueNumber} 收到 planning 反馈，启动新一轮讨论处理`,
+            );
+            enqueueAgent(`Issue #${issueNumber} planning round`, async () => {
+              const res = await launchIssueAgent(
+                owner,
+                repo,
+                issueNumber,
+                "planning",
+                {
+                  taskData: { title: `Issue #${issueNumber}` },
+                },
+              );
+              if (!res.success) logger.error(`启动 planning round 失败: ${res.error}`);
+            });
+            return {
+              status: 202,
+              message: `已触发 planning round: Issue #${issueNumber}`,
+            };
+          }
+
+          return {
+            status: 200,
+            message: sessionStatus.lifecycle === LIFECYCLE.RUNNING
+              ? "已记录 planning 反馈，等待当前 Agent 处理完成后继续"
+              : "已记录 planning 反馈",
+          };
+        }
+
+        if (planningCommentRes.data !== "ignored") {
+          return {
+            status: 200,
+            message:
+              planningCommentRes.data === "plan"
+                ? "已记录官方计划评论"
+                : "已记录 planning update 评论",
+          };
+        }
+
+        return { status: 200, message: "已镜像评论，无需进一步处理" };
+      });
     }
 
     case "pull_request": {

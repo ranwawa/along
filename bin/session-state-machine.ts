@@ -40,6 +40,8 @@ export const STEP = {
   IDENTIFY_CHANGE_SET: "identify_change_set",
   DRAFT_PLAN: "draft_plan",
   PUBLISH_PLAN: "publish_plan",
+  AWAIT_INPUT: "await_input",
+  PROCESS_ROUND: "process_round",
   AWAIT_APPROVAL: "await_approval",
   SYNC_APPROVED_PLAN: "sync_approved_plan",
   EDIT_CODE: "edit_code",
@@ -216,6 +218,10 @@ export function getStepLabel(step: SessionStep): string {
       return "Draft Plan";
     case STEP.PUBLISH_PLAN:
       return "Publish Plan";
+    case STEP.AWAIT_INPUT:
+      return "Await Input";
+    case STEP.PROCESS_ROUND:
+      return "Process Round";
     case STEP.AWAIT_APPROVAL:
       return "Await Approval";
     case STEP.SYNC_APPROVED_PLAN:

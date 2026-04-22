@@ -120,9 +120,97 @@ function initSchema(db: Database) {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS planning_threads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      issue_number INTEGER NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      is_closed INTEGER NOT NULL DEFAULT 0,
+      current_plan_id TEXT,
+      open_round_id TEXT,
+      approved_plan_id TEXT,
+      last_processed_comment_id INTEGER,
+      updated_at TEXT NOT NULL,
+      UNIQUE(owner, repo, issue_number)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS plan_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      issue_number INTEGER NOT NULL,
+      plan_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      based_on_plan_id TEXT,
+      status TEXT NOT NULL,
+      comment_id INTEGER NOT NULL,
+      summary TEXT,
+      scope TEXT,
+      changes TEXT,
+      risks TEXT,
+      validation TEXT,
+      decision_log TEXT,
+      changes_since_last_version TEXT,
+      body TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(plan_id),
+      UNIQUE(owner, repo, issue_number, version)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS discussion_rounds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      issue_number INTEGER NOT NULL,
+      round_id TEXT NOT NULL,
+      based_on_plan_id TEXT,
+      snapshot_comment_ids TEXT NOT NULL DEFAULT '[]',
+      snapshot_last_seen_comment_id INTEGER,
+      status TEXT NOT NULL,
+      resolution TEXT,
+      produced_plan_id TEXT,
+      created_at TEXT NOT NULL,
+      resolved_at TEXT,
+      UNIQUE(round_id)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS comment_mirror (
+      comment_id INTEGER PRIMARY KEY,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      issue_number INTEGER NOT NULL,
+      author_login TEXT NOT NULL,
+      author_type TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      mirrored_at TEXT NOT NULL
+    );
+  `);
+
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_lifecycle ON sessions(lifecycle)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_pr_number ON sessions(pr_number)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch_name)"); } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_plan_revisions_issue ON plan_revisions(owner, repo, issue_number, version)"); } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_discussion_rounds_issue ON discussion_rounds(owner, repo, issue_number, created_at)"); } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_comment_mirror_issue ON comment_mirror(owner, repo, issue_number, comment_id)"); } catch {}
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_revisions_active_issue ON plan_revisions(owner, repo, issue_number) WHERE status = 'active'",
+    );
+  } catch {}
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_discussion_rounds_open_issue ON discussion_rounds(owner, repo, issue_number) WHERE status IN ('open','processing','stale_partial')",
+    );
+  } catch {}
 
   tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN lifecycle TEXT");
   tryAddColumn(db, "ALTER TABLE sessions ADD COLUMN phase TEXT");

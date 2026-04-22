@@ -39,6 +39,12 @@ import {
   type SessionStep,
   type SessionContext,
 } from "./session-state-machine";
+import {
+  preparePlanningExecution,
+  shouldContinuePlanning,
+  writePlanningContextFile,
+  type PlanningContextPayload,
+} from "./planning-state";
 
 const PHASE_START_STEP: Record<SessionPhase, SessionStep> = {
   [PHASE.PLANNING]: STEP.READ_ISSUE,
@@ -342,6 +348,21 @@ export async function launchIssueAgent(
   session.logEvent("issue-agent-launch", { phase, issueNumber });
   setCurrentIssueContext(owner, repo, issueNumber);
 
+  let planningContext: PlanningContextPayload | null = null;
+  if (phase === PHASE.PLANNING) {
+    const planningRes = preparePlanningExecution(owner, repo, issueNumber);
+    if (!planningRes.success) {
+      clearCurrentIssueContext();
+      return failure(planningRes.error);
+    }
+    planningContext = planningRes.data;
+  }
+
+  const startStep =
+    phase === PHASE.PLANNING && planningContext?.openRound
+      ? STEP.PROCESS_ROUND
+      : PHASE_START_STEP[phase] || STEP.READ_ISSUE;
+
   // 1. 获取 Issue 数据
   let title = options.taskData?.title || "";
   if (!title) {
@@ -369,7 +390,6 @@ export async function launchIssueAgent(
       return failure(wtResult.error);
     }
 
-    const startStep = PHASE_START_STEP[phase] || "read_issue";
     const statusData: Record<string, any> = {
       issueNumber,
       lifecycle: "running",
@@ -414,7 +434,12 @@ export async function launchIssueAgent(
     await initSessionFiles(paths, worktreePath, statusData, session);
     logger.success("worktree 初始化完成");
   } else {
-    await session.transition({ type: "START_PHASE", phase, step: PHASE_START_STEP[phase] || "read_issue", message: `重新启动 ${phase}` });
+    await session.transition({
+      type: "START_PHASE",
+      phase,
+      step: startStep,
+      message: `重新启动 ${phase}`,
+    });
   }
 
   ensureEditorPermissions(worktreePath);
@@ -424,6 +449,19 @@ export async function launchIssueAgent(
   fs.writeFileSync(modeFile, phase);
   logger.info(`执行模式: ${phase} (已写入 .along-mode)`);
   session.logEvent("along-mode-written", { phase, modeFile });
+
+  if (phase === PHASE.PLANNING && planningContext) {
+    const contextWriteRes = writePlanningContextFile(paths, planningContext);
+    if (!contextWriteRes.success) {
+      clearCurrentIssueContext();
+      return failure(contextWriteRes.error);
+    }
+    session.logEvent("planning-context-written", {
+      file: contextWriteRes.data,
+      hasOpenRound: Boolean(planningContext.openRound),
+      proposedPlanVersion: planningContext.proposedPlan?.version,
+    });
+  }
 
   // 4. 启动 agent
   const workflow =
@@ -444,7 +482,7 @@ export async function launchIssueAgent(
       await session.transition({
         type: EVENT.STEP_CHANGED,
         phase,
-        step: PHASE_START_STEP[phase] || STEP.READ_ISSUE,
+        step: startStep,
         message: `启动 ${phase}`,
         context: {
           agentType: tag,
@@ -454,7 +492,7 @@ export async function launchIssueAgent(
     }
   } catch {
   }
-  await session.transition({ type: EVENT.START_PHASE, phase, step: PHASE_START_STEP[phase] || STEP.READ_ISSUE, message: `启动 ${phase}` });
+  await session.transition({ type: EVENT.START_PHASE, phase, step: startStep, message: `启动 ${phase}` });
   session.logEvent("agent-started", { phase, workflow });
   clearSessionDiagnostic(paths);
 
@@ -466,7 +504,7 @@ export async function launchIssueAgent(
       workflow,
       (pid) => {
         session.updateStep(
-          STEP.READ_ISSUE,
+          startStep,
           undefined,
           undefined,
           undefined,
@@ -502,6 +540,20 @@ export async function launchIssueAgent(
         );
       }
     } else {
+      if (phase === PHASE.PLANNING) {
+        const continueRes = shouldContinuePlanning(owner, repo, issueNumber);
+        if (!continueRes.success) {
+          await session.markAsError(continueRes.error);
+          clearCurrentIssueContext();
+          return failure(continueRes.error);
+        }
+        if (continueRes.data) {
+          session.logEvent("planning-continue", { issueNumber });
+          clearCurrentIssueContext();
+          return launchIssueAgent(owner, repo, issueNumber, phase, options);
+        }
+      }
+
       await session.transition({ type: "AGENT_EXITED_SUCCESS" });
     }
     clearCurrentIssueContext();

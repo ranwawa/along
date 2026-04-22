@@ -45,6 +45,10 @@ export class SessionPathManager {
     return path.join(this.getIssueDir(), "issue.json");
   }
 
+  getPlanningContextFile(): string {
+    return path.join(this.getIssueDir(), "planning-context.json");
+  }
+
   getStepOutputFile(stepNumber: number, scriptName: string): string {
     return path.join(this.getIssueDir(), `step${stepNumber}-${scriptName}.md`);
   }
