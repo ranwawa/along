@@ -49,15 +49,22 @@ function withIssueLock(owner: string, repo: string, issueNumber: number, fn: () 
  */
 function findIssueByPr(owner: string, repo: string, prNumber: number): { issueNumber: number; statusData: any; paths: SessionPathManager } | null {
   const res = findSessionByPr(owner, repo, prNumber);
-  if (!res.success || !res.data) return null;
 
-  const found = res.data;
-  const paths = new SessionPathManager(owner, repo, found.issueNumber);
-  return {
-    issueNumber: found.issueNumber,
-    statusData: found.statusData,
-    paths,
-  };
+  if (res.success && res.data) {
+    const found = res.data;
+    const paths = new SessionPathManager(owner, repo, found.issueNumber);
+    return {
+      issueNumber: found.issueNumber,
+      statusData: found.statusData,
+      paths,
+    };
+  }
+
+  if (!res.success) {
+    logger.error(`数据库错误: ${res.error}`);
+  }
+
+  return null;
 }
 
 // ─── reviewPr ───────────────────────────────────────────────
