@@ -54,4 +54,54 @@ describe("session-state-machine.ts", () => {
     expect(isActiveSessionStatus("waiting_human")).toBe(false);
     expect(isActiveSessionStatus("completed")).toBe(false);
   });
+
+  it("Issue 关闭后进入 completed/done/archive_result", () => {
+    const result = applySessionStateEvent(
+      { lifecycle: "waiting_external", phase: "stabilization", step: "await_merge", context: { issueNumber: 1 } },
+      { type: "ISSUE_CLOSED" },
+    );
+
+    expect(result.nextLifecycle).toBe("completed");
+    expect(result.patch.phase).toBe("done");
+    expect(result.patch.step).toBe("archive_result");
+    expect(result.patch.message).toBe("Issue 已关闭");
+    expect(result.patch.endTime).toBe("2026-04-20T12:00:00.000Z");
+  });
+
+  it("ISSUE_CLOSED 支持自定义消息", () => {
+    const result = applySessionStateEvent(
+      { lifecycle: "waiting_external", phase: "stabilization", step: "await_merge", context: { issueNumber: 1 } },
+      { type: "ISSUE_CLOSED", message: "Issue 已关闭（兜底同步）" },
+    );
+
+    expect(result.nextLifecycle).toBe("completed");
+    expect(result.patch.message).toBe("Issue 已关闭（兜底同步）");
+  });
+
+  it("PR 被拒绝后进入 failed 状态", () => {
+    const result = applySessionStateEvent(
+      { lifecycle: "waiting_external", phase: "stabilization", step: "await_merge", context: { issueNumber: 1 } },
+      { type: "PR_REJECTED", message: "PR #10 被关闭但未合并" },
+    );
+
+    expect(result.nextLifecycle).toBe("failed");
+    expect(result.patch.phase).toBe("stabilization");
+    expect(result.patch.step).toBe("await_merge");
+    expect(result.patch.message).toBe("PR #10 被关闭但未合并");
+    expect(result.patch.endTime).toBe("2026-04-20T12:00:00.000Z");
+    expect(result.patch.error).toEqual({
+      message: "PR #10 被关闭但未合并",
+      retryable: false,
+    });
+  });
+
+  it("PR_REJECTED 使用默认消息", () => {
+    const result = applySessionStateEvent(
+      { lifecycle: "waiting_external", phase: "stabilization", step: "await_merge", context: { issueNumber: 1 } },
+      { type: "PR_REJECTED" },
+    );
+
+    expect(result.nextLifecycle).toBe("failed");
+    expect(result.patch.message).toBe("PR 被关闭但未合并");
+  });
 });

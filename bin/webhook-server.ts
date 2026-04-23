@@ -30,13 +30,14 @@ import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
 import { ensureWebhookSecret, ensureProjectBootstrap } from "./bootstrap";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
-import { syncLifecycleLabel } from "./github-client";
+import { syncLifecycleLabel, get_gh_client } from "./github-client";
 import {
   isActiveSessionStatus,
   EVENT,
   LIFECYCLE,
   COMMAND,
   PHASE,
+  STEP,
 } from "./session-state-machine";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
@@ -102,6 +103,10 @@ function runAgent(label: string, fn: () => Promise<any>) {
 const DEDUP_MAX_SIZE = 1000;
 const processedDeliveries = new Set<string>();
 const issueCommentLocks = new Map<string, Promise<any>>();
+
+// ── Dashboard 兜底同步节流（防止频繁调用 GitHub API） ──
+const FALLBACK_SYNC_INTERVAL_MS = 60_000;
+let lastFallbackSyncTime = 0;
 
 function isDuplicateDelivery(deliveryId: string): boolean {
   if (!deliveryId || deliveryId === "-") return false;
@@ -267,6 +272,36 @@ async function handleEvent(
         return {
           status: 202,
           message: `已触发 Issue #${issueNumber} 资产清理`,
+        };
+      }
+
+      if (action === "closed") {
+        logger.info(`Issue #${issueNumber} 已关闭，检查关联 session...`);
+        fireAndForget(async () => {
+          const session = new SessionManager(owner, repo, issueNumber);
+          const statusRes = session.readStatus();
+          if (!statusRes.success || !statusRes.data) return;
+
+          const { lifecycle } = statusRes.data;
+          if (lifecycle === LIFECYCLE.COMPLETED || lifecycle === LIFECYCLE.FAILED) return;
+
+          await session.transition({ type: EVENT.ISSUE_CLOSED });
+          await syncLifecycleLabel(owner, repo, issueNumber, LIFECYCLE.COMPLETED);
+
+          logger.info(`Issue #${issueNumber} 关闭，开始清理本地资源...`);
+          const cleanRes = await cleanupIssue(
+            String(issueNumber),
+            { reason: "issue-closed", silent: false },
+            owner,
+            repo,
+          );
+          if (!cleanRes.success) {
+            logger.warn(`清理 Issue #${issueNumber} 失败: ${cleanRes.error}`);
+          }
+        });
+        return {
+          status: 202,
+          message: `已触发 Issue #${issueNumber} 关闭处理`,
         };
       }
 
@@ -515,6 +550,34 @@ async function handleEvent(
         return { status: 200, message: "PR 已合并但未关联 issue" };
       }
 
+      if (action === "closed" && !payload.pull_request?.merged) {
+        const body = payload.pull_request?.body || "";
+        const issueMatch = body.match(/(?:fixes|closes|resolves)\s+#(\d+)/i);
+        if (issueMatch) {
+          const linkedIssue = Number(issueMatch[1]);
+          logger.info(`PR #${prNumber} 被关闭但未合并，处理 Issue #${linkedIssue}...`);
+          fireAndForget(async () => {
+            const session = new SessionManager(owner, repo, linkedIssue);
+            const statusRes = session.readStatus();
+            if (!statusRes.success || !statusRes.data) return;
+
+            const { lifecycle } = statusRes.data;
+            if (lifecycle === LIFECYCLE.COMPLETED || lifecycle === LIFECYCLE.FAILED) return;
+
+            await session.transition({
+              type: EVENT.PR_REJECTED,
+              message: `PR #${prNumber} 被关闭但未合并`,
+            });
+            await syncLifecycleLabel(owner, repo, linkedIssue, LIFECYCLE.FAILED);
+          });
+          return {
+            status: 202,
+            message: `PR #${prNumber} 被拒绝，已触发 Issue #${linkedIssue} 状态更新`,
+          };
+        }
+        return { status: 200, message: "PR 被关闭但未关联 issue" };
+      }
+
       return { status: 200, message: `忽略 pull_request.${action} 事件` };
     }
 
@@ -719,6 +782,80 @@ async function main() {
             });
           }
         }
+
+        // 兜底同步：对 await_merge 状态的 session 检查 GitHub 实际状态
+        const now = Date.now();
+        if (now - lastFallbackSyncTime >= FALLBACK_SYNC_INTERVAL_MS) {
+          lastFallbackSyncTime = now;
+          const staleAwaitMerge = sessions.filter(
+            (s) =>
+              s.lifecycle === LIFECYCLE.WAITING_EXTERNAL &&
+              s.step === STEP.AWAIT_MERGE,
+          );
+          if (staleAwaitMerge.length > 0) {
+            fireAndForget(async () => {
+              for (const s of staleAwaitMerge) {
+                try {
+                  const clientRes = await get_gh_client(s.owner, s.repo);
+                  if (!clientRes.success) continue;
+                  const client = clientRes.data;
+
+                  const prNumber = s.context?.prNumber;
+                  if (prNumber) {
+                    const prRes = await client.getPullRequest(prNumber);
+                    if (!prRes.success) continue;
+                    const pr = prRes.data;
+
+                    const session = new SessionManager(s.owner, s.repo, s.issueNumber);
+                    if (pr.merged) {
+                      logger.info(`[兜底同步] PR #${prNumber} 已合并，同步 Issue #${s.issueNumber} 状态`);
+                      await session.transition({ type: EVENT.PR_MERGED });
+                      await syncLifecycleLabel(s.owner, s.repo, s.issueNumber, LIFECYCLE.COMPLETED);
+                      const cleanRes = await cleanupIssue(
+                        String(s.issueNumber),
+                        { reason: "fallback-sync", silent: true },
+                        s.owner,
+                        s.repo,
+                      );
+                      if (!cleanRes.success) {
+                        logger.warn(`[兜底同步] 清理 Issue #${s.issueNumber} 失败: ${cleanRes.error}`);
+                      }
+                    } else if (pr.state === "closed") {
+                      logger.info(`[兜底同步] PR #${prNumber} 已关闭未合并，同步 Issue #${s.issueNumber} 状态`);
+                      await session.transition({
+                        type: EVENT.PR_REJECTED,
+                        message: `PR #${prNumber} 被关闭但未合并（兜底同步）`,
+                      });
+                      await syncLifecycleLabel(s.owner, s.repo, s.issueNumber, LIFECYCLE.FAILED);
+                    }
+                    continue;
+                  }
+
+                  const issueRes = await client.getIssue(s.issueNumber);
+                  if (!issueRes.success) continue;
+                  if (issueRes.data.state === "closed") {
+                    logger.info(`[兜底同步] Issue #${s.issueNumber} 已关闭，同步状态`);
+                    const session = new SessionManager(s.owner, s.repo, s.issueNumber);
+                    await session.transition({ type: EVENT.ISSUE_CLOSED, message: "Issue 已关闭（兜底同步）" });
+                    await syncLifecycleLabel(s.owner, s.repo, s.issueNumber, LIFECYCLE.COMPLETED);
+                    const cleanRes = await cleanupIssue(
+                      String(s.issueNumber),
+                      { reason: "fallback-sync", silent: true },
+                      s.owner,
+                      s.repo,
+                    );
+                    if (!cleanRes.success) {
+                      logger.warn(`[兜底同步] 清理 Issue #${s.issueNumber} 失败: ${cleanRes.error}`);
+                    }
+                  }
+                } catch (err: any) {
+                  logger.warn(`[兜底同步] Issue #${s.issueNumber} 同步异常: ${err.message}`);
+                }
+              }
+            });
+          }
+        }
+
         return new Response(JSON.stringify(sessions), {
           headers: {
             "Content-Type": "application/json",
