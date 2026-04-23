@@ -15,6 +15,7 @@ export interface AgentRoleConfig {
 interface AlongGlobalConfig {
   agents?: Record<string, AgentRoleConfig>;
   defaultAgent?: string;
+  webhookSecret?: string;
 }
 
 let cachedConfig: AlongGlobalConfig | null = null;
@@ -86,4 +87,12 @@ export function resolveAgentToken(): string | null {
   }
 
   return token;
+}
+
+export function getWebhookSecret(): string | null {
+  const res = readGlobalConfig();
+  if (res.success) {
+    return res.data?.webhookSecret || null;
+  }
+  return null;
 }

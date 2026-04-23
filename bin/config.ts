@@ -26,8 +26,10 @@ export interface EditorMapping {
 export interface EditorConfig {
   id: string;
   name: string;
+  detectDir: string;
   mappings: EditorMapping[];
-  runTemplate: string; // 启动 Agent 的指令模版，如 "{tag} run \"/{workflow} {num}\""
+  runTemplate: string;
+  ensurePermissions?: (worktreePath: string, userAlongDir: string) => void;
 }
 
 // 确保目录存在
@@ -88,16 +90,19 @@ export const config = {
 
     // 3. 目录特征检测（向后兼容已有项目）
     const execPath = process.argv[1] || "";
-    if (fs.existsSync(path.join(workingDir, ".opencode")) || execPath.includes(".opencode")) return success("opencode");
-    if (fs.existsSync(path.join(workingDir, ".pi")) || execPath.includes(".pi")) return success("pi");
-    if (fs.existsSync(path.join(workingDir, ".claude")) || execPath.includes(".claude")) return success("claude");
+    for (const editor of config.EDITORS) {
+      if (fs.existsSync(path.join(workingDir, editor.detectDir)) || execPath.includes(editor.detectDir)) {
+        return success(editor.id);
+      }
+    }
 
     // 4. 无法检测时报错，不再静默回退为 "along"
+    const editorIds = config.EDITORS.map(e => e.id).join("|");
     return failure(
       `无法检测 Agent 类型。请通过以下方式之一指定：\n` +
-      `  1. 设置环境变量 AGENT_TYPE=opencode|pi|claude\n` +
-      `  2. 在项目根目录创建 .along.json，内容为 {"agent": "opencode|pi|claude"}\n` +
-      `  3. 在 package.json 中添加 "along": {"agent": "opencode|pi|claude"}`
+      `  1. 设置环境变量 AGENT_TYPE=${editorIds}\n` +
+      `  2. 在项目根目录创建 .along.json，内容为 {"agent": "${editorIds}"}\n` +
+      `  3. 在 package.json 中添加 "along": {"agent": "${editorIds}"}`
     );
   },
 
@@ -106,15 +111,33 @@ export const config = {
     {
       id: "opencode",
       name: "OpenCode",
+      detectDir: ".opencode",
       runTemplate: '{tag} run --command {workflow} {num}',
       mappings: [
         { from: "skills", to: ".opencode/skills" },
         { from: "prompts", to: ".opencode/commands" },
       ],
+      ensurePermissions: (worktreePath: string, userAlongDir: string) => {
+        const configPath = path.join(worktreePath, "opencode.json");
+        let existing: any = {};
+        if (fs.existsSync(configPath)) {
+          try { existing = JSON.parse(fs.readFileSync(configPath, "utf-8")); } catch { existing = {}; }
+        }
+        const alongPattern = `${userAlongDir}/**`;
+        const permission = existing.permission || {};
+        const extDir = permission.external_directory || {};
+        if (extDir[alongPattern] === "allow") return;
+        extDir[alongPattern] = "allow";
+        permission.external_directory = extDir;
+        existing.permission = permission;
+        if (!existing.$schema) existing.$schema = "https://opencode.ai/config.json";
+        fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
+      },
     },
     {
       id: "pi",
       name: "PI",
+      detectDir: ".pi",
       runTemplate: "{tag} --prompt-template {workflow} {num}",
       mappings: [
         { from: "skills", to: ".pi/skills" },
@@ -122,13 +145,47 @@ export const config = {
       ],
     },
     {
+      id: "codex",
+      name: "Codex",
+      detectDir: ".codex",
+      runTemplate: 'codex exec "请解决 GitHub Issue #{num}，严格按照 .codex/prompts/{workflow}.md 工作流执行"',
+      mappings: [
+        { from: "skills", to: ".codex/skills" },
+        { from: "prompts", to: ".codex/prompts" },
+      ],
+    },
+    {
       id: "claude",
-      name: "Claude Code",
+      name: "Kira Code",
+      detectDir: ".claude",
       runTemplate: '{tag} "请解决 GitHub Issue #{num}，严格按照系统提示中的工作流执行" --append-system-prompt-file .claude/commands/{workflow}.md --dangerously-skip-permissions --output-format stream-json --verbose --print',
       mappings: [
         { from: "skills", to: ".claude/skills" },
         { from: "prompts", to: ".claude/commands" },
       ],
+      ensurePermissions: (worktreePath: string, userAlongDir: string) => {
+        const claudeDir = path.join(worktreePath, ".claude");
+        if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+        const configPath = path.join(claudeDir, "settings.local.json");
+        let existing: any = {};
+        if (fs.existsSync(configPath)) {
+          try { existing = JSON.parse(fs.readFileSync(configPath, "utf-8")); } catch { existing = {}; }
+        }
+        const permissions = existing.permissions || {};
+        const allow: string[] = permissions.allow || [];
+        const requiredPatterns = [
+          `Bash(along *)`,
+          `Read(${userAlongDir}/**)`,
+          `Edit(${userAlongDir}/**)`,
+          `Write(${userAlongDir}/**)`,
+        ];
+        const missing = requiredPatterns.filter(p => !allow.includes(p));
+        if (missing.length === 0) return;
+        allow.push(...missing);
+        permissions.allow = allow;
+        existing.permissions = permissions;
+        fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
+      },
     },
   ] as EditorConfig[],
 };

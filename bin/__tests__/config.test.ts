@@ -80,19 +80,21 @@ describe("config.ts", () => {
   });
 
   describe("EDITORS", () => {
-    it("应包含 opencode, pi, claude 三个编辑器", () => {
-      expect(config.EDITORS).toHaveLength(3);
+    it("应包含 opencode, pi, codex, claude 四个编辑器", () => {
+      expect(config.EDITORS).toHaveLength(4);
       const ids = config.EDITORS.map((e) => e.id);
       expect(ids).toContain("opencode");
       expect(ids).toContain("pi");
+      expect(ids).toContain("codex");
       expect(ids).toContain("claude");
     });
 
-    it("每个编辑器都有 mappings 和 runTemplate", () => {
+    it("每个编辑器都有 mappings, runTemplate 和 detectDir", () => {
       for (const editor of config.EDITORS) {
         expect(editor.mappings.length).toBeGreaterThan(0);
         expect(editor.runTemplate).toBeTruthy();
         expect(editor.name).toBeTruthy();
+        expect(editor.detectDir).toMatch(/^\./);
       }
     });
 
@@ -102,6 +104,13 @@ describe("config.ts", () => {
           expect(["skills", "prompts"]).toContain(mapping.from);
         }
       }
+    });
+
+    it("opencode 和 claude 有 ensurePermissions 回调", () => {
+      const opencode = config.EDITORS.find(e => e.id === "opencode");
+      const claude = config.EDITORS.find(e => e.id === "claude");
+      expect(typeof opencode?.ensurePermissions).toBe("function");
+      expect(typeof claude?.ensurePermissions).toBe("function");
     });
   });
 });

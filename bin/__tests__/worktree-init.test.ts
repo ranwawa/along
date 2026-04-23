@@ -17,6 +17,7 @@ vi.mock("../config", () => ({
       {
         id: "opencode",
         name: "OpenCode",
+        detectDir: ".opencode",
         mappings: [{ from: "skills", to: ".opencode/skills" }],
       },
     ],
@@ -86,6 +87,7 @@ describe("worktree-init.ts", () => {
       const result = syncEditorMappings("/mock/worktree", {
         id: "opencode",
         name: "OpenCode",
+        detectDir: ".opencode",
         mappings: [{ from: "skills", to: ".opencode/skills" }],
         runTemplate: "",
       });

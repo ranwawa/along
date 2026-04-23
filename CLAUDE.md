@@ -19,7 +19,6 @@ The global command `along` maps to `bin/setup.ts`, which dispatches subcommands 
 
 ```bash
 along webhook-server --port 9876    # 启动本地 webhook 服务器，接收 GitHub App webhook 事件
-along app-init                      # 引导配置 GitHub App 以接收仓库事件
 along run 42                        # 手动触发：fetch issue #42, create worktree, launch agent
 ```
 
@@ -39,15 +38,15 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Data Flow
 
-1. `along run <N>` validates environment (git repo, GitHub remote), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, then creates editor-path symlinks back to the repo `skills/` and `prompts/` directories before launching the configured AI agent via Bun.spawn.
+1. `along run <N>` validates environment (git repo, GitHub remote), runs idempotent project bootstrap (auto-creates `.along.json`, syncs editor mappings/permissions), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, then creates editor-path symlinks back to the repo `skills/` and `prompts/` directories before launching the configured AI agent via Bun.spawn.
 2. The agent follows the phase-specific SOP in `prompts/resolve-github-issue-planning.md` and `prompts/resolve-github-issue-implementation.md`.
 3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates the session status in SQLite and `todo.md` in the issue directory.
-4. **Event-driven mode**: A GitHub App sends webhook events (issue opened, issue labeled, PR created, PR review submitted, check run completed) to the local `along webhook-server`. The server directly calls handler functions in `webhook-handlers.ts` (`reviewPr`, `resolveReview`, `resolveCi`) via fire-and-forget, without spawning subprocesses. Use `along app-init` to set up the GitHub App.
+4. **Event-driven mode**: A GitHub App sends webhook events (issue opened, issue labeled, PR created, PR review submitted, check run completed) to the local `along webhook-server`. The server resolves the webhook secret via three-level priority (CLI `--secret` > `ALONG_WEBHOOK_SECRET` env var > `~/.along/config.json` `webhookSecret` field); if no secret is found, it prints the GitHub App setup guide and exits.
 
 ### Directory Layout
 
 - `bin/` — All CLI scripts. Two categories:
-  - **Internal modules** (imported, not run directly): `config.ts`, `common.ts`, `exec.ts`, `github-client.ts`, `worktree-init.ts`, `session-manager.ts`, `task.ts`, `issue.ts`, `cleanup-utils.ts`, `todo-helper.ts`, `webhook-handlers.ts`
+  - **Internal modules** (imported, not run directly): `config.ts`, `common.ts`, `exec.ts`, `github-client.ts`, `worktree-init.ts`, `session-manager.ts`, `task.ts`, `issue.ts`, `cleanup-utils.ts`, `todo-helper.ts`, `webhook-handlers.ts`, `bootstrap.ts`
   - **CLI subcommands** (dispatched by `setup.ts`): everything else in `bin/`
 - `prompts/` — SOP templates consumed by AI agents. `$1` is replaced with the issue/PR number.
 - `skills/` — Reusable skill definitions (branch naming, conventional commits, PR summary, unit testing) synced into worktrees.
@@ -64,7 +63,7 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Editor Support
 
-Along supports multiple AI editors via `config.EDITORS`. Each editor has directory mappings (where to copy skills/prompts) and a `runTemplate` for launching the agent. Current editors: OpenCode, PI, Claude Code. The active editor is auto-detected from the working directory (`.opencode`, `.pi`, `.claude`) or `AGENT_TYPE` env var.
+Along supports multiple AI editors via `config.EDITORS`. Each editor entry includes: `id`, `name`, `detectDir` (for auto-detection), `mappings` (source→target directory symlinks), `runTemplate` (agent launch command), and optional `ensurePermissions` callback (worktree-level authorization). Current editors: OpenCode, PI, Codex, Kira Code. The active editor is auto-detected from the working directory or `AGENT_TYPE` env var. Adding a new editor only requires appending an entry to the `EDITORS` array; adding a new source type (e.g., subagent, tool, hook) only requires adding a mapping entry.
 
 ### Issue Artifacts (under `~/.along/{owner}/{repo}/{issueNumber}/`)
 

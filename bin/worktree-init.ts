@@ -104,12 +104,19 @@ export function setupPlanningWorkspace(worktreePath: string, repoRoot: string, s
 }
 
 function removeTargetPath(targetPath: string): Result<void> {
-  if (!fs.existsSync(targetPath)) {
+  let stat: fs.Stats | null = null;
+  try {
+    stat = fs.lstatSync(targetPath);
+  } catch {
     return success(undefined);
   }
 
   try {
-    fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 3 });
+    if (stat.isSymbolicLink()) {
+      fs.unlinkSync(targetPath);
+    } else {
+      fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 3 });
+    }
     return success(undefined);
   } catch (rmError: any) {
     logger.warn(`删除目标失败，尝试强制移除: ${rmError.message}`);

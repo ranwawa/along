@@ -81,77 +81,14 @@ export function ensureEditorPermissions(worktreePath: string) {
     commonLogger.error(editorRes.error);
     return;
   }
-  const editorId = editorRes.data;
+  const editor = config.EDITORS.find(e => e.id === editorRes.data);
+  if (!editor?.ensurePermissions) return;
 
-  if (editorId === "opencode") {
-    ensureOpenCodePermissions(worktreePath);
-  } else if (editorId === "claude") {
-    ensureClaudePermissions(worktreePath);
+  try {
+    editor.ensurePermissions(worktreePath, config.USER_ALONG_DIR);
+    commonLogger.info(`已自动授权 ${editor.name} 访问 ${config.USER_ALONG_DIR}/`);
+  } catch (e: any) {
+    commonLogger.warn(`自动授权 ${editor.name} 失败: ${e.message}`);
   }
-}
-
-function ensureOpenCodePermissions(worktreePath: string) {
-  const configPath = path.join(worktreePath, "opencode.json");
-  let existing: any = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    } catch {
-      existing = {};
-    }
-  }
-
-  const alongPattern = `${config.USER_ALONG_DIR}/**`;
-  const permission = existing.permission || {};
-  const extDir = permission.external_directory || {};
-
-  if (extDir[alongPattern] === "allow") return;
-
-  extDir[alongPattern] = "allow";
-  permission.external_directory = extDir;
-  existing.permission = permission;
-  if (!existing.$schema) {
-    existing.$schema = "https://opencode.ai/config.json";
-  }
-
-  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
-  commonLogger.info(`已自动授权 opencode 访问 ${config.USER_ALONG_DIR}/`);
-}
-
-function ensureClaudePermissions(worktreePath: string) {
-  const claudeDir = path.join(worktreePath, ".claude");
-  if (!fs.existsSync(claudeDir)) {
-    fs.mkdirSync(claudeDir, { recursive: true });
-  }
-
-  const configPath = path.join(claudeDir, "settings.local.json");
-  let existing: any = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    } catch {
-      existing = {};
-    }
-  }
-
-  const permissions = existing.permissions || {};
-  const allow: string[] = permissions.allow || [];
-
-  const alongBashPattern = `Bash(along *)`;
-  const alongReadPattern = `Read(${config.USER_ALONG_DIR}/**)`;
-  const alongEditPattern = `Edit(${config.USER_ALONG_DIR}/**)`;
-  const alongWritePattern = `Write(${config.USER_ALONG_DIR}/**)`;
-
-  const requiredPatterns = [alongBashPattern, alongReadPattern, alongEditPattern, alongWritePattern];
-  const missing = requiredPatterns.filter((p) => !allow.includes(p));
-
-  if (missing.length === 0) return;
-
-  allow.push(...missing);
-  permissions.allow = allow;
-  existing.permissions = permissions;
-
-  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + "\n");
-  commonLogger.info(`已自动授权 claude 访问 ${config.USER_ALONG_DIR}/`);
 }
 

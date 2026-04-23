@@ -21,6 +21,7 @@ import { launchIssueAgent, tryRecoverFromStaleLabel } from "./issue-agent";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { readSession } from "./db";
 import { PHASE, LIFECYCLE, STEP, type SessionPhase } from "./session-state-machine";
+import { ensureProjectBootstrap } from "./bootstrap";
 
 /**
  * run - 极简一键启动入口
@@ -259,6 +260,11 @@ async function main() {
   if (!envRes.success) {
     logger.error(envRes.error);
     process.exit(1);
+  }
+
+  const bootstrapRes = await ensureProjectBootstrap();
+  if (!bootstrapRes.success) {
+    logger.warn(bootstrapRes.error);
   }
 
   const program = configureCommand();

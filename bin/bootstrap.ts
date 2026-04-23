@@ -1,43 +1,77 @@
-#!/usr/bin/env bun
-/**
- * app-init.ts - 引导配置 GitHub App 以接收仓库事件
- *
- * 打印分步指引，帮助用户创建 GitHub App 并配置 webhook，
- * 使 GitHub 事件能直接推送到本地 along webhook-server。
- *
- * 用法：
- *   along app-init                              # 打印配置指引
- *   along app-init --webhook-url https://xxx    # 指定 webhook URL
- *   along app-init --open                       # 打开浏览器到 GitHub App 创建页面
- */
-
-import { Command } from "commander";
-import { consola } from "consola";
+import fs from "fs";
+import path from "path";
 import chalk from "chalk";
+import { consola } from "consola";
+import { success, failure } from "./result";
+import type { Result } from "./result";
+import { config } from "./config";
+import { syncEditorMappings } from "./worktree-init";
+import { ensureEditorPermissions } from "./common";
+import { getWebhookSecret } from "./agent-config";
 import { readRepoInfo } from "./github-client";
 
-const logger = consola.withTag("app-init");
+const logger = consola.withTag("bootstrap");
 
-async function main() {
-  const program = new Command()
-    .name("along app-init")
-    .description("引导配置 GitHub App 以接收仓库事件")
-    .option("--webhook-url <url>", "Webhook 服务器的公网 URL（如 ngrok/cloudflared 隧道地址）")
-    .option("--open", "打开浏览器到 GitHub App 创建页面", false)
-    .parse(process.argv);
+export async function ensureProjectBootstrap(): Promise<Result<void>> {
+  const workingDir = process.cwd();
+  const alongJsonPath = path.join(workingDir, ".along.json");
 
-  const opts = program.opts();
-  const repoInfo = await readRepoInfo();
-
-  if (opts.open) {
-    const url = "https://github.com/settings/apps/new";
-    logger.info(`正在打开浏览器: ${url}`);
-    Bun.spawn(["open", url], { stdout: "ignore", stderr: "ignore" });
+  if (!fs.existsSync(alongJsonPath)) {
+    const tagRes = config.getLogTag();
+    if (tagRes.success) {
+      try {
+        fs.writeFileSync(alongJsonPath, JSON.stringify({ agent: tagRes.data }, null, 2) + "\n");
+        logger.info(`已自动创建 .along.json (agent: ${tagRes.data})`);
+      } catch (e: any) {
+        logger.warn(`创建 .along.json 失败: ${e.message}`);
+      }
+    }
   }
 
-  const webhookUrl = opts.webhookUrl ? `${opts.webhookUrl}/webhook` : "<你的公网地址>/webhook";
+  const tagRes = config.getLogTag();
+  if (!tagRes.success) {
+    return failure(tagRes.error);
+  }
+
+  const editor = config.EDITORS.find(e => e.id === tagRes.data);
+  if (editor) {
+    const syncRes = syncEditorMappings(workingDir, editor);
+    if (!syncRes.success) {
+      logger.warn(`编辑器映射同步失败: ${syncRes.error}`);
+    }
+    ensureEditorPermissions(workingDir);
+  }
+
+  return success(undefined);
+}
+
+export async function ensureWebhookSecret(opts: { secret?: string }): Promise<Result<string>> {
+  if (opts.secret) return success(opts.secret);
+
+  const envSecret = process.env.ALONG_WEBHOOK_SECRET;
+  if (envSecret) return success(envSecret);
+
+  const configSecret = getWebhookSecret();
+  if (configSecret) return success(configSecret);
 
   console.log("");
+  console.log(chalk.bold.red("错误: 未配置 webhook secret"));
+  console.log("");
+  console.log("请通过以下方式之一提供 webhook secret:");
+  console.log(`  1. ${chalk.cyan("along webhook-server --secret <secret>")}`);
+  console.log(`  2. 设置环境变量 ${chalk.cyan("ALONG_WEBHOOK_SECRET=<secret>")}`);
+  console.log(`  3. 在 ${chalk.cyan("~/.along/config.json")} 中添加 ${chalk.cyan('"webhookSecret": "<secret>"')}`);
+  console.log("");
+  console.log("如果你还没有创建 GitHub App，请按以下步骤操作:");
+  console.log("");
+  await printGitHubAppGuide();
+
+  return failure("未配置 webhook secret");
+}
+
+export async function printGitHubAppGuide() {
+  const repoInfo = await readRepoInfo();
+
   console.log(chalk.bold.cyan("╔══════════════════════════════════════════════════╗"));
   console.log(chalk.bold.cyan("║        Along — GitHub App 配置指引               ║"));
   console.log(chalk.bold.cyan("╚══════════════════════════════════════════════════╝"));
@@ -46,7 +80,6 @@ async function main() {
   console.log(`详细文档请参考: ${chalk.cyan("docs/github-app-setup.md")}`);
   console.log("");
 
-  // ─── Step 1: 创建 GitHub App ───
   console.log(chalk.bold.cyan("─── Step 1: 创建 GitHub App ───"));
   console.log("");
   console.log(`  打开 ${chalk.cyan("https://github.com/settings/apps/new")}`);
@@ -67,23 +100,19 @@ async function main() {
   console.log(`  ${chalk.yellow("Redirect on update")}               - ${chalk.dim("不勾选")}`);
   console.log("");
 
-  // ─── Step 2: 配置 Webhook ───
   console.log(chalk.bold.cyan("─── Step 2: 配置 Webhook ───"));
   console.log("");
   console.log(`  ${chalk.yellow("Active")}                           - ${chalk.green("✓ 勾选")}`);
-  console.log(`  ${chalk.yellow("Webhook URL")}                      - ${chalk.cyan(webhookUrl)}`);
-  if (!opts.webhookUrl) {
-    console.log("");
-    console.log("    需要通过隧道工具将本地端口暴露到公网:");
-    console.log(`    ${chalk.cyan("ngrok http 9876")}                    → 复制生成的 https://xxx.ngrok-free.app`);
-    console.log(`    ${chalk.cyan("cloudflared tunnel --url http://localhost:9876")}  → 复制生成的 https://xxx.trycloudflare.com`);
-  }
+  console.log(`  ${chalk.yellow("Webhook URL")}                      - ${chalk.cyan("<你的公网地址>/webhook")}`);
+  console.log("");
+  console.log("    需要通过隧道工具将本地端口暴露到公网:");
+  console.log(`    ${chalk.cyan("ngrok http 9876")}                    → 复制生成的 https://xxx.ngrok-free.app`);
+  console.log(`    ${chalk.cyan("cloudflared tunnel --url http://localhost:9876")}  → 复制生成的 https://xxx.trycloudflare.com`);
   console.log(`  ${chalk.yellow("Webhook secret")}                   - 用以下命令生成:`);
   console.log(`                                     ${chalk.cyan("openssl rand -hex 32")}`);
   console.log(`                                     ${chalk.dim("记下这个值，启动 webhook-server 时要用")}`);
   console.log("");
 
-  // ─── Step 3: 设置权限 ───
   console.log(chalk.bold.cyan("─── Step 3: 设置权限 (Repository permissions) ───"));
   console.log("");
   console.log("  只需设置以下 4 项，其余全部保持 No access:");
@@ -96,7 +125,6 @@ async function main() {
   console.log(chalk.dim("  Organization permissions / Account permissions → 全部保持默认，不需要改"));
   console.log("");
 
-  // ─── Step 4: 订阅事件 ───
   console.log(chalk.bold.cyan("─── Step 4: 订阅事件 (Subscribe to events) ───"));
   console.log("");
   console.log("  勾选以下 5 个事件（设置权限后才会出现对应选项）:");
@@ -110,7 +138,6 @@ async function main() {
   console.log(chalk.dim("  其余事件不要勾选"));
   console.log("");
 
-  // ─── Step 5: 安装范围 ───
   console.log(chalk.bold.cyan("─── Step 5: 安装范围 ───"));
   console.log("");
   console.log(`  ${chalk.green("◉")} Only on this account      ${chalk.dim("只在自己账号下使用")}`);
@@ -119,7 +146,6 @@ async function main() {
   console.log(`  点击 ${chalk.bold.green("Create GitHub App")} 按钮完成创建`);
   console.log("");
 
-  // ─── Step 6: 安装到仓库 ───
   console.log(chalk.bold.cyan("─── Step 6: 安装 App 到仓库 ───"));
   console.log("");
   console.log("  创建完成后会跳转到 App 设置页:");
@@ -134,7 +160,6 @@ async function main() {
   console.log(`  4. 点击 ${chalk.bold.green("Install")} 完成安装`);
   console.log("");
 
-  // ─── Step 7: 启动服务 ───
   console.log(chalk.bold.cyan("─── Step 7: 启动 webhook 服务器 ───"));
   console.log("");
   console.log(`  ${chalk.cyan("along webhook-server --port 9876 --secret <你的-webhook-secret>")}`);
@@ -144,7 +169,6 @@ async function main() {
   console.log(`  2. 观察 webhook-server 终端是否输出 ${chalk.green("收到事件: issues.opened")}`);
   console.log("");
 
-  // ─── 事件映射 ───
   console.log(chalk.bold.cyan("─── 事件映射 ───"));
   console.log("");
   console.log("  GitHub App 推送的事件将自动触发以下命令:");
@@ -158,8 +182,3 @@ async function main() {
   console.log(`  ${chalk.yellow("check_run.completed")}        → resolveCi()                 ${chalk.dim("CI 失败自动修复")}`);
   console.log("");
 }
-
-main().catch((err) => {
-  logger.error("初始化失败:", err);
-  process.exit(1);
-});

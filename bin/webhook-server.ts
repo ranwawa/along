@@ -27,6 +27,7 @@ import { config } from "./config";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
+import { ensureWebhookSecret, ensureProjectBootstrap } from "./bootstrap";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
 import { syncLifecycleLabel } from "./github-client";
 import {
@@ -574,16 +575,22 @@ async function main() {
 
   const opts = program.opts();
   const port = parseInt(opts.port, 10);
-  const secret = opts.secret || process.env.ALONG_WEBHOOK_SECRET || "";
   const host = opts.host;
   const useDashboard = opts.dashboard !== false;
 
-  if (useDashboard) {
-    setupLogInterceptor();
+  const secretRes = await ensureWebhookSecret(opts);
+  if (!secretRes.success) {
+    process.exit(1);
+  }
+  const secret = secretRes.data;
+
+  const bootstrapRes = await ensureProjectBootstrap();
+  if (!bootstrapRes.success) {
+    logger.warn(bootstrapRes.error);
   }
 
-  if (!secret) {
-    logger.warn("未设置 webhook secret，将接受所有请求（不推荐用于生产环境）");
+  if (useDashboard) {
+    setupLogInterceptor();
   }
 
   const server = Bun.serve({
