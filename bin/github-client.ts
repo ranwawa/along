@@ -363,6 +363,72 @@ export class GitHubClient {
     }
   }
 
+  /**
+   * 列出仓库所有 label
+   */
+  async listLabels(): Promise<Result<RestEndpointMethodTypes["repos"]["listLabels"]["response"]["data"]>> {
+    try {
+      const data = await this.octokit.paginate(this.octokit.repos.listLabels, {
+        ...this.repoParams,
+        per_page: 100,
+      });
+      return success(data);
+    } catch (e: any) {
+      return failure(`列出仓库标签失败: ${e.message}`);
+    }
+  }
+
+  /**
+   * 创建 label
+   */
+  async createLabel(name: string, color: string, description: string): Promise<Result<void>> {
+    try {
+      await this.octokit.repos.createLabel({
+        ...this.repoParams,
+        name,
+        color,
+        description,
+      });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`创建标签 ${name} 失败: ${e.message}`);
+    }
+  }
+
+  /**
+   * 更新 label（颜色/描述）
+   */
+  async updateLabel(name: string, color: string, description: string): Promise<Result<void>> {
+    try {
+      await this.octokit.repos.updateLabel({
+        ...this.repoParams,
+        name,
+        color,
+        description,
+      });
+      return success(undefined);
+    } catch (e: any) {
+      return failure(`更新标签 ${name} 失败: ${e.message}`);
+    }
+  }
+
+  /**
+   * 删除 label
+   */
+  async deleteLabel(name: string): Promise<Result<void>> {
+    try {
+      await this.octokit.repos.deleteLabel({
+        ...this.repoParams,
+        name,
+      });
+      return success(undefined);
+    } catch (e: any) {
+      // 标签不存在时忽略 404
+      if (e.status === 404) return success(undefined);
+      return failure(`删除标签 ${name} 失败: ${e.message}`);
+    }
+  }
+
 }
 
 /**
