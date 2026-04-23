@@ -77,6 +77,8 @@ export const EVENT = {
   CI_FIX_STARTED: "CI_FIX_STARTED",
   CI_FIX_COMPLETED: "CI_FIX_COMPLETED",
   PR_MERGED: "PR_MERGED",
+  ISSUE_CLOSED: "ISSUE_CLOSED",
+  PR_REJECTED: "PR_REJECTED",
   APPROVED: "APPROVED",
   MANUAL_STATUS_UPDATE: "MANUAL_STATUS_UPDATE",
 } as const;
@@ -152,6 +154,8 @@ export type SessionStateEvent =
   | { type: typeof EVENT["CI_FIX_STARTED"]; failedCount: number }
   | { type: typeof EVENT["CI_FIX_COMPLETED"] }
   | { type: typeof EVENT["PR_MERGED"]; message?: string }
+  | { type: typeof EVENT["ISSUE_CLOSED"]; message?: string }
+  | { type: typeof EVENT["PR_REJECTED"]; message?: string }
   | { type: typeof EVENT["APPROVED"] }
   | { type: typeof EVENT["MANUAL_STATUS_UPDATE"]; lifecycle: SessionLifecycle; message?: string; step?: SessionStep };
 
@@ -507,6 +511,31 @@ export function applySessionStateEvent(
         pid: undefined,
         endTime: now,
         error: null,
+      });
+
+    case EVENT.ISSUE_CLOSED:
+      return nextStatePatch(current, {
+        lifecycle: LIFECYCLE.COMPLETED,
+        phase: PHASE.DONE,
+        step: STEP.ARCHIVE_RESULT,
+        message: event.message ?? "Issue 已关闭",
+        pid: undefined,
+        endTime: now,
+        error: null,
+      });
+
+    case EVENT.PR_REJECTED:
+      return nextStatePatch(current, {
+        lifecycle: LIFECYCLE.FAILED,
+        phase: current?.phase ?? PHASE.STABILIZATION,
+        step: current?.step ?? STEP.AWAIT_MERGE,
+        message: event.message ?? "PR 被关闭但未合并",
+        pid: undefined,
+        endTime: now,
+        error: {
+          message: event.message ?? "PR 被关闭但未合并",
+          retryable: false,
+        },
       });
 
     case EVENT.APPROVED:
