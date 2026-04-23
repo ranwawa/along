@@ -321,6 +321,10 @@ async function handleEvent(
         const sessionRes = session.readStatus();
         const sessionStatus = sessionRes.success ? sessionRes.data : null;
 
+        logger.debug(
+          `Issue #${issueNumber} 评论决策上下文: labels=[${issueLabels.join(",")}] isActionable=${isActionableIssue} session=${sessionStatus ? `phase=${sessionStatus.phase},lifecycle=${sessionStatus.lifecycle}` : "无"} command=${command} author=${commentUser.login}(${commentUser.type})`,
+        );
+
         if (command === COMMAND.APPROVE) {
           if (!isActionableIssue) {
             return {
@@ -395,10 +399,11 @@ async function handleEvent(
           };
         }
 
+        const isHumanFeedback = isHumanFeedbackComment(mirrorRes.data);
         if (
           isActionableIssue &&
           sessionStatus?.phase === PHASE.PLANNING &&
-          isHumanFeedbackComment(mirrorRes.data)
+          isHumanFeedback
         ) {
           const roundRes = ensureOpenDiscussionRound(owner, repo, issueNumber);
           if (!roundRes.success) {
@@ -434,6 +439,15 @@ async function handleEvent(
               ? "已记录 planning 反馈，等待当前 Agent 处理完成后继续"
               : "已记录 planning 反馈",
           };
+        } else {
+          const reasons = [];
+          if (!isActionableIssue) reasons.push("缺少 bug/feature label");
+          if (!sessionStatus) reasons.push("无 session");
+          else if (sessionStatus.phase !== PHASE.PLANNING) reasons.push(`phase=${sessionStatus.phase}(非 planning)`);
+          if (!isHumanFeedback) reasons.push("非人类反馈评论");
+          logger.debug(
+            `Issue #${issueNumber} 未进入 planning 反馈处理: ${reasons.join(", ")}`,
+          );
         }
 
         if (planningCommentRes.data !== "ignored") {
