@@ -36,7 +36,18 @@ export async function getDefaultBranch(): Promise<Result<string>> {
 export async function setupWorktree(worktreePath: string, session?: SessionManager): Promise<Result<null>> {
   if (fs.existsSync(worktreePath)) {
     if (fs.existsSync(path.join(worktreePath, ".along/issue-mark"))) return success(null);
-    return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
+    // planning 阶段创建的软链需要先清理再创建真正的 worktree
+    try {
+      const stat = fs.lstatSync(worktreePath);
+      if (stat.isSymbolicLink()) {
+        fs.unlinkSync(worktreePath);
+        logger.info("已清理 planning 阶段的软链工作目录");
+      } else {
+        return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
+      }
+    } catch {
+      return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
+    }
   }
 
   const defaultBranchRes = await getDefaultBranch();
@@ -69,6 +80,26 @@ export async function setupWorktree(worktreePath: string, session?: SessionManag
   console.log(chalk.green("✓"), "创建 worktree 完成");
   session?.logEvent("worktree-created", { worktreePath, defaultBranch });
 
+  return success(null);
+}
+
+export function setupPlanningWorkspace(worktreePath: string, repoRoot: string, session?: SessionManager): Result<null> {
+  if (fs.existsSync(worktreePath)) {
+    try {
+      const stat = fs.lstatSync(worktreePath);
+      if (stat.isSymbolicLink()) return success(null);
+      if (fs.existsSync(path.join(worktreePath, ".along/issue-mark"))) return success(null);
+    } catch {}
+    return failure(`工作目录已存在，请手动检查: ${worktreePath}`);
+  }
+
+  try {
+    fs.symlinkSync(repoRoot, worktreePath, "dir");
+  } catch (e: any) {
+    return failure(`创建 planning 工作目录软链失败: ${e.message}`);
+  }
+  logger.info("已创建 planning 工作目录（软链到主仓库）");
+  session?.logEvent("planning-workspace-created", { worktreePath, repoRoot });
   return success(null);
 }
 
@@ -126,6 +157,38 @@ export function syncEditorMappings(worktreePath: string, editor: EditorConfig): 
   }
 
   return success(undefined);
+}
+
+export function initPlanningSession(paths: SessionPathManager, statusData: any, session?: SessionManager): Result<void> {
+  try {
+    logger.info("创建 planning 会话状态...");
+    const ensureRes = paths.ensureDir();
+    if (!ensureRes.success) return ensureRes;
+
+    const upRes = upsertSession(
+      paths.getOwner(),
+      paths.getRepo(),
+      paths.getIssueNumber(),
+      statusData,
+    );
+    if (!upRes.success) return upRes;
+    console.log(chalk.green("✓"), "创建 planning 会话状态完成");
+
+    logger.info("创建初始 todo 文件...");
+    const todoContent = `- [ ] 第一步：理解 Issue 并创建语义化分支\n- [ ] 第二步：分析代码库并制定实施计划\n- [ ] 第三步：实施修复\n- [ ] 第四步：提交并推送代码\n- [ ] 第五步：创建 PR 并更新状态\n`;
+    if (!fs.existsSync(paths.getTodoFile())) {
+      fs.writeFileSync(paths.getTodoFile(), todoContent);
+    }
+    console.log(chalk.green("✓"), "创建初始 todo 文件完成");
+
+    session?.logEvent("planning-session-initialized", {
+      issueNumber: String(paths.getIssueNumber()),
+    });
+    return success(undefined);
+  } catch (e: any) {
+    logger.error(`初始化 planning 会话失败: ${e.message}`);
+    return failure(`初始化 planning 会话失败: ${e.message}`);
+  }
 }
 
 export async function initSessionFiles(paths: SessionPathManager, worktreePath: string, statusData: any, session?: SessionManager): Promise<Result<void>> {

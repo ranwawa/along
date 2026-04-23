@@ -57,15 +57,7 @@ cat ../planning-context.json
 
 如果 `currentPlan` 为空：
 
-1. 根据 Issue 内容判断类型，参考 `branch-naming` SKILL 生成分支名：
-   `<type>/issue-<N>-<short-description>`
-2. 创建分支：
-
-```bash
-along branch-create $1 <branch-name>
-```
-
-3. 发布官方计划评论：
+1. 发布官方计划评论：
 
 ```md
 <!-- along:plan {"planId":"<planning-context.json 中的 proposedPlan.planId>","version":<proposedPlan.version>} -->
@@ -205,6 +197,6 @@ along issue-comment $1 "上面的完整 Markdown"
 
 ## 完成条件
 
-- 首次 planning：分支已创建，且官方计划已发布
+- 首次 planning：官方计划已发布
 - 讨论轮次：已发布 `Planning Update` 或新版 `Plan vN`
 - 正常退出，等待系统继续收敛或人工审批

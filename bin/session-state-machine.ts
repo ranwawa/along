@@ -410,8 +410,8 @@ export function applySessionStateEvent(
     case EVENT.BRANCH_PREPARED:
       return nextStatePatch(current, {
         lifecycle: LIFECYCLE.RUNNING,
-        phase: PHASE.PLANNING,
-        step: STEP.ANALYZE_CODEBASE,
+        phase: PHASE.IMPLEMENTATION,
+        step: STEP.EDIT_CODE,
         message: event.branchName ? `已创建语义化分支 ${event.branchName}` : "已创建语义化分支",
         context: { branchName: event.branchName },
         error: null,
