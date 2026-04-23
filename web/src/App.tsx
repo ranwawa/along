@@ -238,7 +238,8 @@ function App() {
         body: JSON.stringify({ owner: session.owner, repo: session.repo, issueNumber: session.issueNumber }),
       });
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ error: '重启请求失败' }));
+        alert(data.error || '重启请求失败');
         console.error('Restart failed:', data.error);
       }
     } catch (e) {
