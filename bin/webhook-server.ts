@@ -23,6 +23,7 @@ import {
 } from "./webhook-handlers";
 import { triageIssue, handleTriagedIssue } from "./issue-triage";
 import { launchIssueAgent, setDashboardMode } from "./issue-agent";
+import { Issue } from "./issue";
 import { config } from "./config";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
@@ -744,6 +745,35 @@ async function main() {
             );
           }
           logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
+
+          const issue = new Issue(issueNumber, config);
+          const loadRes = await issue.load();
+          if (!loadRes.success) {
+            return new Response(
+              JSON.stringify({ error: `无法获取 Issue 状态: ${loadRes.error}` }),
+              {
+                status: 500,
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*",
+                },
+              },
+            );
+          }
+          const healthRes = issue.checkHealth({ skipWipCheck: true });
+          if (!healthRes.success) {
+            return new Response(
+              JSON.stringify({ error: healthRes.error }),
+              {
+                status: 409,
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*",
+                },
+              },
+            );
+          }
+
           enqueueAgent(`Issue #${issueNumber} 手动重启`, async () => {
             const sessionRes = readSession(owner, repo, issueNumber);
             const phase =
