@@ -15,12 +15,13 @@ import {
   success,
   failure,
   check_process_running,
+  get_repo_root,
 } from "./common";
 import type { Result } from "./common";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
-import { setupWorktree, initSessionFiles, syncEditorMappings } from "./worktree-init";
+import { setupWorktree, setupPlanningWorkspace, initSessionFiles, initPlanningSession, syncEditorMappings } from "./worktree-init";
 import { getAgentRole } from "./agent-config";
 import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
@@ -232,10 +233,15 @@ export async function execAgent(
   logFile?: string,
   sessionManager?: SessionManager,
 ): Promise<Result<number>> {
-  const syncRes = syncPromptsToWorktree(worktreePath);
-  if (!syncRes.success) return syncRes;
+  const isPlanningSymlink = (() => {
+    try { return fs.lstatSync(worktreePath).isSymbolicLink(); } catch { return false; }
+  })();
 
-  ensureEditorPermissions(worktreePath);
+  if (!isPlanningSymlink) {
+    const syncRes = syncPromptsToWorktree(worktreePath);
+    if (!syncRes.success) return syncRes;
+    ensureEditorPermissions(worktreePath);
+  }
 
   const logTagRes = config.getLogTag();
   if (!logTagRes.success) return logTagRes;
@@ -364,15 +370,32 @@ export async function launchIssueAgent(
     }
   }
 
-  // 2. 确保 worktree 存在
+  // 2. 确保工作目录存在
   const worktreePath = paths.getWorktreeDir();
-  if (!fs.existsSync(worktreePath)) {
-    logger.info("工作目录不存在，初始化 worktree...");
+  const isPlanning = phase === PHASE.PLANNING;
 
-    const wtResult = await setupWorktree(worktreePath, session);
-    if (!wtResult.success) {
-      session.markAsError(`worktree 创建失败: ${wtResult.error}`);
-      return failure(wtResult.error);
+  const worktreeExists = fs.existsSync(worktreePath);
+  const isPlanningSymlink = worktreeExists && (() => {
+    try { return fs.lstatSync(worktreePath).isSymbolicLink(); } catch { return false; }
+  })();
+  const needsInit = !worktreeExists || (!isPlanning && isPlanningSymlink);
+
+  if (needsInit) {
+    if (isPlanning) {
+      logger.info("Planning 阶段：创建软链工作目录（指向主仓库）...");
+      const repoRoot = await get_repo_root();
+      const wsResult = setupPlanningWorkspace(worktreePath, repoRoot, session);
+      if (!wsResult.success) {
+        session.markAsError(`planning 工作目录创建失败: ${wsResult.error}`);
+        return failure(wsResult.error);
+      }
+    } else {
+      logger.info("工作目录不存在，初始化 worktree...");
+      const wtResult = await setupWorktree(worktreePath, session);
+      if (!wtResult.success) {
+        session.markAsError(`worktree 创建失败: ${wtResult.error}`);
+        return failure(wtResult.error);
+      }
     }
 
     const statusData: Record<string, any> = {
@@ -416,8 +439,12 @@ export async function launchIssueAgent(
       logger.warn(`记录环境信息失败: ${e.message}`);
     }
 
-    await initSessionFiles(paths, worktreePath, statusData, session);
-    logger.success("worktree 初始化完成");
+    if (isPlanning) {
+      initPlanningSession(paths, statusData, session);
+    } else {
+      await initSessionFiles(paths, worktreePath, statusData, session);
+    }
+    logger.success(isPlanning ? "planning 工作目录初始化完成" : "worktree 初始化完成");
   } else {
     await session.transition({
       type: "START_PHASE",
@@ -427,7 +454,9 @@ export async function launchIssueAgent(
     });
   }
 
-  ensureEditorPermissions(worktreePath);
+  if (!isPlanning) {
+    ensureEditorPermissions(worktreePath);
+  }
 
   // 3. 写入 .along-mode 文件
   const modeFile = path.join(paths.getIssueDir(), ".along-mode");
