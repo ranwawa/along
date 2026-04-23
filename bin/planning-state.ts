@@ -848,6 +848,21 @@ function upsertPlanRevision(
 
   db.prepare(
     `
+      UPDATE plan_revisions
+      SET status = ?
+      WHERE owner = ? AND repo = ? AND issue_number = ? AND plan_id != ? AND status = ?
+    `,
+  ).run(
+    PLAN_STATUS.SUPERSEDED,
+    owner,
+    repo,
+    issueNumber,
+    metadata.planId,
+    PLAN_STATUS.ACTIVE,
+  );
+
+  db.prepare(
+    `
       INSERT INTO plan_revisions (
         owner, repo, issue_number, plan_id, version, based_on_plan_id, status, comment_id,
         summary, scope, changes, risks, validation, decision_log, changes_since_last_version,
@@ -886,21 +901,6 @@ function upsertPlanRevision(
     sections.changesSinceLastVersion || null,
     body,
     createdAt,
-  );
-
-  db.prepare(
-    `
-      UPDATE plan_revisions
-      SET status = ?
-      WHERE owner = ? AND repo = ? AND issue_number = ? AND plan_id != ? AND status = ?
-    `,
-  ).run(
-    PLAN_STATUS.SUPERSEDED,
-    owner,
-    repo,
-    issueNumber,
-    metadata.planId,
-    PLAN_STATUS.ACTIVE,
   );
 }
 

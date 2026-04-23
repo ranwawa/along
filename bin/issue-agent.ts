@@ -54,6 +54,8 @@ import {
   type PlanningContextPayload,
 } from "./planning-state";
 
+const MAX_PLANNING_CONTINUATIONS = 10;
+
 const PHASE_START_STEP: Record<SessionPhase, SessionStep> = {
   [PHASE.PLANNING]: STEP.READ_ISSUE,
   [PHASE.IMPLEMENTATION]: STEP.EDIT_CODE,
@@ -327,6 +329,7 @@ export async function execAgent(
 export interface LaunchIssueAgentOptions {
   taskData?: { title: string };
   repoPath?: string;
+  _planningContinuationCount?: number;
 }
 
 /**
@@ -585,9 +588,25 @@ export async function launchIssueAgent(
           return failure(continueRes.error);
         }
         if (continueRes.data) {
-          session.logEvent("planning-continue", { issueNumber });
+          const count = (options._planningContinuationCount || 0) + 1;
+          if (count >= MAX_PLANNING_CONTINUATIONS) {
+            await session.markAsError(
+              `Planning 连续重启达到上限 (${MAX_PLANNING_CONTINUATIONS})，疑似无限循环`,
+            );
+            clearCurrentIssueContext();
+            return failure(
+              `planning 连续重启超过 ${MAX_PLANNING_CONTINUATIONS} 次上限`,
+            );
+          }
+          session.logEvent("planning-continue", {
+            issueNumber,
+            continuationCount: count,
+          });
           clearCurrentIssueContext();
-          return launchIssueAgent(owner, repo, issueNumber, phase, options);
+          return launchIssueAgent(owner, repo, issueNumber, phase, {
+            ...options,
+            _planningContinuationCount: count,
+          });
         }
       }
 
