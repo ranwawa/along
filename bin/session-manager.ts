@@ -1,9 +1,10 @@
-import fs from "fs";
-import { iso_timestamp, success, failure } from "./common";
+import { iso_timestamp, success } from "./common";
 import type { Result } from "./common";
 import { SessionPathManager } from "./session-paths";
 import { readSession, upsertSession, transactSession } from "./db";
 import { syncLifecycleLabel } from "./github-client";
+import { logWriter } from "./log-writer";
+import type { UnifiedLogEntry } from "./log-types";
 import {
   applySessionStateEvent,
   PHASE,
@@ -64,10 +65,6 @@ export class SessionManager {
     this.paths = new SessionPathManager(owner, repo, issueNumber);
   }
 
-  private get logFile(): string {
-    return this.paths.getLogFile();
-  }
-
   readStatus(): Result<SessionStatus | null> {
     return readSession(this.owner, this.repo, this.issueNumber);
   }
@@ -104,15 +101,22 @@ export class SessionManager {
 
   log(message: string, level: "info" | "warn" | "error" = "info"): Result<void> {
     const timestamp = new Date().toISOString();
-    const logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
     const ensureRes = this.paths.ensureDir();
     if (!ensureRes.success) return ensureRes;
-    try {
-      fs.appendFileSync(this.logFile, logLine);
-      return success(undefined);
-    } catch (e: any) {
-      return failure(`无法写入日志文件 ${this.logFile}: ${e.message}`);
-    }
+
+    const entry: UnifiedLogEntry = {
+      timestamp,
+      category: "lifecycle",
+      source: "session-manager",
+      level,
+      message,
+    };
+    logWriter.writeSession(
+      { owner: this.owner, repo: this.repo, issueNumber: this.issueNumber },
+      entry,
+    );
+
+    return success(undefined);
   }
 
   async transition(event: SessionStateEvent): Promise<Result<void>> {

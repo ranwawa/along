@@ -2,17 +2,7 @@ import fs from "fs";
 import type { SessionStatus } from "./session-manager";
 import type { SessionPhase } from "./session-state-machine";
 import { SessionPathManager } from "./session-paths";
-
-export type SessionLogSource = "system" | "agent" | "merged";
-
-export interface SessionLogEntry {
-  source: SessionLogSource;
-  raw: string;
-  timestamp?: string;
-  level?: string;
-  message: string;
-  tag?: string;
-}
+import type { UnifiedLogEntry } from "./log-types";
 
 export interface SessionDiagnostic {
   category: string;
@@ -25,23 +15,6 @@ export interface SessionDiagnostic {
   hints: string[];
   lastSystemLines: string[];
   lastAgentLines: string[];
-}
-
-const DEFAULT_SYSTEM_LINES = 120;
-const DEFAULT_AGENT_LINES = 200;
-
-function readLastLines(filePath: string, maxLines: number): string[] {
-  if (!fs.existsSync(filePath)) return [];
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    if (!content) return [];
-    return content
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .slice(-maxLines);
-  } catch {
-    return [];
-  }
 }
 
 function classifyFailure(text: string): {
@@ -122,88 +95,39 @@ function classifyFailure(text: string): {
   };
 }
 
-export function parseSystemLogLines(lines: string[]): SessionLogEntry[] {
-  return lines.map((line) => {
-    const match = line.match(/^\[(.+?)\]\s+\[([A-Z]+)\]\s+(.*)$/);
-    if (!match) {
-      return {
-        source: "system",
-        raw: line,
-        message: line,
-      };
+function readLastJsonlEntries(filePath: string, maxEntries: number): UnifiedLogEntry[] {
+  if (!fs.existsSync(filePath)) return [];
+  try {
+    const content = fs.readFileSync(filePath, "utf-8");
+    if (!content) return [];
+    const lines = content.trim().split("\n").filter(Boolean).slice(-maxEntries);
+    const entries: UnifiedLogEntry[] = [];
+    for (const line of lines) {
+      try { entries.push(JSON.parse(line)); } catch {}
     }
-
-    return {
-      source: "system",
-      raw: line,
-      timestamp: match[1],
-      level: match[2].toLowerCase(),
-      message: match[3],
-    };
-  });
-}
-
-export function parseAgentLogLines(lines: string[]): SessionLogEntry[] {
-  return lines.map((line) => {
-    const match = line.match(/^\[(.+?)\]\s+(.*)$/);
-    if (!match) {
-      return {
-        source: "agent",
-        raw: line,
-        message: line,
-      };
-    }
-
-    return {
-      source: "agent",
-      raw: line,
-      timestamp: match[1],
-      message: match[2],
-    };
-  });
-}
-
-export function mergeSessionLogs(
-  systemLogs: SessionLogEntry[],
-  agentLogs: SessionLogEntry[],
-): SessionLogEntry[] {
-  return [...systemLogs, ...agentLogs]
-    .map((entry, index) => ({ entry, index }))
-    .sort((a, b) => {
-      const aTime = a.entry.timestamp ? Date.parse(a.entry.timestamp) : Number.POSITIVE_INFINITY;
-      const bTime = b.entry.timestamp ? Date.parse(b.entry.timestamp) : Number.POSITIVE_INFINITY;
-      if (aTime !== bTime) return aTime - bTime;
-      return a.index - b.index;
-    })
-    .map(({ entry }) => ({
-      ...entry,
-      source: entry.source === "system" || entry.source === "agent" ? entry.source : "merged",
-    }));
-}
-
-export function readSessionLog(
-  paths: SessionPathManager,
-  source: SessionLogSource,
-  maxLines?: number,
-): SessionLogEntry[] {
-  if (source === "merged") {
-    const systemLogs = readSessionLog(paths, "system", maxLines || DEFAULT_SYSTEM_LINES);
-    const agentLogs = readSessionLog(paths, "agent", maxLines || DEFAULT_AGENT_LINES);
-    return mergeSessionLogs(systemLogs, agentLogs);
+    return entries;
+  } catch {
+    return [];
   }
-
-  const limit = maxLines || (source === "system" ? DEFAULT_SYSTEM_LINES : DEFAULT_AGENT_LINES);
-  const filePath = source === "system" ? paths.getLogFile() : paths.getAgentLogFile();
-  const lines = readLastLines(filePath, limit);
-  return source === "system" ? parseSystemLogLines(lines) : parseAgentLogLines(lines);
 }
 
 export function generateSessionDiagnostic(
   session: SessionStatus,
   paths: SessionPathManager,
 ): SessionDiagnostic {
-  const lastSystemLines = readLastLines(paths.getLogFile(), 50);
-  const lastAgentLines = readLastLines(paths.getAgentLogFile(), 100);
+  const sessionLogPath = paths.getSessionLogFile();
+  const recentEntries = readLastJsonlEntries(sessionLogPath, 150);
+
+  const lastLifecycleEntries = recentEntries
+    .filter(e => e.category === "lifecycle")
+    .slice(-50);
+  const lastConversationEntries = recentEntries
+    .filter(e => e.category === "conversation")
+    .slice(-100);
+
+  const lastSystemLines = lastLifecycleEntries.map(e => e.message);
+  const lastAgentLines = lastConversationEntries.map(e => e.message);
+
   const basis = [
     session.error?.message || "",
     session.error?.details || "",

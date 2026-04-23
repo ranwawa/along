@@ -17,7 +17,7 @@ import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
 import { findSessionByPr } from "./db";
 import { execAgent } from "./issue-agent";
-import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
+import { withIssueContext } from "./log-router";
 import { cleanupIssueAssets } from "./cleanup-utils";
 import { STEP, EVENT, PHASE, type SessionContext } from "./session-state-machine";
 
@@ -124,8 +124,7 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
   if (!found) return;
 
   const { issueNumber, statusData, paths } = found;
-  setCurrentIssueContext(owner, repo, issueNumber);
-  try {
+  await withIssueContext(owner, repo, issueNumber, async () => {
 
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
@@ -190,9 +189,7 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
 
   logger.info(`PR #${prNumber} 审查完成`);
 
-  } finally {
-    clearCurrentIssueContext();
-  }
+  });
 }
 
 // ─── resolveReview ──────────────────────────────────────────
@@ -263,8 +260,7 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
   if (!found) return;
 
   const { issueNumber, statusData, paths } = found;
-  setCurrentIssueContext(owner, repo, issueNumber);
-  try {
+  await withIssueContext(owner, repo, issueNumber, async () => {
 
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
@@ -337,9 +333,7 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
 
   logger.info(`PR #${prNumber} 评论处理完成`);
 
-  } finally {
-    clearCurrentIssueContext();
-  }
+  });
 }
 
 // ─── resolveCi ──────────────────────────────────────────────
@@ -460,11 +454,11 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
   await session.updateCiResults(0, failedRuns.length, headSha);
 
   session.logEvent("agent-launched", { trigger: "webhook-ci", failedCount: failedRuns.length, headSha });
-  setCurrentIssueContext(owner, repo, issueNumber);
-  const agentRes = await execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", async (pid) => {
-    await session.updateStep(STEP.FIX_CI, undefined, PHASE.STABILIZATION, undefined, pid);
-  });
-  clearCurrentIssueContext();
+  const agentRes = await withIssueContext(owner, repo, issueNumber, () =>
+    execAgent(statusData.worktreePath, issueNumber, "resolve-ci-failure", async (pid) => {
+      await session.updateStep(STEP.FIX_CI, undefined, PHASE.STABILIZATION, undefined, pid);
+    }),
+  );
 
   if (!agentRes.success) {
     logger.error(`Agent 启动失败: ${agentRes.error}`);

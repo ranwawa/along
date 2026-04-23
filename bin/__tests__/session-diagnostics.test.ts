@@ -25,7 +25,7 @@ vi.mock("fs", () => ({
 }));
 
 import { SessionPathManager } from "../session-paths";
-import { generateSessionDiagnostic, mergeSessionLogs, parseAgentLogLines, parseSystemLogLines, readSessionLog } from "../session-diagnostics";
+import { generateSessionDiagnostic } from "../session-diagnostics";
 
 describe("session-diagnostics.ts", () => {
   const paths = new SessionPathManager("ranwawa", "along", 41);
@@ -34,52 +34,14 @@ describe("session-diagnostics.ts", () => {
     fileMap.clear();
   });
 
-  it("能够解析 system.log 基本格式", () => {
-    const result = parseSystemLogLines([
-      "[2026-04-20T12:00:00.000Z] [INFO] Step: 启动 Agent",
-    ]);
-
-    expect(result[0].timestamp).toBe("2026-04-20T12:00:00.000Z");
-    expect(result[0].level).toBe("info");
-    expect(result[0].message).toBe("Step: 启动 Agent");
-  });
-
-  it("读取 agent 日志时返回原始行", () => {
-    fileMap.set(paths.getAgentLogFile(), "line1\nline2\n");
-
-    const result = readSessionLog(paths, "agent", 10);
-
-    expect(result).toHaveLength(2);
-    expect(result[1].message).toBe("line2");
-  });
-
-  it("能够解析带时间戳的 agent 日志", () => {
-    const result = parseAgentLogLines([
-      "[2026-04-20T12:00:01.000Z] agent output",
-    ]);
-
-    expect(result[0].timestamp).toBe("2026-04-20T12:00:01.000Z");
-    expect(result[0].message).toBe("agent output");
-  });
-
-  it("能够按时间合并 system 和 agent 日志", () => {
-    const result = mergeSessionLogs(
-      parseSystemLogLines(["[2026-04-20T12:00:02.000Z] [INFO] after"]),
-      parseAgentLogLines(["[2026-04-20T12:00:01.000Z] before"]),
-    );
-
-    expect(result).toHaveLength(2);
-    expect(result[0].source).toBe("agent");
-    expect(result[0].message).toBe("before");
-    expect(result[1].source).toBe("system");
-  });
-
   it("能将 403 insufficient balance 归类为 auth/billing", () => {
-    fileMap.set(paths.getLogFile(), "[2026-04-20T12:00:00.000Z] [ERROR] Agent 退出\n");
-    fileMap.set(
-      paths.getAgentLogFile(),
-      "Starting at Mon Apr 20 20:30:30 CST 2026\nFailed to authenticate. API Error: 403 insufficient balance\n",
-    );
+    const sessionJsonl = [
+      JSON.stringify({ timestamp: "2026-04-20T12:00:00.000Z", category: "lifecycle", source: "session-manager", level: "error", message: "Agent 退出" }),
+      JSON.stringify({ timestamp: "2026-04-20T12:00:01.000Z", category: "conversation", source: "agent-stderr", level: "info", message: "Starting at Mon Apr 20 20:30:30 CST 2026" }),
+      JSON.stringify({ timestamp: "2026-04-20T12:00:02.000Z", category: "conversation", source: "agent-stderr", level: "info", message: "Failed to authenticate. API Error: 403 insufficient balance" }),
+    ].join("\n") + "\n";
+
+    fileMap.set(paths.getSessionLogFile(), sessionJsonl);
 
     const diagnostic = generateSessionDiagnostic(
       {

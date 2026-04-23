@@ -32,7 +32,6 @@ import {
 import { getAgentRole } from "./agent-config";
 import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
-import { setCurrentIssueContext, clearCurrentIssueContext } from "./log-buffer";
 import {
   clearSessionDiagnostic,
   generateSessionDiagnostic,
@@ -352,13 +351,11 @@ export async function launchIssueAgent(
 
   logger.info(`启动 Issue #${issueNumber} Agent (${phase})...`);
   session.logEvent("issue-agent-launch", { phase, issueNumber });
-  setCurrentIssueContext(owner, repo, issueNumber);
 
   let planningContext: PlanningContextPayload | null = null;
   if (phase === PHASE.PLANNING) {
     const planningRes = preparePlanningExecution(owner, repo, issueNumber);
     if (!planningRes.success) {
-      clearCurrentIssueContext();
       return failure(planningRes.error);
     }
     planningContext = planningRes.data;
@@ -495,7 +492,6 @@ export async function launchIssueAgent(
   if (phase === PHASE.PLANNING && planningContext) {
     const contextWriteRes = writePlanningContextFile(paths, planningContext);
     if (!contextWriteRes.success) {
-      clearCurrentIssueContext();
       return failure(contextWriteRes.error);
     }
     session.logEvent("planning-context-written", {
@@ -584,7 +580,6 @@ export async function launchIssueAgent(
         const continueRes = shouldContinuePlanning(owner, repo, issueNumber);
         if (!continueRes.success) {
           await session.markAsError(continueRes.error);
-          clearCurrentIssueContext();
           return failure(continueRes.error);
         }
         if (continueRes.data) {
@@ -593,7 +588,6 @@ export async function launchIssueAgent(
             await session.markAsError(
               `Planning 连续重启达到上限 (${MAX_PLANNING_CONTINUATIONS})，疑似无限循环`,
             );
-            clearCurrentIssueContext();
             return failure(
               `planning 连续重启超过 ${MAX_PLANNING_CONTINUATIONS} 次上限`,
             );
@@ -602,7 +596,6 @@ export async function launchIssueAgent(
             issueNumber,
             continuationCount: count,
           });
-          clearCurrentIssueContext();
           return launchIssueAgent(owner, repo, issueNumber, phase, {
             ...options,
             _planningContinuationCount: count,
@@ -612,11 +605,9 @@ export async function launchIssueAgent(
 
       await session.transition({ type: "AGENT_EXITED_SUCCESS" });
     }
-    clearCurrentIssueContext();
     return success(undefined);
   } catch (error: any) {
     await session.markAsCrashed(error.message, error.stack);
-    clearCurrentIssueContext();
     return failure(error.message, error.stack);
   }
 }

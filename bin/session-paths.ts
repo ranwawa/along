@@ -65,6 +65,10 @@ export class SessionPathManager {
     return path.join(this.getIssueDir(), "system.log");
   }
 
+  getSessionLogFile(): string {
+    return path.join(this.getIssueDir(), "session.jsonl");
+  }
+
   getAgentLogFile(): string {
     return path.join(this.getIssueDir(), "agent.log");
   }

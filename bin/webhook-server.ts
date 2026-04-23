@@ -27,7 +27,13 @@ import { Issue } from "./issue";
 import { config } from "./config";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
-import { setupLogInterceptor, getLogEntries } from "./log-buffer";
+import { initLogRouter } from "./log-router";
+import {
+  readGlobalLog as readGlobalLogFn,
+  readSessionLog as readSessionLogFn,
+  getGlobalLogPath as getGlobalLogPathFn,
+  getSessionLogPath as getSessionLogPathFn,
+} from "./log-reader";
 import { ensureWebhookSecret, ensureWorkspaces } from "./bootstrap";
 import { buildRegistry, type WorkspaceRegistry } from "./workspace-registry";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
@@ -52,14 +58,59 @@ import {
 } from "./planning-state";
 import {
   readSessionDiagnostic,
-  readSessionLog,
   generateSessionDiagnostic,
-  type SessionLogSource,
 } from "./session-diagnostics";
 
 const logger = consola.withTag("webhook-server");
 
 let registry: WorkspaceRegistry;
+
+function createLogSSEResponse(logPath: string, req: Request): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        let lastSize = 0;
+        try {
+          if (fs.existsSync(logPath)) {
+            lastSize = fs.statSync(logPath).size;
+          }
+        } catch {}
+
+        const id = setInterval(() => {
+          try {
+            if (!fs.existsSync(logPath)) return;
+            const stat = fs.statSync(logPath);
+            if (stat.size <= lastSize) return;
+
+            const fd = fs.openSync(logPath, "r");
+            const buf = Buffer.alloc(stat.size - lastSize);
+            fs.readSync(fd, buf, 0, buf.length, lastSize);
+            fs.closeSync(fd);
+            lastSize = stat.size;
+
+            const newLines = buf.toString("utf-8").trim().split("\n").filter(Boolean);
+            const entries = newLines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+            if (entries.length > 0) {
+              controller.enqueue(`data: ${JSON.stringify(entries)}\n\n`);
+            }
+          } catch {}
+        }, 1000);
+
+        req.signal.addEventListener("abort", () => {
+          clearInterval(id);
+        });
+      },
+    }),
+    {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+      },
+    },
+  );
+}
 
 // ── Agent 并发限制（防止同时启动过多 agent 耗尽资源） ──
 const MAX_CONCURRENT_AGENTS = parseInt(
@@ -679,7 +730,7 @@ async function main() {
   }
 
   if (useDashboard) {
-    setupLogInterceptor();
+    initLogRouter();
   }
 
   const server = Bun.serve({
@@ -1139,277 +1190,76 @@ async function main() {
         }
       }
 
-      // ── API: /api/system-logs (SSE) ──
-      if (url.pathname === "/api/system-logs" && req.method === "GET") {
-        return new Response(
-          new ReadableStream({
-            start(controller) {
-              const id = setInterval(() => {
-                const logs = getLogEntries();
-                controller.enqueue(`data: ${JSON.stringify(logs)}\n\n`);
-              }, 2000);
-              req.signal.addEventListener("abort", () => {
-                clearInterval(id);
-              });
-            },
-          }),
-          {
-            headers: {
-              "Content-Type": "text/event-stream",
-              "Cache-Control": "no-cache",
-              Connection: "keep-alive",
-              "Access-Control-Allow-Origin": "*",
-            },
-          },
-        );
+      // ── NEW API: /api/logs/global ──
+      if (url.pathname === "/api/logs/global" && req.method === "GET") {
+        const category = url.searchParams.get("category")?.split(",").filter(Boolean) as any[] | undefined;
+        const level = url.searchParams.get("level")?.split(",").filter(Boolean) as any[] | undefined;
+        const maxLines = url.searchParams.has("maxLines") ? Number(url.searchParams.get("maxLines")) : 200;
+        const since = url.searchParams.get("since") || undefined;
+        const entries = readGlobalLogFn({ category, level, maxLines, since });
+        return new Response(JSON.stringify(entries), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
       }
 
-      // ── API: /api/session-log ──
-      if (url.pathname === "/api/session-log" && req.method === "GET") {
+      // ── NEW API: /api/logs/session ──
+      if (url.pathname === "/api/logs/session" && req.method === "GET") {
         const query = getSessionQuery(url);
         if (!query) {
-          return new Response(
-            JSON.stringify({ error: "Missing owner, repo, or issueNumber" }),
-            {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              },
-            },
-          );
-        }
-
-        const source = (url.searchParams.get("source") ||
-          "system") as SessionLogSource;
-        if (source !== "system" && source !== "agent" && source !== "merged") {
-          return new Response(JSON.stringify({ error: "Invalid source" }), {
+          return new Response(JSON.stringify({ error: "缺少 owner/repo/issueNumber 参数" }), {
             status: 400,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });
         }
-
-        const maxLines =
-          Number(url.searchParams.get("maxLines") || "") || undefined;
-        const paths = new SessionPathManager(
-          query.owner,
-          query.repo,
-          query.issueNumber,
-        );
-        const logs = readSessionLog(paths, source, maxLines);
-        return new Response(JSON.stringify(logs), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+        const category = url.searchParams.get("category")?.split(",").filter(Boolean) as any[] | undefined;
+        const level = url.searchParams.get("level")?.split(",").filter(Boolean) as any[] | undefined;
+        const maxLines = url.searchParams.has("maxLines") ? Number(url.searchParams.get("maxLines")) : 500;
+        const since = url.searchParams.get("since") || undefined;
+        const entries = readSessionLogFn(query.owner, query.repo, query.issueNumber, { category, level, maxLines, since });
+        return new Response(JSON.stringify(entries), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
       }
 
-      // ── API: /api/session-diagnostic ──
-      if (url.pathname === "/api/session-diagnostic" && req.method === "GET") {
-        const query = getSessionQuery(url);
-        if (!query) {
-          return new Response(
-            JSON.stringify({ error: "Missing owner, repo, or issueNumber" }),
-            {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              },
-            },
-          );
-        }
-
-        const sessionRes = readSession(
-          query.owner,
-          query.repo,
-          query.issueNumber,
-        );
-        if (!sessionRes.success || !sessionRes.data) {
-          return new Response(JSON.stringify({ error: "Session not found" }), {
-            status: 404,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          });
-        }
-
-        const paths = new SessionPathManager(
-          query.owner,
-          query.repo,
-          query.issueNumber,
-        );
-        const diagnostic =
-          readSessionDiagnostic(paths) ||
-          generateSessionDiagnostic(sessionRes.data, paths);
-        return new Response(JSON.stringify(diagnostic), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
+      // ── NEW API: /api/logs/global/stream (SSE) ──
+      if (url.pathname === "/api/logs/global/stream" && req.method === "GET") {
+        const logPath = getGlobalLogPathFn();
+        return createLogSSEResponse(logPath, req);
       }
 
-      // ── API: /api/agent-conversation ──
-      if (url.pathname === "/api/agent-conversation" && req.method === "GET") {
+      // ── NEW API: /api/logs/session/stream (SSE) ──
+      if (url.pathname === "/api/logs/session/stream" && req.method === "GET") {
         const query = getSessionQuery(url);
         if (!query) {
-          return new Response(
-            JSON.stringify({ error: "Missing owner, repo, or issueNumber" }),
-            {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              },
-            },
-          );
-        }
-
-        const sessionRes = readSession(
-          query.owner,
-          query.repo,
-          query.issueNumber,
-        );
-        if (!sessionRes.success || !sessionRes.data) {
-          return new Response(JSON.stringify({ error: "Session not found" }), {
-            status: 404,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
+          return new Response(JSON.stringify({ error: "缺少 owner/repo/issueNumber 参数" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });
         }
+        const logPath = getSessionLogPathFn(query.owner, query.repo, query.issueNumber);
+        return createLogSSEResponse(logPath, req);
+      }
 
-        const claudeSessionId = sessionRes.data.claudeSessionId;
-        const worktreePath = sessionRes.data.worktreePath;
-        if (!claudeSessionId || !worktreePath) {
-          return new Response(JSON.stringify([]), {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
+      // ── NEW API: /api/logs/diagnostic ──
+      if (url.pathname === "/api/logs/diagnostic" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "缺少 owner/repo/issueNumber 参数" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });
         }
-
-        const encodedPath = worktreePath
-          .replace(/\/\./g, "--")
-          .replace(/\//g, "-");
-        const jsonlPath = path.join(
-          process.env.HOME || "~",
-          ".claude",
-          "projects",
-          encodedPath,
-          `${claudeSessionId}.jsonl`,
-        );
-
-        if (!fs.existsSync(jsonlPath)) {
-          return new Response(JSON.stringify([]), {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          });
-        }
-
-        try {
-          const content = fs.readFileSync(jsonlPath, "utf-8");
-          const messages: any[] = [];
-          for (const line of content.split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            try {
-              const record = JSON.parse(trimmed);
-              const type = record.type;
-              if (type === "user") {
-                const text = Array.isArray(record.message?.content)
-                  ? record.message.content
-                      .filter((c: any) => c.type === "text")
-                      .map((c: any) => c.text)
-                      .join("\n")
-                  : typeof record.message?.content === "string"
-                    ? record.message.content
-                    : "";
-                if (text) {
-                  messages.push({
-                    type: "user",
-                    content: text,
-                    timestamp: record.timestamp,
-                  });
-                }
-              } else if (type === "assistant") {
-                const msgContent = record.message?.content;
-                if (Array.isArray(msgContent)) {
-                  const texts = msgContent
-                    .filter((c: any) => c.type === "text" && c.text)
-                    .map((c: any) => c.text);
-                  const toolUses = msgContent.filter(
-                    (c: any) => c.type === "tool_use",
-                  );
-                  if (texts.length > 0) {
-                    messages.push({
-                      type: "assistant",
-                      content: texts.join("\n"),
-                      timestamp: record.timestamp,
-                    });
-                  }
-                  for (const tool of toolUses) {
-                    messages.push({
-                      type: "tool_use",
-                      toolName: tool.name,
-                      toolInput: JSON.stringify(tool.input ?? {}).slice(0, 500),
-                      timestamp: record.timestamp,
-                    });
-                  }
-                }
-              } else if (type === "tool_result") {
-                const msgContent = record.message?.content;
-                if (Array.isArray(msgContent)) {
-                  for (const c of msgContent) {
-                    if (c.type === "tool_result") {
-                      const text =
-                        typeof c.content === "string"
-                          ? c.content
-                          : JSON.stringify(c.content);
-                      messages.push({
-                        type: "tool_result",
-                        content: text.slice(0, 1000),
-                        isError: c.is_error || false,
-                        timestamp: record.timestamp,
-                      });
-                    }
-                  }
-                }
-              }
-            } catch {
-              // skip malformed lines
-            }
+        const paths = new SessionPathManager(query.owner, query.repo, query.issueNumber);
+        let diagnostic = readSessionDiagnostic(paths);
+        if (!diagnostic) {
+          const sessionRes = readSession(query.owner, query.repo, query.issueNumber);
+          if (sessionRes.success && sessionRes.data) {
+            diagnostic = generateSessionDiagnostic(sessionRes.data, paths);
           }
-          return new Response(JSON.stringify(messages), {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          });
-        } catch (e: any) {
-          return new Response(
-            JSON.stringify({
-              error: `Failed to read conversation: ${e.message}`,
-            }),
-            {
-              status: 500,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              },
-            },
-          );
         }
+        return new Response(JSON.stringify(diagnostic), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
       }
 
       // ── Static Web UI ──

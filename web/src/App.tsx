@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import type { SessionDiagnostic, SessionLogEntry, DashboardSession, StatusCounts, ConversationMessage } from './types';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import type { SessionDiagnostic, DashboardSession, StatusCounts, UnifiedLogEntry } from './types';
 import './index.css';
 
 const statusFilters = [
@@ -17,13 +17,11 @@ function App() {
   const [sessions, setSessions] = useState<DashboardSession[]>([]);
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] = useState<DashboardSession | null>(null);
-  const [selectedLogTab, setSelectedLogTab] = useState<'system' | 'agent' | 'merged' | 'conversation'>('merged');
-  const [selectedSystemLogs, setSelectedSystemLogs] = useState<SessionLogEntry[]>([]);
-  const [selectedAgentLogs, setSelectedAgentLogs] = useState<SessionLogEntry[]>([]);
-  const [selectedMergedLogs, setSelectedMergedLogs] = useState<SessionLogEntry[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<ConversationMessage[]>([]);
+  const [selectedLogTab, setSelectedLogTab] = useState<'timeline' | 'lifecycle' | 'conversation' | 'diagnostic'>('timeline');
+  const [sessionLogs, setSessionLogs] = useState<UnifiedLogEntry[]>([]);
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<SessionDiagnostic | null>(null);
   const [selectedLogsLoading, setSelectedLogsLoading] = useState(false);
+  const sseRef = useRef<EventSource | null>(null);
   const [restartingIssues, setRestartingIssues] = useState<Set<string>>(new Set());
   const [cleaningIssues, setCleaningIssues] = useState<Set<string>>(new Set());
   const [deletingIssues, setDeletingIssues] = useState<Set<string>>(new Set());
@@ -57,16 +55,17 @@ function App() {
 
   useEffect(() => {
     if (!selectedSession) {
-      setSelectedSystemLogs([]);
-      setSelectedAgentLogs([]);
-      setSelectedMergedLogs([]);
-      setSelectedConversation([]);
+      setSessionLogs([]);
       setSelectedDiagnostic(null);
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
       return;
     }
 
     let active = true;
-    setSelectedLogTab('merged');
+    setSelectedLogTab('timeline');
     setSelectedLogsLoading(true);
 
     const params = new URLSearchParams({
@@ -75,34 +74,19 @@ function App() {
       issueNumber: String(selectedSession.issueNumber),
     });
 
-    const loadDetails = async () => {
+    const loadInitial = async () => {
       try {
-        const [systemRes, agentRes, mergedRes, diagnosticRes, conversationRes] = await Promise.all([
-          fetch(`/api/session-log?${params.toString()}&source=system&maxLines=150`),
-          fetch(`/api/session-log?${params.toString()}&source=agent&maxLines=250`),
-          fetch(`/api/session-log?${params.toString()}&source=merged&maxLines=250`),
-          fetch(`/api/session-diagnostic?${params.toString()}`),
-          fetch(`/api/agent-conversation?${params.toString()}`),
+        const [logsRes, diagnosticRes] = await Promise.all([
+          fetch(`/api/logs/session?${params.toString()}&maxLines=500`),
+          fetch(`/api/logs/diagnostic?${params.toString()}`),
         ]);
 
         if (!active) return;
 
-        if (systemRes.ok) {
-          setSelectedSystemLogs(await systemRes.json());
+        if (logsRes.ok) {
+          setSessionLogs(await logsRes.json());
         } else {
-          setSelectedSystemLogs([]);
-        }
-
-        if (agentRes.ok) {
-          setSelectedAgentLogs(await agentRes.json());
-        } else {
-          setSelectedAgentLogs([]);
-        }
-
-        if (mergedRes.ok) {
-          setSelectedMergedLogs(await mergedRes.json());
-        } else {
-          setSelectedMergedLogs([]);
+          setSessionLogs([]);
         }
 
         if (diagnosticRes.ok) {
@@ -110,23 +94,9 @@ function App() {
         } else {
           setSelectedDiagnostic(null);
         }
-
-        if (conversationRes.ok) {
-          const data = await conversationRes.json();
-          if (Array.isArray(data)) {
-            setSelectedConversation(data);
-          } else {
-            setSelectedConversation([]);
-          }
-        } else {
-          setSelectedConversation([]);
-        }
       } catch {
         if (!active) return;
-        setSelectedSystemLogs([]);
-        setSelectedAgentLogs([]);
-        setSelectedMergedLogs([]);
-        setSelectedConversation([]);
+        setSessionLogs([]);
         setSelectedDiagnostic(null);
       } finally {
         if (active) {
@@ -135,12 +105,26 @@ function App() {
       }
     };
 
-    loadDetails();
-    const timer = setInterval(loadDetails, 3000);
+    loadInitial();
+
+    // SSE for real-time log updates
+    const sse = new EventSource(`/api/logs/session/stream?${params.toString()}`);
+    sseRef.current = sse;
+    sse.onmessage = (event) => {
+      if (!active) return;
+      try {
+        const entry: UnifiedLogEntry = JSON.parse(event.data);
+        setSessionLogs(prev => [...prev, entry]);
+      } catch {}
+    };
+    sse.onerror = () => {
+      // SSE will auto-reconnect; no action needed
+    };
 
     return () => {
       active = false;
-      clearInterval(timer);
+      sse.close();
+      sseRef.current = null;
     };
   }, [selectedSession]);
 
@@ -339,107 +323,44 @@ function App() {
     return '';
   };
 
-  const renderSessionLogLines = (entries: SessionLogEntry[], source: 'system' | 'agent' | 'merged') => {
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'lifecycle': return 'text-sky-300';
+      case 'conversation': return 'text-amber-300';
+      case 'diagnostic': return 'text-red-300';
+      case 'webhook': return 'text-purple-300';
+      case 'server': return 'text-emerald-300';
+      default: return 'text-text-muted';
+    }
+  };
+
+  const filteredLogs = useMemo(() => {
+    if (selectedLogTab === 'timeline') return sessionLogs;
+    if (selectedLogTab === 'lifecycle') return sessionLogs.filter(e => e.category === 'lifecycle');
+    if (selectedLogTab === 'conversation') return sessionLogs.filter(e => e.category === 'conversation');
+    if (selectedLogTab === 'diagnostic') return sessionLogs.filter(e => e.category === 'diagnostic');
+    return sessionLogs;
+  }, [sessionLogs, selectedLogTab]);
+
+  const renderUnifiedLogEntries = (entries: UnifiedLogEntry[]) => {
     if (entries.length === 0) {
-      return <div className="p-4 text-text-muted">No {source} logs yet.</div>;
+      return <div className="p-4 text-text-muted">No logs yet.</div>;
     }
 
     return entries.map((entry, i) => (
-      <div key={`${source}-${i}`} className="p-1.5 rounded break-all hover:bg-white/5 whitespace-pre-wrap">
-        {entry.timestamp && (
-          <span className="text-text-muted mr-2">
-            {new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(entry.timestamp))}
-          </span>
+      <div key={`log-${i}`} className="p-1.5 rounded break-all hover:bg-white/5 whitespace-pre-wrap">
+        <span className="text-text-muted mr-2">
+          {new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(entry.timestamp))}
+        </span>
+        <span className={`font-semibold mr-2 uppercase ${getLogLevelColor(entry.level)}`}>[{entry.level}]</span>
+        {selectedLogTab === 'timeline' && (
+          <span className={`font-semibold mr-2 ${getCategoryColor(entry.category)}`}>[{entry.category}]</span>
         )}
-        {entry.level && (
-          <span className={`font-semibold mr-2 uppercase ${getLogLevelColor(entry.level)}`}>[{entry.level}]</span>
-        )}
-        {entry.tag && (
-          <span className="text-text-muted mr-2">({entry.tag})</span>
-        )}
-        {source === 'merged' && (
-          <span className={`font-semibold mr-2 uppercase ${entry.source === 'system' ? 'text-sky-300' : 'text-amber-300'}`}>
-            [{entry.source}]
-          </span>
-        )}
+        <span className="text-text-muted mr-2">({entry.source})</span>
         <span>{entry.message}</span>
       </div>
     ));
   };
-
-  const renderConversationMessages = (messages: ConversationMessage[]) => {
-    if (messages.length === 0) {
-      return <div className="p-4 text-text-muted">No conversation data yet. Conversation is only available for Kira Code (Claude) agents.</div>;
-    }
-
-    return messages.map((msg, i) => {
-      if (msg.type === 'user') {
-        return (
-          <div key={`conv-${i}`} className="flex justify-end">
-            <div className="max-w-[85%] bg-blue-600/20 border border-blue-500/30 rounded-lg p-3">
-              {msg.timestamp && (
-                <div className="text-[10px] text-blue-300/60 mb-1">
-                  {new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(msg.timestamp))}
-                </div>
-              )}
-              <div className="text-blue-100 whitespace-pre-wrap break-all">{msg.content}</div>
-            </div>
-          </div>
-        );
-      }
-
-      if (msg.type === 'assistant') {
-        return (
-          <div key={`conv-${i}`} className="flex justify-start">
-            <div className="max-w-[85%] bg-white/5 border border-border-color rounded-lg p-3">
-              {msg.timestamp && (
-                <div className="text-[10px] text-text-muted mb-1">
-                  {new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(msg.timestamp))}
-                </div>
-              )}
-              <div className="text-gray-200 whitespace-pre-wrap break-all">{msg.content}</div>
-            </div>
-          </div>
-        );
-      }
-
-      if (msg.type === 'tool_use') {
-        return (
-          <div key={`conv-${i}`} className="flex justify-start pl-4">
-            <div className="max-w-[85%] bg-amber-900/15 border border-amber-500/20 rounded-lg p-2 text-xs">
-              <span className="text-amber-400 font-semibold">{msg.toolName}</span>
-              {msg.toolInput && (
-                <div className="text-amber-200/60 mt-1 break-all truncate max-h-20 overflow-hidden">{msg.toolInput}</div>
-              )}
-            </div>
-          </div>
-        );
-      }
-
-      if (msg.type === 'tool_result') {
-        return (
-          <div key={`conv-${i}`} className="flex justify-start pl-4">
-            <div className={`max-w-[85%] rounded-lg p-2 text-xs border ${
-              msg.isError
-                ? 'bg-red-900/15 border-red-500/20 text-red-300'
-                : 'bg-emerald-900/15 border-emerald-500/20 text-emerald-300'
-            }`}>
-              <div className="break-all max-h-32 overflow-hidden whitespace-pre-wrap">{msg.content}</div>
-            </div>
-          </div>
-        );
-      }
-
-      return null;
-    });
-  };
-
-  const currentSelectedLogs =
-    selectedLogTab === 'merged'
-      ? selectedMergedLogs
-      : selectedLogTab === 'system'
-        ? selectedSystemLogs
-        : selectedAgentLogs;
 
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden">
@@ -778,54 +699,25 @@ function App() {
                          <div className="text-text-muted text-xs mt-1">Timeline 保持默认打开，便于直接排障。</div>
                        </div>
                        <div className="flex gap-2 flex-wrap">
-                         <button
-                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                             selectedLogTab === 'merged'
-                               ? 'bg-white/10 text-white border-border-color'
-                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
-                           }`}
-                           onClick={() => setSelectedLogTab('merged')}
-                         >
-                           Timeline
-                         </button>
-                         <button
-                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                             selectedLogTab === 'system'
-                               ? 'bg-white/10 text-white border-border-color'
-                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
-                           }`}
-                           onClick={() => setSelectedLogTab('system')}
-                         >
-                           System Log
-                         </button>
-                         <button
-                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                             selectedLogTab === 'agent'
-                               ? 'bg-white/10 text-white border-border-color'
-                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
-                           }`}
-                           onClick={() => setSelectedLogTab('agent')}
-                         >
-                           Agent Log
-                         </button>
-                         <button
-                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                             selectedLogTab === 'conversation'
-                               ? 'bg-white/10 text-white border-border-color'
-                               : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
-                           }`}
-                           onClick={() => setSelectedLogTab('conversation')}
-                         >
-                           Conversation
-                         </button>
+                         {(['timeline', 'lifecycle', 'conversation', 'diagnostic'] as const).map(tab => (
+                           <button
+                             key={tab}
+                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                               selectedLogTab === tab
+                                 ? 'bg-white/10 text-white border-border-color'
+                                 : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
+                             }`}
+                             onClick={() => setSelectedLogTab(tab)}
+                           >
+                             {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                           </button>
+                         ))}
                        </div>
                      </div>
                      <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] text-gray-300 overflow-auto flex-1 min-h-0 flex flex-col gap-1.5">
                        {selectedLogsLoading
                          ? <div className="p-4 text-text-muted">Loading logs...</div>
-                         : selectedLogTab === 'conversation'
-                           ? renderConversationMessages(selectedConversation)
-                           : renderSessionLogLines(currentSelectedLogs, selectedLogTab as 'system' | 'agent' | 'merged')}
+                         : renderUnifiedLogEntries(filteredLogs)}
                      </div>
                    </div>
                  </div>

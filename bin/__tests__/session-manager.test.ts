@@ -32,6 +32,23 @@ vi.mock("fs", () => ({
     writeFileSync: vi.fn(),
     appendFileSync: vi.fn(),
     mkdirSync: vi.fn(),
+    createWriteStream: vi.fn(() => ({
+      write: vi.fn(),
+      end: vi.fn(),
+      destroyed: false,
+    })),
+  },
+}));
+
+const { mockWriteSession } = vi.hoisted(() => ({
+  mockWriteSession: vi.fn(),
+}));
+
+vi.mock("../log-writer", () => ({
+  logWriter: {
+    writeSession: mockWriteSession,
+    writeGlobal: vi.fn(),
+    flush: vi.fn(),
   },
 }));
 
@@ -117,7 +134,15 @@ describe("session-manager.ts", () => {
   describe("log()", () => {
     it("追加日志到文件", () => {
       sm.log("test message", "info");
-      expect(fs.appendFileSync).toHaveBeenCalled();
+      expect(mockWriteSession).toHaveBeenCalledWith(
+        { owner, repo, issueNumber },
+        expect.objectContaining({
+          category: "lifecycle",
+          source: "session-manager",
+          level: "info",
+          message: "test message",
+        }),
+      );
     });
   });
 });

@@ -40,22 +40,6 @@ export type DashboardStep =
   | "await_merge"
   | "archive_result";
 
-export interface LogEntry {
-  timestamp: string;
-  level: string;
-  tag: string;
-  message: string;
-}
-
-export interface SessionLogEntry {
-  source: "system" | "agent" | "merged";
-  raw: string;
-  timestamp?: string;
-  level?: string;
-  message: string;
-  tag?: string;
-}
-
 export interface SessionDiagnostic {
   category: string;
   summary: string;
@@ -67,6 +51,22 @@ export interface SessionDiagnostic {
   hints: string[];
   lastSystemLines: string[];
   lastAgentLines: string[];
+}
+
+export type LogCategory =
+  | "lifecycle"
+  | "conversation"
+  | "diagnostic"
+  | "webhook"
+  | "server";
+
+export interface UnifiedLogEntry {
+  timestamp: string;
+  category: LogCategory;
+  source: string;
+  level: "info" | "warn" | "error" | "success";
+  message: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface DashboardSession {
@@ -109,15 +109,6 @@ export interface DashboardSession {
     details?: string;
   };
   hasWorktree?: boolean;
-}
-
-export interface ConversationMessage {
-  type: "user" | "assistant" | "tool_use" | "tool_result";
-  content?: string;
-  toolName?: string;
-  toolInput?: string;
-  isError?: boolean;
-  timestamp?: string;
 }
 
 export interface StatusCounts {
