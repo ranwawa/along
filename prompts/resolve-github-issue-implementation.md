@@ -40,7 +40,7 @@ cat ../step2-issue-comment.md
 along branch-create $1 <branch-name>
 ```
 
-### 3. 实施修复
+### 2. 实施修复
 
 严格按已审批计划修改代码。
 
@@ -49,7 +49,7 @@ along branch-create $1 <branch-name>
 - 做必要的局部验证
 - 持续更新 `../todo.md` 中第三步的进度
 
-### 4. 提交并推送
+### 3. 提交并推送
 
 参考 `conventional-commits` SKILL 编写提交信息，然后使用：
 
@@ -65,7 +65,7 @@ along commit-push --json '[{"message":"feat: first","files":["a.ts"]},{"message"
 
 `commit-push` 会统一处理提交、rebase、推送和状态更新。若失败，先修复问题再重试。
 
-### 5. 创建 PR
+### 4. 创建 PR
 
 参考 `pr-summary` SKILL 准备 PR 描述，必须包含 `fixes: #$1`，然后执行：
 

@@ -21,7 +21,13 @@ import type { Result } from "./common";
 import { config } from "./config";
 import { SessionManager } from "./session-manager";
 import { SessionPathManager } from "./session-paths";
-import { setupWorktree, setupPlanningWorkspace, initSessionFiles, initPlanningSession, syncEditorMappings } from "./worktree-init";
+import {
+  setupWorktree,
+  setupPlanningWorkspace,
+  initSessionFiles,
+  initPlanningSession,
+  syncEditorMappings,
+} from "./worktree-init";
 import { getAgentRole } from "./agent-config";
 import { get_gh_client } from "./github-client";
 import { readSession } from "./db";
@@ -234,7 +240,11 @@ export async function execAgent(
   sessionManager?: SessionManager,
 ): Promise<Result<number>> {
   const isPlanningSymlink = (() => {
-    try { return fs.lstatSync(worktreePath).isSymbolicLink(); } catch { return false; }
+    try {
+      return fs.lstatSync(worktreePath).isSymbolicLink();
+    } catch {
+      return false;
+    }
   })();
 
   if (!isPlanningSymlink) {
@@ -375,9 +385,15 @@ export async function launchIssueAgent(
   const isPlanning = phase === PHASE.PLANNING;
 
   const worktreeExists = fs.existsSync(worktreePath);
-  const isPlanningSymlink = worktreeExists && (() => {
-    try { return fs.lstatSync(worktreePath).isSymbolicLink(); } catch { return false; }
-  })();
+  const isPlanningSymlink =
+    worktreeExists &&
+    (() => {
+      try {
+        return fs.lstatSync(worktreePath).isSymbolicLink();
+      } catch {
+        return false;
+      }
+    })();
   const needsInit = !worktreeExists || (!isPlanning && isPlanningSymlink);
 
   if (needsInit) {
@@ -440,11 +456,17 @@ export async function launchIssueAgent(
     }
 
     if (isPlanning) {
-      initPlanningSession(paths, statusData, session);
+      const planRes = initPlanningSession(paths, statusData, session);
+      if (!planRes.success) {
+        session.markAsError(`planning 会话初始化失败: ${planRes.error}`);
+        return failure(planRes.error);
+      }
     } else {
       await initSessionFiles(paths, worktreePath, statusData, session);
     }
-    logger.success(isPlanning ? "planning 工作目录初始化完成" : "worktree 初始化完成");
+    logger.success(
+      isPlanning ? "planning 工作目录初始化完成" : "worktree 初始化完成",
+    );
   } else {
     await session.transition({
       type: "START_PHASE",
@@ -504,9 +526,13 @@ export async function launchIssueAgent(
         } as Partial<SessionContext>,
       });
     }
-  } catch {
-  }
-  await session.transition({ type: EVENT.START_PHASE, phase, step: startStep, message: `启动 ${phase}` });
+  } catch {}
+  await session.transition({
+    type: EVENT.START_PHASE,
+    phase,
+    step: startStep,
+    message: `启动 ${phase}`,
+  });
   session.logEvent("agent-started", { phase, workflow });
   clearSessionDiagnostic(paths);
 
@@ -517,13 +543,7 @@ export async function launchIssueAgent(
       issueNumber,
       workflow,
       (pid) => {
-        session.updateStep(
-          startStep,
-          undefined,
-          undefined,
-          undefined,
-          pid,
-        );
+        session.updateStep(startStep, undefined, undefined, undefined, pid);
       },
       logFile,
       session,
@@ -608,7 +628,9 @@ export async function tryRecoverFromStaleLabel(
     const clientRes = await get_gh_client();
     if (clientRes.success) {
       await clientRes.data.removeIssueLabel(taskNo, LIFECYCLE.RUNNING);
-      logger.success(`Issue #${taskNo} 的 ${LIFECYCLE.RUNNING} 标签已自动清理，任务将重新启动`);
+      logger.success(
+        `Issue #${taskNo} 的 ${LIFECYCLE.RUNNING} 标签已自动清理，任务将重新启动`,
+      );
       return true;
     }
   } catch (e: any) {
