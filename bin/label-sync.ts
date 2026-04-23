@@ -35,7 +35,7 @@ const LIFECYCLE_LABELS_META: LabelMeta[] = [
  */
 const TRIAGE_LABELS_META: LabelMeta[] = [
   { name: "bug", color: "D73A4A", description: "缺陷/回归/异常行为，需要代码修复" },
-  { name: "enhancement", color: "A2EEEF", description: "新功能/增强/重构/文档改进" },
+  { name: "feature", color: "A2EEEF", description: "新功能/增强/重构/文档改进" },
   { name: "question", color: "D876E3", description: "提问/求助/咨询，不需要代码修改" },
   { name: "spam", color: "6A737D", description: "广告/无意义/测试内容" },
 ];
@@ -52,13 +52,6 @@ const PHASE_LABELS_META: LabelMeta[] = [
 ];
 
 /**
- * 辅助类 label
- */
-const AUX_LABELS_META: LabelMeta[] = [
-  { name: "invalid", color: "B60205", description: "无效 Issue（被 blocking 的标签）" },
-];
-
-/**
  * 需要清理的 GitHub 默认 label
  */
 const DEFAULT_LABELS_TO_DELETE = [
@@ -68,6 +61,9 @@ const DEFAULT_LABELS_TO_DELETE = [
   "wontfix",
   "documentation",
   "invalid",
+  "WIP",
+  "approved",
+  "enhancement",
 ];
 
 // 合并所有定义的 label
@@ -75,7 +71,6 @@ const ALL_DEFINED_LABELS = [
   ...LIFECYCLE_LABELS_META,
   ...TRIAGE_LABELS_META,
   ...PHASE_LABELS_META,
-  ...AUX_LABELS_META,
 ];
 
 async function main() {

@@ -49,13 +49,6 @@ describe("issue.ts", () => {
       }
     });
 
-    it("WIP 标签不再触发阻断", () => {
-      const issue = new Issue(42, {});
-      issue.data = { state: "open", labels: [{ name: "WIP" }] } as any;
-      const result = issue.checkHealth();
-      expect(result.success).toBe(true);
-    });
-
     it("skipWipCheck=true 时跳过 running 检查", () => {
       const issue = new Issue(42, {});
       issue.data = { state: "open", labels: [{ name: "running" }] } as any;

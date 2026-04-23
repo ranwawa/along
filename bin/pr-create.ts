@@ -16,7 +16,7 @@ import { SessionManager } from "./session-manager";
  * pr-create.ts - 创建 Pull Request
  *
  * 从数据库读取分支和仓库信息，通过 gh CLI 创建 PR。
- * 不移除 WIP 标签（WIP 在 PR 合并到默认分支后才移除）。
+ * 不移除 running 标签（running 在 PR 合并到默认分支后才移除）。
  */
 
 async function main() {

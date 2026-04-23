@@ -131,11 +131,11 @@ async function handleAction(num: string) {
   try {
     let issueRes = await checkIssue(taskNo);
     if (!issueRes.success) {
-      // WIP 标签智能恢复：检查是否为 WIP 阻断且任务实际已停止
+      // running 标签智能恢复：检查是否为 running 阻断且任务实际已停止
       if (issueRes.error.includes(LIFECYCLE.RUNNING)) {
         const recovered = await tryRecoverFromStaleLabel(owner, repoName, taskNo);
         if (recovered) {
-          // WIP 已清理，重新检查 Issue
+          // running 已清理，重新检查 Issue
           issueRes = await checkIssue(taskNo);
         }
       }
@@ -185,7 +185,7 @@ async function handleAction(num: string) {
       );
 
       const hasActionableLabel = issueLabels.some((l: string) =>
-        l === "bug" || l === "enhancement"
+        l === "bug" || l === "feature"
       );
 
       if (!hasActionableLabel) {

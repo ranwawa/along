@@ -551,8 +551,8 @@ export async function launchIssueAgent(
 }
 
 /**
- * WIP 标签智能恢复：当 Issue 带有 WIP 标签但对应的进程已退出时，
- * 自动清理 WIP 标签，允许用户重新启动任务
+ * running 标签智能恢复：当 Issue 带有 running 标签但对应的进程已退出时，
+ * 自动清理 running 标签，允许用户重新启动任务
  */
 export async function tryRecoverFromStaleLabel(
   owner: string,
@@ -571,9 +571,9 @@ export async function tryRecoverFromStaleLabel(
     }
   }
 
-  // 进程已退出，自动清理 WIP 标签
+  // 进程已退出，自动清理 running 标签
   logger.warn(
-    `Issue #${taskNo} 的 WIP 标签残留（进程已退出），正在自动清理...`,
+    `Issue #${taskNo} 的 running 标签残留（进程已退出），正在自动清理...`,
   );
   try {
     const clientRes = await get_gh_client();
@@ -583,7 +583,7 @@ export async function tryRecoverFromStaleLabel(
       return true;
     }
   } catch (e: any) {
-    logger.warn(`自动清理 WIP 标签失败: ${e.message}`);
+    logger.warn(`自动清理 running 标签失败: ${e.message}`);
   }
   return false;
 }

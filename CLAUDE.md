@@ -26,7 +26,7 @@ along run 42                        # 手动触发：fetch issue #42, create wor
 Agent SOP 内部调用的命令（不在 `along --help` 中显示，但仍可执行）：
 
 ```bash
-along branch-create 42 feat/issue-42-desc   # Create semantic branch + WIP label
+along branch-create 42 feat/issue-42-desc   # Create semantic branch + running label
 along commit-push --message "fix: msg" --files a.ts b.ts  # Atomic commit + rebase + push
 along pr-create 42 "title" "body"   # Create PR via gh CLI
 along issue-status 42 running       # Update session status

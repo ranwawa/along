@@ -366,9 +366,9 @@ export class GitHubClient {
   /**
    * 列出仓库所有 label
    */
-  async listLabels(): Promise<Result<RestEndpointMethodTypes["repos"]["listLabels"]["response"]["data"]>> {
+  async listLabels(): Promise<Result<RestEndpointMethodTypes["issues"]["listLabelsForRepo"]["response"]["data"]>> {
     try {
-      const data = await this.octokit.paginate(this.octokit.repos.listLabels, {
+      const data = await this.octokit.paginate(this.octokit.issues.listLabelsForRepo, {
         ...this.repoParams,
         per_page: 100,
       });
@@ -383,7 +383,7 @@ export class GitHubClient {
    */
   async createLabel(name: string, color: string, description: string): Promise<Result<void>> {
     try {
-      await this.octokit.repos.createLabel({
+      await this.octokit.issues.createLabel({
         ...this.repoParams,
         name,
         color,
@@ -400,7 +400,7 @@ export class GitHubClient {
    */
   async updateLabel(name: string, color: string, description: string): Promise<Result<void>> {
     try {
-      await this.octokit.repos.updateLabel({
+      await this.octokit.issues.updateLabel({
         ...this.repoParams,
         name,
         color,
@@ -417,7 +417,7 @@ export class GitHubClient {
    */
   async deleteLabel(name: string): Promise<Result<void>> {
     try {
-      await this.octokit.repos.deleteLabel({
+      await this.octokit.issues.deleteLabel({
         ...this.repoParams,
         name,
       });

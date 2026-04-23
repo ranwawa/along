@@ -315,7 +315,7 @@ async function handleEvent(
           typeof l === "string" ? l : l.name,
         );
         const isActionableIssue = issueLabels.some(
-          (l: string) => l === "bug" || l === "enhancement",
+          (l: string) => l === "bug" || l === "feature",
         );
         const session = new SessionManager(owner, repo, issueNumber);
         const sessionRes = session.readStatus();

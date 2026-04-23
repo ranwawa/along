@@ -46,7 +46,7 @@ export class Issue {
     );
 
     // 阻断标签检查
-    const BLOCKED_LABELS = ["spam", "invalid"];
+    const BLOCKED_LABELS = ["spam"];
     if (labels.some((l: string) => BLOCKED_LABELS.includes(l.toLowerCase()))) {
       return failure(`Issue#${this.taskNo}已被标记为无效，跳过处理`);
     }

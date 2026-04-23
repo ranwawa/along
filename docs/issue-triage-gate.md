@@ -7,11 +7,10 @@
 | 标签 | 含义 | 来源 |
 |---|---|---|
 | `bug` | 缺陷/回归/异常 | AI triage 打标 |
-| `enhancement` | 新功能/增强/重构 | AI triage 打标 |
+| `feature` | 新功能/增强/重构 | AI triage 打标 |
 | `question` | 提问/咨询 | AI triage 打标，回复后终止 |
 | `spam` | 垃圾/无意义/测试 | AI triage 打标，回复后关闭 |
-| `invalid` | 无效 Issue | 人工打标 |
-| `WIP` | 正在处理中 | 系统自动打标 |
+| `running` | 正在处理中 | 系统自动打标 |
 
 ## 检查流程
 
@@ -21,12 +20,12 @@ along run <N> / webhook issues.opened
   ├─ 1. 静态检查（Issue.checkHealth）
   │   ├─ Issue 是否存在                → 不存在则终止
   │   ├─ Issue 是否 open               → 已关闭则终止
-  │   ├─ 是否带有阻断标签 spam/invalid → 有则终止
-  │   └─ 是否带有 WIP 标签            → 有则终止（可尝试自动恢复）
+  │   ├─ 是否带有阻断标签 spam         → 有则终止
+  │   └─ 是否带有 running 标签          → 有则终止（可尝试自动恢复）
   │
   ├─ 2. AI 分类门控（triageIssue）
-  │   ├─ 已有 bug/enhancement 标签     → 跳过分类，直接进入流程
-  │   ├─ bug/feature                   → 打标签 + WIP，继续
+  │   ├─ 已有 bug/feature 标签         → 跳过分类，直接进入流程
+  │   ├─ bug/feature                   → 打标签 + running，继续
   │   ├─ question                      → 回复 Issue，终止
   │   ├─ spam                          → 打标签 + 关闭，终止
   │   └─ 分类失败                      → 直接终止（不回退）
@@ -51,7 +50,7 @@ along run <N> / webhook issues.opened
 4. `checkTask()` — 检查 session 健康
 5. `detectPhase()` — 确定执行阶段
 6. **（仅 planning 阶段）AI 分类门控**：
-   - 如果 Issue 已有 `bug`/`enhancement` 标签 → 跳过
+   - 如果 Issue 已有 `bug`/`feature` 标签 → 跳过
    - 否则调用 `triageIssue()` 进行 AI 分类
    - 非 bug/feature → 处理后终止
    - bug/feature → 打标签，继续

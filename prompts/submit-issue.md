@@ -27,8 +27,8 @@ description: 快速提交高质量 GitHub Issue，聚焦问题描述而非解决
 | 类型 | 标题格式 | 标签 |
 |------|---------|------|
 | bug | `[Bug] 简短描述` | `bug` |
-| feature | `[Feature] 简短描述` | `enhancement` |
-| improvement | `[Improvement] 简短描述` | `enhancement` |
+| feature | `[Feature] 简短描述` | `feature` |
+| improvement | `[Improvement] 简短描述` | `feature` |
 | docs | `[Docs] 简短描述` | `documentation` |
 
 ## 提交格式
@@ -98,7 +98,7 @@ gh issue create --title "<标题>" --label "<标签>" --body "<Issue 内容>"
 ---
 
 **标题**：[标题内容]
-**标签**：bug / enhancement / documentation
+**标签**：bug / feature / documentation
 
 **正文**：
 [正文内容]

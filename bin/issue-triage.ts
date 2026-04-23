@@ -116,7 +116,7 @@ export async function triageIssue(
  */
 const CLASSIFICATION_LABELS: Record<TriageClassification, string> = {
   bug: "bug",
-  feature: "enhancement",
+  feature: "feature",
   question: "question",
   spam: "spam",
 };
@@ -143,7 +143,7 @@ export async function handleTriagedIssue(
   switch (result.classification) {
     case "bug":
     case "feature": {
-      // 打类型标签 + WIP 标签
+      // 打类型标签 + running 标签
       const addRes = await client.addIssueLabels(issueNumber, [typeLabel, LIFECYCLE.RUNNING]);
       if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
       logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}, ${LIFECYCLE.RUNNING}]`);
