@@ -28,7 +28,8 @@ import { config } from "./config";
 import { findAllSessions, readSession } from "./db";
 import { check_process_running, calculate_runtime } from "./common";
 import { setupLogInterceptor, getLogEntries } from "./log-buffer";
-import { ensureWebhookSecret, ensureProjectBootstrap } from "./bootstrap";
+import { ensureWebhookSecret, ensureWorkspaces } from "./bootstrap";
+import { buildRegistry, type WorkspaceRegistry } from "./workspace-registry";
 import { cleanupIssue, cleanupIssueAssets } from "./cleanup-utils";
 import { syncLifecycleLabel, get_gh_client } from "./github-client";
 import {
@@ -57,6 +58,8 @@ import {
 } from "./session-diagnostics";
 
 const logger = consola.withTag("webhook-server");
+
+let registry: WorkspaceRegistry;
 
 // ── Agent 并发限制（防止同时启动过多 agent 耗尽资源） ──
 const MAX_CONCURRENT_AGENTS = parseInt(
@@ -209,6 +212,12 @@ async function handleEvent(
   }
 
   const { owner, repo } = repoInfo;
+  const repoPath = registry.resolve(owner, repo);
+  if (!repoPath) {
+    logger.warn(`仓库 ${repoFullName} 未在本地工作区中注册，跳过`);
+    return { status: 200, message: `仓库 ${repoFullName} 未注册，跳过` };
+  }
+
   const action = payload.action || "";
   logger.info(
     `[${deliveryId}] 收到事件: ${eventType}.${action} | 仓库: ${repoFullName}`,
@@ -253,6 +262,7 @@ async function handleEvent(
             repo,
             issueNumber,
             triageResult,
+            { repoPath },
           );
           if (!handleRes.success) {
             logger.error(`处理分类结果失败: ${handleRes.error}`);
@@ -264,7 +274,7 @@ async function handleEvent(
       if (action === "deleted") {
         logger.info(`收到 Issue #${issueNumber} 删除事件，启动资产清理...`);
         fireAndForget(async () => {
-          const res = await cleanupIssueSession(owner, repo, issueNumber);
+          const res = await cleanupIssueSession(owner, repo, issueNumber, repoPath);
           if (!res.success) {
             logger.error(`Issue #${issueNumber} 资产清理失败: ${res.error}`);
           }
@@ -294,6 +304,7 @@ async function handleEvent(
             { reason: "issue-closed", silent: false },
             owner,
             repo,
+            repoPath,
           );
           if (!cleanRes.success) {
             logger.warn(`清理 Issue #${issueNumber} 失败: ${cleanRes.error}`);
@@ -413,6 +424,7 @@ async function handleEvent(
               "implementation",
               {
                 taskData: { title: `Issue #${issueNumber}` },
+                repoPath,
               },
             );
             if (!res.success) logger.error(`启动实现阶段失败: ${res.error}`);
@@ -460,6 +472,7 @@ async function handleEvent(
                 "planning",
                 {
                   taskData: { title: `Issue #${issueNumber}` },
+                  repoPath,
                 },
               );
               if (!res.success) logger.error(`启动 planning round 失败: ${res.error}`);
@@ -537,6 +550,7 @@ async function handleEvent(
               { reason: "pr-merged", silent: false },
               owner,
               repo,
+              repoPath,
             );
             if (!cleanRes.success) {
               logger.warn(`清理 Issue #${linkedIssue} 失败: ${cleanRes.error}`);
@@ -648,9 +662,20 @@ async function main() {
   }
   const secret = secretRes.data;
 
-  const bootstrapRes = await ensureProjectBootstrap();
-  if (!bootstrapRes.success) {
-    logger.warn(bootstrapRes.error);
+  const workspacesRes = await ensureWorkspaces();
+  if (!workspacesRes.success) {
+    process.exit(1);
+  }
+
+  const registryRes = await buildRegistry(workspacesRes.data);
+  if (!registryRes.success) {
+    logger.error(`工作区扫描失败: ${registryRes.error}`);
+    process.exit(1);
+  }
+  registry = registryRes.data;
+  logger.info(`已注册 ${registry.listAll().size} 个仓库`);
+  for (const [key, localPath] of registry.listAll()) {
+    logger.info(`  ${key} → ${localPath}`);
   }
 
   if (useDashboard) {
@@ -761,7 +786,6 @@ async function main() {
           );
         }
         const sessions = [];
-        const worktreeList = await $`git worktree list`.text();
         for (const info of allRes.data) {
           const res = readSession(info.owner, info.repo, info.issueNumber);
           if (res.success && res.data) {
@@ -777,7 +801,7 @@ async function main() {
               repo: info.repo,
               runtime: calculate_runtime(res.data.startTime),
               hasWorktree: res.data.worktreePath
-                ? worktreeList.includes(res.data.worktreePath)
+                ? fs.existsSync(res.data.worktreePath)
                 : false,
             });
           }
@@ -796,6 +820,7 @@ async function main() {
             fireAndForget(async () => {
               for (const s of staleAwaitMerge) {
                 try {
+                  const sRepoPath = registry.resolve(s.owner, s.repo);
                   const clientRes = await get_gh_client(s.owner, s.repo);
                   if (!clientRes.success) continue;
                   const client = clientRes.data;
@@ -816,6 +841,7 @@ async function main() {
                         { reason: "fallback-sync", silent: true },
                         s.owner,
                         s.repo,
+                        sRepoPath,
                       );
                       if (!cleanRes.success) {
                         logger.warn(`[兜底同步] 清理 Issue #${s.issueNumber} 失败: ${cleanRes.error}`);
@@ -843,6 +869,7 @@ async function main() {
                       { reason: "fallback-sync", silent: true },
                       s.owner,
                       s.repo,
+                      sRepoPath,
                     );
                     if (!cleanRes.success) {
                       logger.warn(`[兜底同步] 清理 Issue #${s.issueNumber} 失败: ${cleanRes.error}`);
@@ -882,6 +909,20 @@ async function main() {
             );
           }
           logger.info(`手动重启 Issue #${issueNumber} (${owner}/${repo})...`);
+
+          const apiRepoPath = registry.resolve(owner, repo);
+          if (!apiRepoPath) {
+            return new Response(
+              JSON.stringify({ error: `仓库 ${owner}/${repo} 未在本地工作区中注册` }),
+              {
+                status: 400,
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*",
+                },
+              },
+            );
+          }
 
           const issue = new Issue(issueNumber, config);
           const loadRes = await issue.load();
@@ -926,7 +967,7 @@ async function main() {
               repo,
               issueNumber,
               phase,
-              { taskData: { title } },
+              { taskData: { title }, repoPath: apiRepoPath },
             );
             if (!res.success)
               logger.error(`手动重启 Issue #${issueNumber} 失败: ${res.error}`);
@@ -977,6 +1018,7 @@ async function main() {
             { force: true, reason: "dashboard", silent: true },
             owner,
             repo,
+            registry.resolve(owner, repo),
           );
           if (!res.success) {
             return new Response(JSON.stringify({ error: res.error }), {
@@ -1030,11 +1072,13 @@ async function main() {
           logger.info(
             `彻底删除 Issue #${issueNumber} 的本地资产 (${owner}/${repo})...`,
           );
+          const deleteRepoPath = registry.resolve(owner, repo);
           const res = await cleanupIssueAssets(
             String(issueNumber),
             { force: true, reason: "dashboard-delete", silent: true },
             owner,
             repo,
+            deleteRepoPath,
           );
           if (!res.success) {
             return new Response(JSON.stringify({ error: res.error }), {
@@ -1049,6 +1093,33 @@ async function main() {
             JSON.stringify({
               message: `已彻底删除 Issue #${issueNumber} 的本地资产`,
             }),
+            {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+              },
+            },
+          );
+        } catch (e: any) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          });
+        }
+      }
+
+      // ── API: /api/rescan ──
+      if (url.pathname === "/api/rescan" && req.method === "POST") {
+        try {
+          await registry.rescan();
+          const repos = Object.fromEntries(registry.listAll());
+          logger.info(`工作区重新扫描完成，已注册 ${Object.keys(repos).length} 个仓库`);
+          return new Response(
+            JSON.stringify({ message: "rescan completed", repos }),
             {
               status: 200,
               headers: {

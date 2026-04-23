@@ -8,6 +8,7 @@ import { config } from "./config";
 import { syncEditorMappings } from "./worktree-init";
 import { ensureEditorPermissions } from "./common";
 import { getWebhookSecret } from "./agent-config";
+import { getWorkspaces } from "./agent-config";
 import { readRepoInfo } from "./github-client";
 
 const logger = consola.withTag("bootstrap");
@@ -67,6 +68,28 @@ export async function ensureWebhookSecret(opts: { secret?: string }): Promise<Re
   await printGitHubAppGuide();
 
   return failure("未配置 webhook secret");
+}
+
+export function ensureWorkspaces(): Result<string[]> {
+  const workspaces = getWorkspaces();
+  if (workspaces && workspaces.length > 0) return success(workspaces);
+
+  console.log("");
+  console.log(chalk.bold.red("错误: 未配置 workspaces"));
+  console.log("");
+  console.log("webhook-server 需要知道本地仓库的位置，请在配置文件中添加 workspaces 字段:");
+  console.log("");
+  console.log(`  在 ${chalk.cyan("~/.along/config.json")} 中添加:`);
+  console.log("");
+  console.log(chalk.cyan('  "workspaces": ["/path/to/your/projects"]'));
+  console.log("");
+  console.log("workspaces 是一个目录路径数组，webhook-server 会扫描这些目录下的 git 仓库。");
+  console.log("每个路径可以是:");
+  console.log(`  - 一个 git 仓库的根目录（如 ${chalk.cyan("/Users/you/projects/my-repo")}）`);
+  console.log(`  - 一个包含多个 git 仓库的父目录（如 ${chalk.cyan("/Users/you/projects")}）`);
+  console.log("");
+
+  return failure("未配置 workspaces");
 }
 
 export async function printGitHubAppGuide() {

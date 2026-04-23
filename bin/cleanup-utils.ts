@@ -66,8 +66,9 @@ export async function checkAndKillProcess(
 }
 
 /** 删除 worktree 目录 */
-export async function cleanupWorktree(worktreePath: string, silent?: boolean, session?: SessionManager) {
-  const worktreeList = await $`git worktree list`.text();
+export async function cleanupWorktree(worktreePath: string, silent?: boolean, session?: SessionManager, repoPath?: string) {
+  const cwd = repoPath || process.cwd();
+  const worktreeList = await $`git worktree list`.cwd(cwd).text();
   if (!fs.existsSync(worktreePath) && !worktreeList.includes(worktreePath)) {
     info(`worktree 目录不存在: ${worktreePath}`, silent);
     return;
@@ -75,7 +76,7 @@ export async function cleanupWorktree(worktreePath: string, silent?: boolean, se
 
   info(`删除 worktree: ${worktreePath}`, silent);
   try {
-    await $`git worktree remove ${worktreePath} --force`.quiet();
+    await $`git worktree remove ${worktreePath} --force`.cwd(cwd).quiet();
     session?.logEvent("worktree-removed", { worktreePath, method: "git-worktree-remove" });
   } catch {
     warn("git worktree remove 失败，尝试手动删除...", silent);
@@ -85,13 +86,14 @@ export async function cleanupWorktree(worktreePath: string, silent?: boolean, se
 }
 
 /** 删除本地 git 分支 */
-export async function cleanupBranch(branchName: string, silent?: boolean, session?: SessionManager) {
+export async function cleanupBranch(branchName: string, silent?: boolean, session?: SessionManager, repoPath?: string) {
   if (!branchName) return;
 
-  const branches = await $`git branch --list ${branchName}`.text();
+  const cwd = repoPath || process.cwd();
+  const branches = await $`git branch --list ${branchName}`.cwd(cwd).text();
   if (branches.includes(branchName)) {
     info(`删除本地分支: ${branchName}`, silent);
-    await $`git branch -D ${branchName}`.quiet().nothrow();
+    await $`git branch -D ${branchName}`.cwd(cwd).quiet().nothrow();
     session?.logEvent("branch-deleted", { branchName });
   }
 }
@@ -113,6 +115,7 @@ export async function cleanupIssue(
   options: CleanupOptions = {},
   owner?: string,
   repo?: string,
+  repoPath?: string,
 ): Promise<Result<void>> {
   // 如果没有传入 owner/repo，尝试从 git remote 获取
   if (!owner || !repo) {
@@ -143,10 +146,10 @@ export async function cleanupIssue(
   const branchName = readBranchName(owner, repo, Number(issueNumber));
 
   // 清理 worktree
-  await cleanupWorktree(worktreePath, options.silent, session);
+  await cleanupWorktree(worktreePath, options.silent, session, repoPath);
 
   // 删除本地分支
-  await cleanupBranch(branchName, options.silent, session);
+  await cleanupBranch(branchName, options.silent, session, repoPath);
 
   const deleteRes = deleteSession(owner, repo, Number(issueNumber));
   if (!deleteRes.success) {
@@ -167,6 +170,7 @@ export async function cleanupIssueAssets(
   options: CleanupOptions = {},
   owner?: string,
   repo?: string,
+  repoPath?: string,
 ): Promise<Result<void>> {
   if (!owner || !repo) {
     const repoInfoRes = await readRepoInfo();
@@ -201,8 +205,8 @@ export async function cleanupIssueAssets(
   const worktreePath = sessionRes.data?.worktreePath || paths.getWorktreeDir();
   const branchName = sessionRes.data?.context?.branchName || "";
 
-  await cleanupWorktree(worktreePath, options.silent, session);
-  await cleanupBranch(branchName, options.silent, session);
+  await cleanupWorktree(worktreePath, options.silent, session, repoPath);
+  await cleanupBranch(branchName, options.silent, session, repoPath);
 
   const issueDir = paths.getIssueDir();
   if (fs.existsSync(issueDir)) {

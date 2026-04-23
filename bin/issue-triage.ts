@@ -129,7 +129,7 @@ export async function handleTriagedIssue(
   repo: string,
   issueNumber: number,
   result: TriageResult,
-  options?: { skipAgentLaunch?: boolean },
+  options?: { skipAgentLaunch?: boolean; repoPath?: string },
 ): Promise<Result<void>> {
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) {
@@ -150,7 +150,7 @@ export async function handleTriagedIssue(
 
       if (!options?.skipAgentLaunch) {
         // 启动 planning 阶段（出方案）
-        const launchRes = await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` } });
+        const launchRes = await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` }, repoPath: options?.repoPath });
         if (!launchRes.success) return launchRes;
       }
       break;

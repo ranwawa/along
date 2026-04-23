@@ -16,6 +16,7 @@ interface AlongGlobalConfig {
   agents?: Record<string, AgentRoleConfig>;
   defaultAgent?: string;
   webhookSecret?: string;
+  workspaces?: string[];
 }
 
 let cachedConfig: AlongGlobalConfig | null = null;
@@ -93,6 +94,15 @@ export function getWebhookSecret(): string | null {
   const res = readGlobalConfig();
   if (res.success) {
     return res.data?.webhookSecret || null;
+  }
+  return null;
+}
+
+export function getWorkspaces(): string[] | null {
+  const res = readGlobalConfig();
+  if (res.success) {
+    const ws = res.data?.workspaces;
+    if (ws && Array.isArray(ws) && ws.length > 0) return ws;
   }
   return null;
 }

@@ -12,6 +12,7 @@ import {
   iso_timestamp,
   ensureEditorPermissions,
   git,
+  getGit,
   success,
   failure,
   check_process_running,
@@ -325,6 +326,7 @@ export async function execAgent(
 
 export interface LaunchIssueAgentOptions {
   taskData?: { title: string };
+  repoPath?: string;
 }
 
 /**
@@ -399,7 +401,7 @@ export async function launchIssueAgent(
   if (needsInit) {
     if (isPlanning) {
       logger.info("Planning 阶段：创建软链工作目录（指向主仓库）...");
-      const repoRoot = await get_repo_root();
+      const repoRoot = options.repoPath || await get_repo_root();
       const wsResult = setupPlanningWorkspace(worktreePath, repoRoot, session);
       if (!wsResult.success) {
         session.markAsError(`planning 工作目录创建失败: ${wsResult.error}`);
@@ -407,7 +409,7 @@ export async function launchIssueAgent(
       }
     } else {
       logger.info("工作目录不存在，初始化 worktree...");
-      const wtResult = await setupWorktree(worktreePath, session);
+      const wtResult = await setupWorktree(worktreePath, options.repoPath, session);
       if (!wtResult.success) {
         session.markAsError(`worktree 创建失败: ${wtResult.error}`);
         return failure(wtResult.error);
@@ -439,7 +441,8 @@ export async function launchIssueAgent(
     try {
       const tagRes = config.getLogTag();
       const tag = tagRes.success ? tagRes.data : "unknown";
-      const gitHeadSha = (await git.raw(["rev-parse", "HEAD"])).trim();
+      const g = options.repoPath ? getGit(options.repoPath) : git;
+      const gitHeadSha = (await g.raw(["rev-parse", "HEAD"])).trim();
       const pkg = JSON.parse(
         fs.readFileSync(path.join(config.ROOT_DIR, "package.json"), "utf-8"),
       );

@@ -11,6 +11,17 @@ const { simpleGit } = require("simple-git");
 
 export const git = simpleGit();
 
+const gitCache = new Map<string, ReturnType<typeof simpleGit>>();
+
+export function getGit(repoPath: string): ReturnType<typeof simpleGit> {
+  let instance = gitCache.get(repoPath);
+  if (!instance) {
+    instance = simpleGit(repoPath);
+    gitCache.set(repoPath, instance);
+  }
+  return instance;
+}
+
 export type { Result } from "./result";
 import { success, failure } from "./result";
 export { success, failure };

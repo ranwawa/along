@@ -486,7 +486,7 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
 /**
  * 清理 Issue 相关的所有资产（Worktree、本地目录、数据库记录）
  */
-export async function cleanupIssueSession(owner: string, repo: string, issueNumber: number): Promise<Result<void>> {
+export async function cleanupIssueSession(owner: string, repo: string, issueNumber: number, repoPath?: string): Promise<Result<void>> {
   logger.info(`准备清理 Issue #${issueNumber} 的所有资产...`);
-  return cleanupIssueAssets(String(issueNumber), { force: true, reason: "webhook-cleanup", silent: true }, owner, repo);
+  return cleanupIssueAssets(String(issueNumber), { force: true, reason: "webhook-cleanup", silent: true }, owner, repo, repoPath);
 }

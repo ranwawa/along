@@ -10,6 +10,7 @@ import {
   success,
   failure,
   git,
+  getGit,
 } from "./common";
 
 const logger = consola.withTag("worktree-init");
@@ -20,9 +21,10 @@ import type { SessionPathManager } from "./session-paths";
 import type { SessionManager } from "./session-manager";
 import { upsertSession } from "./db";
 
-export async function getDefaultBranch(): Promise<Result<string>> {
+export async function getDefaultBranch(repoPath?: string): Promise<Result<string>> {
   try {
-    const remoteInfo = await git.raw(["remote", "show", "origin"]);
+    const g = repoPath ? getGit(repoPath) : git;
+    const remoteInfo = await g.raw(["remote", "show", "origin"]);
     const match = remoteInfo.match(/HEAD branch: (.+)/);
     if (match && match[1]) {
       return success(match[1].trim());
@@ -33,7 +35,7 @@ export async function getDefaultBranch(): Promise<Result<string>> {
   return success("master");
 }
 
-export async function setupWorktree(worktreePath: string, session?: SessionManager): Promise<Result<null>> {
+export async function setupWorktree(worktreePath: string, repoPath?: string, session?: SessionManager): Promise<Result<null>> {
   if (fs.existsSync(worktreePath)) {
     if (fs.existsSync(path.join(worktreePath, ".along/issue-mark"))) return success(null);
     // planning 阶段创建的软链需要先清理再创建真正的 worktree
@@ -50,15 +52,17 @@ export async function setupWorktree(worktreePath: string, session?: SessionManag
     }
   }
 
-  const defaultBranchRes = await getDefaultBranch();
+  const defaultBranchRes = await getDefaultBranch(repoPath);
   if (!defaultBranchRes.success) return defaultBranchRes;
   const defaultBranch = defaultBranchRes.data;
 
   logger.info(`检测到远程默认分支: ${defaultBranch}`);
 
+  const g = repoPath ? getGit(repoPath) : git;
+
   logger.info("获取远程最新代码...");
   try {
-    await git.fetch("origin", defaultBranch);
+    await g.fetch("origin", defaultBranch);
   } catch (e: any) {
     session?.log(`fetch 远程分支失败: ${e.message}\n${e.stack || ""}`, "error");
     return failure(`fetch 远程分支失败: ${e.message}`);
@@ -67,12 +71,11 @@ export async function setupWorktree(worktreePath: string, session?: SessionManag
 
   logger.info("创建 worktree...");
   try {
-    // 尝试清理已失效的 worktree 记录
     try {
-      await git.raw(["worktree", "prune"]);
+      await g.raw(["worktree", "prune"]);
     } catch (e) {}
 
-    await git.raw(["worktree", "add", "-f", "--detach", worktreePath, `origin/${defaultBranch}`]);
+    await g.raw(["worktree", "add", "-f", "--detach", worktreePath, `origin/${defaultBranch}`]);
   } catch (e: any) {
     session?.log(`创建 worktree 失败: ${e.message}\n${e.stack || ""}`, "error");
     return failure(`创建 worktree 失败: ${e.message}`);
@@ -254,14 +257,14 @@ export async function initSessionFiles(paths: SessionPathManager, worktreePath: 
 /**
  * 移除指定路径的 worktree
  */
-export async function removeWorktree(worktreePath: string): Promise<Result<void>> {
+export async function removeWorktree(worktreePath: string, repoPath?: string): Promise<Result<void>> {
   if (!fs.existsSync(worktreePath)) {
     return success(undefined);
   }
 
   try {
-    // 使用 --force 强制移除，即使有未提交的变更
-    await git.raw(["worktree", "remove", "--force", worktreePath]);
+    const g = repoPath ? getGit(repoPath) : git;
+    await g.raw(["worktree", "remove", "--force", worktreePath]);
     logger.info(`已成功移除 worktree: ${worktreePath}`);
     return success(undefined);
   } catch (e: any) {
