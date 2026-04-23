@@ -13,7 +13,7 @@ import { config } from "./config";
 import fs from "fs";
 import { SessionPathManager } from "./session-paths";
 import { SessionManager } from "./session-manager";
-import { deleteSession, readSession } from "./db";
+import { readSession } from "./db";
 import { isActiveSessionStatus } from "./session-state-machine";
 
 export interface CleanupOptions {
@@ -151,12 +151,6 @@ export async function cleanupIssue(
   // 删除本地分支
   await cleanupBranch(branchName, options.silent, session, repoPath);
 
-  const deleteRes = deleteSession(owner, repo, Number(issueNumber));
-  if (!deleteRes.success) {
-    return failure(deleteRes.error);
-  }
-  info(`会话记录已删除: ${owner}/${repo}#${issueNumber}`, options.silent);
-
   session.logEvent("cleanup-completed", { issueNumber, reason, branchName });
   return success(undefined);
 }
@@ -217,12 +211,6 @@ export async function cleanupIssueAssets(
       return failure(`删除本地数据目录失败: ${e.message}`);
     }
   }
-
-  const deleteRes = deleteSession(owner, repo, issueNumberNum);
-  if (!deleteRes.success) {
-    return failure(deleteRes.error);
-  }
-  info(`会话记录已删除: ${owner}/${repo}#${issueNumber}`, options.silent);
 
   return success(undefined);
 }
