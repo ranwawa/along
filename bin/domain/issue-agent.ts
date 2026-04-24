@@ -52,6 +52,11 @@ import {
   writePlanningContextFile,
   type PlanningContextPayload,
 } from "./planning-state";
+import {
+  query,
+  type SDKMessage,
+  type Options as ClaudeSDKOptions,
+} from "@anthropic-ai/claude-agent-sdk";
 
 const MAX_PLANNING_CONTINUATIONS = 10;
 
@@ -136,57 +141,9 @@ async function drainStream(
   }
 }
 
-interface DrainJsonStreamResult {
-  sessionId?: string;
-}
-
-async function drainJsonStream(
-  stream: ReadableStream<Uint8Array>,
-  out: WritableTarget,
-): Promise<DrainJsonStreamResult> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let sessionId: string | undefined;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      try {
-        const record = JSON.parse(trimmed);
-        if (!sessionId && record.sessionId) {
-          sessionId = record.sessionId;
-        }
-        const formatted = formatJsonRecord(record);
-        if (formatted) {
-          out.write(formatted + "\n");
-        }
-      } catch {
-        out.write(trimmed + "\n");
-      }
-    }
-  }
-
-  if (buffer.trim()) {
-    out.write(buffer.trim() + "\n");
-  }
-
-  return { sessionId };
-}
-
-function formatJsonRecord(record: any): string | null {
-  const type = record.type;
-  if (type === "assistant") {
-    const content = record.message?.content;
+function formatSDKMessage(message: SDKMessage): string | null {
+  if (message.type === "assistant") {
+    const content = message.message?.content;
     if (Array.isArray(content)) {
       const texts = content
         .filter((c: any) => c.type === "text" && c.text)
@@ -195,40 +152,11 @@ function formatJsonRecord(record: any): string | null {
     }
     return null;
   }
-  if (type === "tool_use") {
-    const msg = record.message;
-    if (msg?.content) {
-      const tools = Array.isArray(msg.content) ? msg.content : [msg.content];
-      return (
-        tools
-          .filter((c: any) => c.type === "tool_use")
-          .map(
-            (c: any) =>
-              `[tool_use] ${c.name}: ${JSON.stringify(c.input ?? {}).slice(0, 200)}`,
-          )
-          .join("\n") || null
-      );
+  if (message.type === "result") {
+    if (message.subtype === "success") {
+      return `[result] 完成 (${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)})`;
     }
-    return null;
-  }
-  if (type === "tool_result") {
-    const msg = record.message;
-    if (msg?.content) {
-      const results = Array.isArray(msg.content) ? msg.content : [msg.content];
-      return (
-        results
-          .filter((c: any) => c.type === "tool_result")
-          .map((c: any) => {
-            const text =
-              typeof c.content === "string"
-                ? c.content
-                : JSON.stringify(c.content);
-            return `[tool_result] ${text.slice(0, 200)}`;
-          })
-          .join("\n") || null
-      );
-    }
-    return null;
+    return `[result] ${message.subtype} (${message.num_turns} turns)`;
   }
   return null;
 }
@@ -260,6 +188,108 @@ export async function execAgent(
   const logTag = logTagRes.data;
   const editor = config.EDITORS.find((e) => e.id === logTag);
 
+  if (editor?.id === "claude") {
+    return execClaudeAgent(worktreePath, issueNumber, workflow, sessionManager, logFile);
+  }
+
+  return execSpawnAgent(worktreePath, issueNumber, workflow, logTag, editor, onPid, logFile, sessionManager);
+}
+
+async function execClaudeAgent(
+  worktreePath: string,
+  issueNumber: number,
+  workflow: string,
+  sessionManager?: SessionManager,
+  logFile?: string,
+): Promise<Result<number>> {
+  const promptPath = path.join(worktreePath, `.claude/commands/${workflow}.md`);
+  if (!fs.existsSync(promptPath)) {
+    return failure(`workflow prompt 文件不存在: ${promptPath}`);
+  }
+  const appendPrompt = fs.readFileSync(promptPath, "utf-8");
+
+  const options: ClaudeSDKOptions = {
+    cwd: worktreePath,
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      append: appendPrompt,
+    },
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    allowedTools: [
+      `Bash(along *)`,
+      `Read(${config.USER_ALONG_DIR}/**)`,
+      `Edit(${config.USER_ALONG_DIR}/**)`,
+      `Write(${config.USER_ALONG_DIR}/**)`,
+    ],
+    debug: true,
+    maxTurns: 200,
+  };
+
+  const prompt = `请解决 GitHub Issue #${issueNumber}，严格按照系统提示中的工作流执行`;
+
+  logger.info(`启动 Claude Agent (SDK), workflow: ${workflow}`);
+
+  const targetLogFile = _dashboardMode ? logFile : undefined;
+  let fileHandle: { write(data: string): any; end(): void } | undefined;
+  let fileWriter: (WritableTarget & { flush(): void }) | undefined;
+
+  if (targetLogFile) {
+    const ws = fs.createWriteStream(targetLogFile, { flags: "a" });
+    fileHandle = ws;
+    fileWriter = createTimestampedWriter(ws);
+  }
+
+  const out: WritableTarget = fileWriter || process.stdout;
+  let sessionId: string | undefined;
+
+  try {
+    const conversation = query({ prompt, options });
+
+    for await (const message of conversation) {
+      if (!sessionId && "session_id" in message) {
+        sessionId = message.session_id as string;
+      }
+
+      const formatted = formatSDKMessage(message);
+      if (formatted) out.write(formatted + "\n");
+
+      if (message.type === "result") {
+        if (sessionId && sessionManager) {
+          sessionManager.updateClaudeSessionId(sessionId);
+          logger.info(`已捕获 Claude sessionId: ${sessionId}`);
+        }
+
+        if (message.subtype !== "success") {
+          logger.warn(`Claude Agent 异常结束: ${message.subtype}`);
+          return success(1);
+        }
+
+        return success(0);
+      }
+    }
+  } catch (error: any) {
+    logger.error(`Claude Agent SDK 执行异常: ${error.message}`);
+    return success(1);
+  } finally {
+    fileWriter?.flush();
+    fileHandle?.end();
+  }
+
+  return success(0);
+}
+
+async function execSpawnAgent(
+  worktreePath: string,
+  issueNumber: number,
+  workflow: string,
+  logTag: string,
+  editor: (typeof config.EDITORS)[number] | undefined,
+  onPid?: (pid: number) => void,
+  logFile?: string,
+  _sessionManager?: SessionManager,
+): Promise<Result<number>> {
   let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
   cmd = cmd
     .replace("{tag}", logTag)
@@ -279,7 +309,6 @@ export async function execAgent(
     onPid(proc.pid);
   }
 
-  // Dashboard 模式下将 agent 输出写入日志文件，避免破坏 Ink 渲染
   const targetLogFile = _dashboardMode ? logFile : undefined;
   let fileHandle: { write(data: string): any; end(): void } | undefined;
   let fileWriter: (WritableTarget & { flush(): void }) | undefined;
@@ -292,25 +321,12 @@ export async function execAgent(
 
   const out: WritableTarget = fileWriter || process.stdout;
   const err: WritableTarget = fileWriter || process.stderr;
-  const isClaude = editor?.id === "claude";
 
   try {
-    let jsonResult: DrainJsonStreamResult | undefined;
     await Promise.all([
-      proc.stdout
-        ? isClaude
-          ? drainJsonStream(proc.stdout, out).then((r) => {
-              jsonResult = r;
-            })
-          : drainStream(proc.stdout, out)
-        : Promise.resolve(),
+      proc.stdout ? drainStream(proc.stdout, out) : Promise.resolve(),
       proc.stderr ? drainStream(proc.stderr, err) : Promise.resolve(),
     ]);
-
-    if (isClaude && jsonResult?.sessionId && sessionManager) {
-      sessionManager.updateClaudeSessionId(jsonResult.sessionId);
-      logger.info(`已捕获 Claude sessionId: ${jsonResult.sessionId}`);
-    }
   } finally {
     fileWriter?.flush();
     fileHandle?.end();
