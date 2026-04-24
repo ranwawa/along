@@ -13,7 +13,7 @@ vi.mock("@langchain/openai", () => {
   };
 });
 
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -37,7 +37,7 @@ vi.mock("fs", () => ({
   },
 }));
 
-import { analyzeErrorLog } from "../analyze-error";
+import { analyzeErrorLog } from "../domain/analyze-error";
 
 describe("analyze-error.ts", () => {
   const originalEnv = process.env;

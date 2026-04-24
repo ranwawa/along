@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const fileMap = new Map<string, string>();
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     USER_ALONG_DIR: "/mock/.along",
     getIssueDir: (owner: string, repo: string, issueNumber: number) =>
@@ -10,7 +10,7 @@ vi.mock("../config", () => ({
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -24,8 +24,8 @@ vi.mock("fs", () => ({
   },
 }));
 
-import { SessionPathManager } from "../session-paths";
-import { generateSessionDiagnostic } from "../session-diagnostics";
+import { SessionPathManager } from "../core/session-paths";
+import { generateSessionDiagnostic } from "../domain/session-diagnostics";
 
 describe("session-diagnostics.ts", () => {
   const paths = new SessionPathManager("ranwawa", "along", 41);

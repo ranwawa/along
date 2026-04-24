@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
 
-vi.mock("../github-client", () => ({
+vi.mock("../integration/github-client", () => ({
   get_gh_client: vi.fn(),
 }));
 
-import { Issue } from "../issue";
+import { Issue } from "../domain/issue";
 
 describe("issue.ts", () => {
   describe("checkHealth()", () => {

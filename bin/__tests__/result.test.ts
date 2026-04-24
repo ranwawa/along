@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { success, failure, type Result } from "../result";
+import { success, failure, type Result } from "../core/result";
 
 describe("result.ts", () => {
   describe("success()", () => {

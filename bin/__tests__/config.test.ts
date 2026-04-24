@@ -15,12 +15,12 @@ vi.mock("fs", () => ({
 }));
 
 // 需要 mock result.ts，因为 config.ts 直接 import 它
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
 
-import { config } from "../config";
+import { config } from "../core/config";
 
 describe("config.ts", () => {
   const originalEnv = process.env;

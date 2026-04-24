@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock 外部依赖
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     USER_ALONG_DIR: "/mock/.along",
     getLogTag: vi.fn(() => ({ success: true, data: "opencode" })),
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
   Result: {},
@@ -43,7 +43,7 @@ vi.mock("fs", () => ({
   },
 }));
 
-import { calculate_runtime, iso_timestamp, check_process_running } from "../common";
+import { calculate_runtime, iso_timestamp, check_process_running } from "../core/common";
 
 describe("common.ts", () => {
   describe("calculate_runtime()", () => {

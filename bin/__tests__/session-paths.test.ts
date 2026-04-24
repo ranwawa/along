@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import path from "path";
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     USER_ALONG_DIR: "/mock/.along",
     getIssueDir: (owner: string, repo: string, issueNumber: number) =>
@@ -9,7 +9,7 @@ vi.mock("../config", () => ({
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -21,7 +21,7 @@ vi.mock("fs", () => ({
   },
 }));
 
-import { SessionPathManager, getSessionPaths } from "../session-paths";
+import { SessionPathManager, getSessionPaths } from "../core/session-paths";
 import fs from "fs";
 
 describe("session-paths.ts", () => {

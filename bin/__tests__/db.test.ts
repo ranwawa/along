@@ -22,7 +22,7 @@ vi.mock("bun:sqlite", () => {
   };
 });
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     USER_ALONG_DIR: "/mock/.along",
     ensureDataDirs: vi.fn(),
@@ -34,7 +34,7 @@ import {
   readSession,
   upsertSession,
   closeDb,
-} from "../db";
+} from "../core/db";
 
 describe("db.ts logic", () => {
   beforeEach(() => {

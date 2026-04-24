@@ -355,7 +355,7 @@ vi.mock("bun:sqlite", () => {
   };
 });
 
-import { closeDb } from "../db";
+import { closeDb } from "../core/db";
 import {
   approvePlan,
   inferAuthorType,
@@ -364,7 +364,7 @@ import {
   parseApprovalCommand,
   recordPlanningAgentComment,
   type CommentMirrorRecord,
-} from "../planning-state";
+} from "../domain/planning-state";
 
 function createComment(body: string): CommentMirrorRecord {
   return {

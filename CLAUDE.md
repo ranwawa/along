@@ -15,7 +15,7 @@ Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding ag
 
 ## CLI Entry Point
 
-The global command `along` maps to `bin/setup.ts`, which dispatches subcommands by spawning the corresponding `bin/<subcommand>.ts` file.
+The global command `along` maps to `bin/setup.ts`, which dispatches subcommands by spawning the corresponding `bin/commands/<subcommand>.ts` file.
 
 ```bash
 along webhook-server --port 9876    # 启动本地 webhook 服务器，接收 GitHub App webhook 事件
@@ -45,21 +45,27 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Directory Layout
 
-- `bin/` — All CLI scripts. Two categories:
-  - **Internal modules** (imported, not run directly): `config.ts`, `common.ts`, `exec.ts`, `github-client.ts`, `worktree-init.ts`, `session-manager.ts`, `task.ts`, `issue.ts`, `cleanup-utils.ts`, `todo-helper.ts`, `webhook-handlers.ts`, `bootstrap.ts`
-  - **CLI subcommands** (dispatched by `setup.ts`): everything else in `bin/`
+- `bin/` — CLI entry points and all source modules, organized into subdirectories:
+  - `bin/setup.ts` — CLI entry point, dispatches subcommands from `commands/`
+  - `bin/preinstall.ts` — Package manager guard (ensures Bun)
+  - `bin/commands/` — CLI subcommands (dispatched by `setup.ts`): `run.ts`, `webhook-server.ts`, `cleanup.ts`, `worktree-gc.ts`, `branch-create.ts`, `commit-push.ts`, `pr-create.ts`, `issue-comment.ts`, `issue-status.ts`, `label-sync.ts`, `log-reader.ts`
+  - `bin/core/` — Foundational modules: `config.ts`, `common.ts`, `result.ts`, `exec.ts`, `db.ts`, `types.ts`, `session-paths.ts`
+  - `bin/domain/` — Business logic: `session-manager.ts`, `session-state-machine.ts`, `session-diagnostics.ts`, `planning-state.ts`, `task.ts`, `issue.ts`, `issue-agent.ts`, `issue-triage.ts`, `todo-helper.ts`, `analyze-error.ts`, `cleanup-utils.ts`, `worktree-init.ts`, `bootstrap.ts`
+  - `bin/integration/` — External service adapters: `github-client.ts`, `agent-config.ts`, `webhook-handlers.ts`, `workspace-registry.ts`
+  - `bin/logging/` — Structured logging: `log-types.ts`, `log-writer.ts`, `log-router.ts`
+  - `bin/__tests__/` — Vitest test files
 - `prompts/` — SOP templates consumed by AI agents. `$1` is replaced with the issue/PR number.
 - `skills/` — Reusable skill definitions (branch naming, conventional commits, PR summary, unit testing) synced into worktrees.
 - `types/` — Type declarations for external agent SDKs.
 
 ### Key Abstractions
 
-- **`Result<T>`** (`result.ts`, re-exported from `common.ts`): Discriminated union `{success: true, data: T} | {success: false, error: string}` used throughout for error handling. Use `success()` / `failure()` constructors.
-- **`config`** (`config.ts`): Singleton with path constants. Base data directory is `~/.along/`. Per-issue artifacts live under `~/.along/{owner}/{repo}/{issueNumber}/`. Source resources live under the repo's own directory.
-- **`db`** (`db.ts`): SQLite database module (`~/.along/along.db`) providing ACID transactions for session state. Key functions: `readSession()`, `upsertSession()`, `findAllSessions()`, `findSessionByPr()`, `findSessionByBranch()`.
-- **`SessionManager`** (`session-manager.ts`): High-level session lifecycle manager (running → completed/error/crashed). Delegates to `db.ts` for persistence. Constructor: `(owner, repo, issueNumber)`.
-- **`SessionPathManager`** (`session-paths.ts`): Centralized path resolution for per-issue file artifacts (logs, todo, worktree). Does NOT manage session status (that's in SQLite). Constructor: `(owner, repo, issueNumber)`.
-- **`Task`** / **`Issue`** (`task.ts`, `issue.ts`): Domain objects for session state and GitHub issue data respectively.
+- **`Result<T>`** (`core/result.ts`, re-exported from `core/common.ts`): Discriminated union `{success: true, data: T} | {success: false, error: string}` used throughout for error handling. Use `success()` / `failure()` constructors.
+- **`config`** (`core/config.ts`): Singleton with path constants. Base data directory is `~/.along/`. Per-issue artifacts live under `~/.along/{owner}/{repo}/{issueNumber}/`. Source resources live under the repo's own directory.
+- **`db`** (`core/db.ts`): SQLite database module (`~/.along/along.db`) providing ACID transactions for session state. Key functions: `readSession()`, `upsertSession()`, `findAllSessions()`, `findSessionByPr()`, `findSessionByBranch()`.
+- **`SessionManager`** (`domain/session-manager.ts`): High-level session lifecycle manager (running → completed/error/crashed). Delegates to `core/db.ts` for persistence. Constructor: `(owner, repo, issueNumber)`.
+- **`SessionPathManager`** (`core/session-paths.ts`): Centralized path resolution for per-issue file artifacts (logs, todo, worktree). Does NOT manage session status (that's in SQLite). Constructor: `(owner, repo, issueNumber)`.
+- **`Task`** / **`Issue`** (`domain/task.ts`, `domain/issue.ts`): Domain objects for session state and GitHub issue data respectively.
 
 ### Editor Support
 
@@ -79,4 +85,4 @@ Along supports multiple AI editors via `config.EDITORS`. Each editor entry inclu
 - All user-facing log messages and commit descriptions are in **Chinese**.
 - Logging uses `consola` with per-file tags: `consola.withTag("module-name")`.
 - CLI argument parsing uses `commander`.
-- Git operations use `simple-git` (imported as `git` from `common.ts`) and Bun's `$` shell for `gh` CLI calls.
+- Git operations use `simple-git` (imported as `git` from `core/common.ts`) and Bun's `$` shell for `gh` CLI calls.

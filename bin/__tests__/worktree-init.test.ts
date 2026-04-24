@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import path from "path";
 
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
   git: {
@@ -10,7 +10,7 @@ vi.mock("../common", () => ({
   },
 }));
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     ROOT_DIR: "/mock/along",
     EDITORS: [
@@ -46,13 +46,13 @@ vi.mock("fs", () => ({
   },
 }));
 
-vi.mock("../db", () => ({
+vi.mock("../core/db", () => ({
   upsertSession: vi.fn(() => ({ success: true })),
 }));
 
 // Now that we fixed the source code syntax, we can import it properly!
-import { getDefaultBranch, setupWorktree, syncEditorMappings } from "../worktree-init";
-import { git } from "../common";
+import { getDefaultBranch, setupWorktree, syncEditorMappings } from "../domain/worktree-init";
+import { git } from "../core/common";
 import fs from "fs";
 
 describe("worktree-init.ts", () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { execSync, spawnSync } from "child_process";
 
 // Mock common.ts 的 re-exports
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -12,7 +12,7 @@ vi.mock("child_process", () => ({
   spawnSync: vi.fn(),
 }));
 
-import { runCommand, runSafeCommand } from "../exec";
+import { runCommand, runSafeCommand } from "../core/exec";
 
 describe("exec.ts", () => {
   beforeEach(() => {
