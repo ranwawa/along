@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock common.ts
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
   git: {
@@ -9,7 +9,7 @@ vi.mock("../common", () => ({
   },
 }));
 
-vi.mock("../agent-config", () => ({
+vi.mock("../integration/agent-config", () => ({
   resolveAgentToken: vi.fn(() => null),
 }));
 
@@ -29,8 +29,8 @@ vi.mock("bun", () => ({
   $: Object.assign(vi.fn(), { text: vi.fn() }),
 }));
 
-import { isNotFoundError, readRepoInfo } from "../github-client";
-import { git } from "../common";
+import { isNotFoundError, readRepoInfo } from "../integration/github-client";
+import { git } from "../core/common";
 
 describe("github-client.ts", () => {
   const originalEnv = process.env;
@@ -83,7 +83,7 @@ describe("github-client.ts", () => {
 
       // 由于有模块级缓存，需要 resetModules
       vi.resetModules();
-      const mod = await import("../github-client");
+      const mod = await import("../integration/github-client");
 
       const result = await mod.readRepoInfo();
       expect(result.success).toBe(true);
@@ -98,7 +98,7 @@ describe("github-client.ts", () => {
       );
 
       vi.resetModules();
-      const mod = await import("../github-client");
+      const mod = await import("../integration/github-client");
 
       const result = await mod.readRepoInfo();
       expect(result.success).toBe(true);
@@ -113,7 +113,7 @@ describe("github-client.ts", () => {
       );
 
       vi.resetModules();
-      const mod = await import("../github-client");
+      const mod = await import("../integration/github-client");
 
       const result = await mod.readRepoInfo();
       expect(result.success).toBe(true);
@@ -128,7 +128,7 @@ describe("github-client.ts", () => {
       );
 
       vi.resetModules();
-      const mod = await import("../github-client");
+      const mod = await import("../integration/github-client");
 
       const result = await mod.readRepoInfo();
       expect(result.success).toBe(false);
@@ -138,7 +138,7 @@ describe("github-client.ts", () => {
       vi.mocked(git.remote).mockResolvedValue("");
 
       vi.resetModules();
-      const mod = await import("../github-client");
+      const mod = await import("../integration/github-client");
 
       const result = await mod.readRepoInfo();
       expect(result.success).toBe(false);

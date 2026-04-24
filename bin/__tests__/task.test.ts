@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock dependencies
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
   iso_timestamp: () => "2026-04-11T12:00:00.000Z",
 }));
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     USER_ALONG_DIR: "/mock/.along",
     getIssueDir: (owner: string, repo: string, issueNumber: number) =>
@@ -15,7 +15,7 @@ vi.mock("../config", () => ({
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -29,14 +29,14 @@ vi.mock("fs", () => ({
   },
 }));
 
-vi.mock("../db", () => ({
+vi.mock("../core/db", () => ({
   readSession: vi.fn(),
   upsertSession: vi.fn(),
 }));
 
-import { Task } from "../task";
+import { Task } from "../domain/task";
 import fs from "fs";
-import { readSession } from "../db";
+import { readSession } from "../core/db";
 
 describe("task.ts", () => {
   const owner = "ranwawa";

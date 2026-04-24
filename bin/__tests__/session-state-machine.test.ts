@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   iso_timestamp: () => "2026-04-20T12:00:00.000Z",
 }));
 
-import { applySessionStateEvent, isActiveSessionStatus } from "../session-state-machine";
+import { applySessionStateEvent, isActiveSessionStatus } from "../domain/session-state-machine";
 
 describe("session-state-machine.ts", () => {
   it("planning 阶段成功后进入 waiting_human/planning/await_approval", () => {

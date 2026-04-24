@@ -11,11 +11,11 @@ vi.mock("consola", () => ({
   },
 }));
 
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   iso_timestamp: () => "2026-04-11T12:00:00.000Z",
 }));
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     USER_ALONG_DIR: "/mock/.along",
     getIssueDir: (owner: string, repo: string, issueNumber: number) =>
@@ -23,7 +23,7 @@ vi.mock("../config", () => ({
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -39,8 +39,8 @@ vi.mock("fs", () => ({
 }));
 
 import fs from "fs";
-import { saveStepOutput, completeTodoStep } from "../todo-helper";
-import { SessionPathManager } from "../session-paths";
+import { saveStepOutput, completeTodoStep } from "../domain/todo-helper";
+import { SessionPathManager } from "../core/session-paths";
 
 describe("todo-helper.ts", () => {
   let paths: SessionPathManager;

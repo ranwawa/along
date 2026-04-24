@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     CONFIG_FILE: "/mock/.along/config.json",
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -28,7 +28,7 @@ const mockFs = {
 vi.mock("fs", () => ({ default: mockFs }));
 
 // 每次 import 都需要 fresh module 因为有 cachedConfig 状态
-let agentConfig: typeof import("../agent-config");
+let agentConfig: typeof import("../integration/agent-config");
 
 describe("agent-config.ts", () => {
   const originalEnv = process.env;
@@ -40,7 +40,7 @@ describe("agent-config.ts", () => {
 
     // 由于 cachedConfig 是模块级变量，需要每次重新导入
     vi.resetModules();
-    agentConfig = await import("../agent-config");
+    agentConfig = await import("../integration/agent-config");
   });
 
   afterEach(() => {

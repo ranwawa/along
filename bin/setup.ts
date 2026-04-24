@@ -2,7 +2,7 @@
 /**
  * setup.ts - ALONG 自动化工具入口与命令分发
  */
-import { config } from "./config";
+import { config } from "./core/config";
 import fs from "fs";
 import path from "path";
 import chalk from "chalk";
@@ -36,13 +36,12 @@ function printHelp(commands: string[], tag: string) {
 /**
  * 分发子命令
  */
-async function dispatch(subCommand: string, args: string[], binDir: string, commands: string[], tag: string) {
-  const scriptPath = path.join(binDir, `${subCommand}.ts`);
-  const isInternal = ['setup', 'config', 'common', 'exec', 'github-client', 'worktree-init', 'session-manager', 'task', 'issue', 'webhook-handlers', 'issue-triage', 'app-init', 'bootstrap'].includes(subCommand);
+async function dispatch(subCommand: string, args: string[], commandsDir: string, commands: string[], tag: string) {
+  const scriptPath = path.join(commandsDir, `${subCommand}.ts`);
   const watch = args.includes("--watch");
   const forwardedArgs = args.filter((arg) => arg !== "--watch");
 
-  if (commands.includes(subCommand) && !isInternal) {
+  if (commands.includes(subCommand)) {
     const proc = Bun.spawn([Bun.argv[0], ...(watch ? ["--watch"] : []), scriptPath, ...forwardedArgs], {
       stdout: "inherit",
       stderr: "inherit",
@@ -59,23 +58,22 @@ async function dispatch(subCommand: string, args: string[], binDir: string, comm
 
 async function main() {
   config.ensureDataDirs();
-  const binDir = config.BIN_DIR;
+  const commandsDir = path.join(config.BIN_DIR, "commands");
   const tagResult = config.getLogTag();
   const args = process.argv.slice(2);
 
-  if (!fs.existsSync(binDir)) {
-    console.error(`错误: bin 目录不存在: ${binDir}`);
+  if (!fs.existsSync(commandsDir)) {
+    console.error(`错误: commands 目录不存在: ${commandsDir}`);
     process.exit(1);
   }
 
-  const files = fs.readdirSync(binDir).filter(f => f.endsWith(".ts"));
+  const files = fs.readdirSync(commandsDir).filter(f => f.endsWith(".ts"));
   const commands = files.map(f => f.replace(".ts", ""));
 
-  // 这里的 tag 仅用于展示帮助或回显，如果获取失败则默认使用 "ALONG"
   const tag = tagResult.success ? tagResult.data : "ALONG";
 
   if (args.length > 0) {
-    await dispatch(args[0], args.slice(1), binDir, commands, tag);
+    await dispatch(args[0], args.slice(1), commandsDir, commands, tag);
   } else {
     printHelp(commands, tag);
   }

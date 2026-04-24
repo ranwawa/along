@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     ROOT_DIR: "/mock/along",
     USER_ALONG_DIR: "/mock/home/.along",
@@ -18,26 +18,26 @@ vi.mock("../config", () => ({
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
 
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
   ensureEditorPermissions: vi.fn(),
 }));
 
-vi.mock("../worktree-init", () => ({
+vi.mock("../domain/worktree-init", () => ({
   syncEditorMappings: vi.fn(() => ({ success: true, data: undefined })),
 }));
 
-vi.mock("../agent-config", () => ({
+vi.mock("../integration/agent-config", () => ({
   getWebhookSecret: vi.fn(() => null),
 }));
 
-vi.mock("../github-client", () => ({
+vi.mock("../integration/github-client", () => ({
   readRepoInfo: vi.fn(() => Promise.resolve({ success: true, data: { owner: "test", repo: "repo" } })),
 }));
 
@@ -67,9 +67,9 @@ vi.mock("chalk", () => {
   return { default: new Proxy(passthrough, handler) };
 });
 
-import { ensureProjectBootstrap, ensureWebhookSecret, printGitHubAppGuide } from "../bootstrap";
-import { config } from "../config";
-import { getWebhookSecret } from "../agent-config";
+import { ensureProjectBootstrap, ensureWebhookSecret, printGitHubAppGuide } from "../domain/bootstrap";
+import { config } from "../core/config";
+import { getWebhookSecret } from "../integration/agent-config";
 import fs from "fs";
 
 describe("bootstrap.ts", () => {

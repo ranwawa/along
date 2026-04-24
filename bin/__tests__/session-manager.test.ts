@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock all external deps
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   config: {
     USER_ALONG_DIR: "/mock/.along",
     getIssueDir: (owner: string, repo: string, issueNumber: number) =>
@@ -9,7 +9,7 @@ vi.mock("../config", () => ({
   },
 }));
 
-vi.mock("../result", () => ({
+vi.mock("../core/result", () => ({
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
@@ -44,7 +44,7 @@ const { mockWriteSession } = vi.hoisted(() => ({
   mockWriteSession: vi.fn(),
 }));
 
-vi.mock("../log-writer", () => ({
+vi.mock("../logging/log-writer", () => ({
   logWriter: {
     writeSession: mockWriteSession,
     writeGlobal: vi.fn(),
@@ -52,26 +52,26 @@ vi.mock("../log-writer", () => ({
   },
 }));
 
-vi.mock("../db", () => ({
+vi.mock("../core/db", () => ({
   readSession: vi.fn(),
   upsertSession: vi.fn(() => ({ success: true })),
   transactSession: vi.fn(),
 }));
 
-vi.mock("../github-client", () => ({
+vi.mock("../integration/github-client", () => ({
   syncLifecycleLabel: vi.fn(() => Promise.resolve()),
 }));
 
 // Mock common dependencies
-vi.mock("../common", () => ({
+vi.mock("../core/common", () => ({
   iso_timestamp: () => "2026-04-11T12:00:00.000Z",
   success: (data: any) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
 
 import fs from "fs";
-import { readSession, upsertSession, transactSession } from "../db";
-import { SessionManager } from "../session-manager";
+import { readSession, upsertSession, transactSession } from "../core/db";
+import { SessionManager } from "../domain/session-manager";
 
 describe("session-manager.ts", () => {
   const owner = "ranwawa";
