@@ -121,3 +121,34 @@ export interface StatusCounts {
   zombie: number;
   total: number;
 }
+
+export interface ConversationFileInfo {
+  filename: string;
+  phase: string;
+  workflow: string;
+  timestamp: string;
+  size: number;
+}
+
+export interface ConversationMessage {
+  type: string;
+  subtype?: string;
+  message?: {
+    content?: Array<{
+      type: string;
+      text?: string;
+      name?: string;
+      input?: unknown;
+    }>;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+    };
+  };
+  session_id?: string;
+  num_turns?: number;
+  total_cost_usd?: number;
+  tool_name?: string;
+  tool_input?: string;
+  [key: string]: unknown;
+}

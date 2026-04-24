@@ -141,6 +141,24 @@ async function drainStream(
   }
 }
 
+const PERSISTED_MESSAGE_TYPES = new Set([
+  "assistant",
+  "user",
+  "result",
+  "tool_use_summary",
+  "rate_limit_event",
+]);
+
+const PERSISTED_SYSTEM_SUBTYPES = new Set(["compact_boundary", "api_retry"]);
+
+function shouldPersistMessage(msg: SDKMessage): boolean {
+  if (PERSISTED_MESSAGE_TYPES.has(msg.type)) return true;
+  if (msg.type === "system") {
+    return PERSISTED_SYSTEM_SUBTYPES.has((msg as any).subtype);
+  }
+  return false;
+}
+
 function formatSDKMessage(message: SDKMessage): string | null {
   if (message.type === "assistant") {
     const content = message.message?.content;
@@ -168,6 +186,7 @@ export async function execAgent(
   onPid?: (pid: number) => void,
   logFile?: string,
   sessionManager?: SessionManager,
+  conversationFile?: string,
 ): Promise<Result<number>> {
   const isPlanningSymlink = (() => {
     try {
@@ -189,7 +208,7 @@ export async function execAgent(
   const editor = config.EDITORS.find((e) => e.id === logTag);
 
   if (editor?.id === "claude") {
-    return execClaudeAgent(worktreePath, issueNumber, workflow, sessionManager, logFile);
+    return execClaudeAgent(worktreePath, issueNumber, workflow, sessionManager, logFile, conversationFile);
   }
 
   return execSpawnAgent(worktreePath, issueNumber, workflow, logTag, editor, onPid, logFile, sessionManager);
@@ -201,6 +220,7 @@ async function execClaudeAgent(
   workflow: string,
   sessionManager?: SessionManager,
   logFile?: string,
+  conversationFile?: string,
 ): Promise<Result<number>> {
   const promptPath = path.join(worktreePath, `.claude/commands/${workflow}.md`);
   if (!fs.existsSync(promptPath)) {
@@ -244,12 +264,22 @@ async function execClaudeAgent(
   const out: WritableTarget = fileWriter || process.stdout;
   let sessionId: string | undefined;
 
+  let convHandle: fs.WriteStream | undefined;
+  if (conversationFile) {
+    fs.mkdirSync(path.dirname(conversationFile), { recursive: true });
+    convHandle = fs.createWriteStream(conversationFile, { flags: "a" });
+  }
+
   try {
     const conversation = query({ prompt, options });
 
     for await (const message of conversation) {
       if (!sessionId && "session_id" in message) {
         sessionId = message.session_id as string;
+      }
+
+      if (convHandle && shouldPersistMessage(message)) {
+        convHandle.write(JSON.stringify(message) + "\n");
       }
 
       const formatted = formatSDKMessage(message);
@@ -275,6 +305,7 @@ async function execClaudeAgent(
   } finally {
     fileWriter?.flush();
     fileHandle?.end();
+    convHandle?.end();
   }
 
   return success(0);
@@ -556,6 +587,7 @@ export async function launchIssueAgent(
 
   try {
     const logFile = paths.getAgentLogFile();
+    const convFile = paths.getConversationFile(phase, workflow);
     const agentRes = await execAgent(
       worktreePath,
       issueNumber,
@@ -565,6 +597,7 @@ export async function launchIssueAgent(
       },
       logFile,
       session,
+      convFile,
     );
 
     if (!agentRes.success) return agentRes;

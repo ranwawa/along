@@ -27,13 +27,6 @@ export interface LifecyclePayload {
   details?: Record<string, unknown>;
 }
 
-export interface ConversationPayload {
-  role: "user" | "assistant" | "tool_use" | "tool_result";
-  toolName?: string;
-  toolInput?: string;
-  isError?: boolean;
-}
-
 export interface DiagnosticPayload {
   errorCategory?: string;
   exitCode?: number;

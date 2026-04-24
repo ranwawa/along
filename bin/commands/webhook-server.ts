@@ -33,6 +33,9 @@ import {
   readSessionLog as readSessionLogFn,
   getGlobalLogPath as getGlobalLogPathFn,
   getSessionLogPath as getSessionLogPathFn,
+  listConversationFiles,
+  readConversationFile,
+  getConversationDir,
 } from "./log-reader";
 import { ensureWebhookSecret, ensureWorkspaces } from "../domain/bootstrap";
 import { buildRegistry, type WorkspaceRegistry } from "../integration/workspace-registry";
@@ -1237,6 +1240,67 @@ async function main() {
           });
         }
         const logPath = getSessionLogPathFn(query.owner, query.repo, query.issueNumber);
+        return createLogSSEResponse(logPath, req);
+      }
+
+      // ── NEW API: /api/logs/conversation/files ──
+      if (url.pathname === "/api/logs/conversation/files" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "缺少 owner/repo/issueNumber 参数" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+        const files = listConversationFiles(query.owner, query.repo, query.issueNumber);
+        return new Response(JSON.stringify(files), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      // ── NEW API: /api/logs/conversation ──
+      if (url.pathname === "/api/logs/conversation" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "缺少 owner/repo/issueNumber 参数" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+        const file = url.searchParams.get("file");
+        if (!file) {
+          return new Response(JSON.stringify({ error: "缺少 file 参数" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+        const dir = getConversationDir(query.owner, query.repo, query.issueNumber);
+        const filePath = path.join(dir, path.basename(file));
+        const maxLines = url.searchParams.has("maxLines") ? Number(url.searchParams.get("maxLines")) : undefined;
+        const entries = readConversationFile(filePath, { maxLines });
+        return new Response(JSON.stringify(entries), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      // ── NEW API: /api/logs/conversation/stream (SSE) ──
+      if (url.pathname === "/api/logs/conversation/stream" && req.method === "GET") {
+        const query = getSessionQuery(url);
+        if (!query) {
+          return new Response(JSON.stringify({ error: "缺少 owner/repo/issueNumber 参数" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+        const file = url.searchParams.get("file");
+        if (!file) {
+          return new Response(JSON.stringify({ error: "缺少 file 参数" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+        const dir = getConversationDir(query.owner, query.repo, query.issueNumber);
+        const logPath = path.join(dir, path.basename(file));
         return createLogSSEResponse(logPath, req);
       }
 

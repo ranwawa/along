@@ -85,6 +85,15 @@ export class SessionPathManager {
     return path.join(this.getIssueDir(), "review-diff.json");
   }
 
+  getConversationDir(): string {
+    return path.join(this.getIssueDir(), "conversations");
+  }
+
+  getConversationFile(phase: string, workflow: string): string {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    return path.join(this.getConversationDir(), `${ts}-${phase}-${workflow}.jsonl`);
+  }
+
   getWorktreeDir(): string {
     return path.join(this.getIssueDir(), "worktree");
   }
