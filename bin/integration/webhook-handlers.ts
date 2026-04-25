@@ -179,9 +179,10 @@ async function doReviewPr(owner: string, repo: string, prNumber: number): Promis
     await session.markAsCrashed(agentRes.error);
     return;
   }
-  if (agentRes.data !== 0) {
-    logger.error(`Reviewer Agent 异常退出 (退出码: ${agentRes.data})`);
-    await session.markAsCrashed(`Reviewer Agent 异常退出 (退出码: ${agentRes.data})`);
+  if (agentRes.data.exitCode !== 0) {
+    const nativeMsg = agentRes.data.nativeError ? ` [${agentRes.data.nativeError.message}]` : "";
+    logger.error(`Reviewer Agent 异常退出 (退出码: ${agentRes.data.exitCode})${nativeMsg}`);
+    await session.markAsCrashed(`Reviewer Agent 异常退出 (退出码: ${agentRes.data.exitCode})${nativeMsg}`);
     return;
   }
 
@@ -322,9 +323,10 @@ async function doResolveReview(owner: string, repo: string, prNumber: number): P
     await session.markAsCrashed(agentRes.error);
     return;
   }
-  if (agentRes.data !== 0) {
-    logger.error(`Agent 异常退出 (退出码: ${agentRes.data})`);
-    await session.markAsCrashed(`Agent 异常退出 (退出码: ${agentRes.data})`);
+  if (agentRes.data.exitCode !== 0) {
+    const nativeMsg = agentRes.data.nativeError ? ` [${agentRes.data.nativeError.message}]` : "";
+    logger.error(`Agent 异常退出 (退出码: ${agentRes.data.exitCode})${nativeMsg}`);
+    await session.markAsCrashed(`Agent 异常退出 (退出码: ${agentRes.data.exitCode})${nativeMsg}`);
     return;
   }
 
@@ -465,9 +467,10 @@ async function doResolveCi(owner: string, repo: string, prNumber: number): Promi
     await session.markAsCrashed(agentRes.error);
     return;
   }
-  if (agentRes.data !== 0) {
-    logger.error(`Agent 异常退出 (退出码: ${agentRes.data})`);
-    await session.markAsCrashed(`Agent 异常退出 (退出码: ${agentRes.data})`);
+  if (agentRes.data.exitCode !== 0) {
+    const nativeMsg = agentRes.data.nativeError ? ` [${agentRes.data.nativeError.message}]` : "";
+    logger.error(`Agent 异常退出 (退出码: ${agentRes.data.exitCode})${nativeMsg}`);
+    await session.markAsCrashed(`Agent 异常退出 (退出码: ${agentRes.data.exitCode})${nativeMsg}`);
     return;
   }
 

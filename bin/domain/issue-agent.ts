@@ -97,6 +97,13 @@ export function syncPromptsToWorktree(worktreePath: string): Result<void> {
   return success(undefined);
 }
 
+// ─── Agent 执行结果抽象 ─────────────────────────────────────
+
+export interface AgentExecutionSummary {
+  exitCode: number;
+  nativeError?: { message: string; details?: string };
+}
+
 // ─── execAgent ──────────────────────────────────────────────
 
 type WritableTarget = { write(data: string): any };
@@ -171,6 +178,11 @@ function formatSDKMessage(message: SDKMessage): string | null {
     return null;
   }
   if (message.type === "result") {
+    const msgAny = message as any;
+    if (msgAny.is_error === true) {
+      const errors = Array.isArray(msgAny.errors) ? msgAny.errors : ["未知错误"];
+      return `[result] 错误: ${errors.join(", ")} (${message.num_turns} turns)`;
+    }
     if (message.subtype === "success") {
       return `[result] 完成 (${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)})`;
     }
@@ -187,7 +199,7 @@ export async function execAgent(
   logFile?: string,
   sessionManager?: SessionManager,
   conversationFile?: string,
-): Promise<Result<number>> {
+): Promise<Result<AgentExecutionSummary>> {
   const isPlanningSymlink = (() => {
     try {
       return fs.lstatSync(worktreePath).isSymbolicLink();
@@ -221,7 +233,7 @@ async function execClaudeAgent(
   sessionManager?: SessionManager,
   logFile?: string,
   conversationFile?: string,
-): Promise<Result<number>> {
+): Promise<Result<AgentExecutionSummary>> {
   const promptPath = path.join(worktreePath, `.claude/commands/${workflow}.md`);
   if (!fs.existsSync(promptPath)) {
     return failure(`workflow prompt 文件不存在: ${promptPath}`);
@@ -272,6 +284,7 @@ async function execClaudeAgent(
 
   try {
     const conversation = query({ prompt, options });
+    let receivedResult = false;
 
     for await (const message of conversation) {
       if (!sessionId && "session_id" in message) {
@@ -286,29 +299,57 @@ async function execClaudeAgent(
       if (formatted) out.write(formatted + "\n");
 
       if (message.type === "result") {
+        receivedResult = true;
+
         if (sessionId && sessionManager) {
           sessionManager.updateClaudeSessionId(sessionId);
           logger.info(`已捕获 Claude sessionId: ${sessionId}`);
         }
 
-        if (message.subtype !== "success") {
-          logger.warn(`Claude Agent 异常结束: ${message.subtype}`);
-          return success(1);
+        const msgAny = message as any;
+        const isError = msgAny.is_error === true;
+        const hasErrors = Array.isArray(msgAny.errors) && msgAny.errors.length > 0;
+
+        if (isError || hasErrors) {
+          const errorMessage = hasErrors ? msgAny.errors.join(", ") : "Agent 执行出错";
+          logger.error(`Claude Agent SDK 报告错误: ${errorMessage}`);
+          return success({
+            exitCode: 1,
+            nativeError: {
+              message: errorMessage,
+              details: JSON.stringify(message),
+            },
+          });
         }
 
-        return success(0);
+        if (message.subtype !== "success") {
+          logger.warn(`Claude Agent 异常结束: ${message.subtype}`);
+          return success({ exitCode: 1 });
+        }
+
+        return success({ exitCode: 0 });
       }
+    }
+
+    if (!receivedResult) {
+      const errorMessage = "Agent 执行流结束但未收到结果";
+      logger.error(errorMessage);
+      return success({
+        exitCode: 1,
+        nativeError: { message: errorMessage },
+      });
     }
   } catch (error: any) {
     logger.error(`Claude Agent SDK 执行异常: ${error.message}`);
-    return success(1);
+    return success({
+      exitCode: 1,
+      nativeError: { message: error.message, details: error.stack },
+    });
   } finally {
     fileWriter?.flush();
     fileHandle?.end();
     convHandle?.end();
   }
-
-  return success(0);
 }
 
 async function execSpawnAgent(
@@ -320,7 +361,7 @@ async function execSpawnAgent(
   onPid?: (pid: number) => void,
   logFile?: string,
   _sessionManager?: SessionManager,
-): Promise<Result<number>> {
+): Promise<Result<AgentExecutionSummary>> {
   let cmd = editor?.runTemplate || "{tag} --prompt-template {workflow} {num}";
   cmd = cmd
     .replace("{tag}", logTag)
@@ -367,7 +408,7 @@ async function execSpawnAgent(
   if (exitCode !== 0) {
     logger.warn(`Agent 退出码: ${exitCode}`);
   }
-  return success(exitCode);
+  return success({ exitCode });
 }
 
 // ─── launchIssueAgent ───────────────────────────────────────
@@ -601,7 +642,8 @@ export async function launchIssueAgent(
     );
 
     if (!agentRes.success) return agentRes;
-    const exitCode = agentRes.data;
+    const summary = agentRes.data;
+    const exitCode = summary.exitCode;
 
     if (exitCode !== 0) {
       let crashLog = "";
@@ -612,8 +654,11 @@ export async function launchIssueAgent(
             content.length > 3000 ? "..." + content.slice(-3000) : content;
         }
       } catch (e) {}
+      const nativeErrorMsg = summary.nativeError
+        ? ` [SDK 错误: ${summary.nativeError.message}]`
+        : "";
       await session.markAsCrashed(
-        `Agent 意外退出 (退出码: ${exitCode})`,
+        `Agent 意外退出 (退出码: ${exitCode})${nativeErrorMsg}`,
         crashLog || "无法获取日志文件内容",
         exitCode,
       );
