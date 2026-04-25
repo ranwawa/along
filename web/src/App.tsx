@@ -607,7 +607,26 @@ function App() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium truncate">{session.owner}/{session.repo}</span>
                       <span className="text-text-secondary text-sm">
-                        #{session.issueNumber}
+                        <a
+                          href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="text-inherit hover:underline"
+                        >
+                          #{session.issueNumber}
+                        </a>
+                        {session.context?.prNumber && session.context?.prUrl && (
+                          <a
+                            href={session.context.prUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="ml-1 text-inherit hover:underline"
+                          >
+                            PR #{session.context.prNumber}
+                          </a>
+                        )}
                         {session.hasWorktree && <span className="ml-1 opacity-70" title="Worktree exists">📁</span>}
                       </span>
                     </div>
@@ -679,7 +698,26 @@ function App() {
                    >
                      <td className="px-6 py-4 border-b border-white/5 text-sm">{session.owner}/{session.repo}</td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">
-                       #{session.issueNumber}
+                       <a
+                         href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         onClick={e => e.stopPropagation()}
+                         className="text-inherit hover:underline"
+                       >
+                         #{session.issueNumber}
+                       </a>
+                       {session.context?.prNumber && session.context?.prUrl && (
+                         <a
+                           href={session.context.prUrl}
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           onClick={e => e.stopPropagation()}
+                           className="ml-2 text-inherit hover:underline"
+                         >
+                           PR #{session.context.prNumber}
+                         </a>
+                       )}
                        {session.hasWorktree && <span className="ml-2 opacity-70" title="Worktree exists">📁</span>}
                      </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">
@@ -738,7 +776,12 @@ function App() {
            >
               <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center shrink-0">
                  <h2 className="text-base md:text-xl font-bold truncate mr-2">
-                   {selectedSession.owner}/{selectedSession.repo} #{selectedSession.issueNumber}
+                   {selectedSession.owner}/{selectedSession.repo} <a
+                     href={`https://github.com/${selectedSession.owner}/${selectedSession.repo}/issues/${selectedSession.issueNumber}`}
+                     target="_blank"
+                     rel="noopener noreferrer"
+                     className="text-inherit hover:underline"
+                   >#{selectedSession.issueNumber}</a>
                    {selectedSession.hasWorktree && <span className="ml-2 opacity-70" title="Worktree exists">📁</span>}
                  </h2>
                  <button
@@ -835,6 +878,20 @@ function App() {
                         <span className="text-text-secondary font-medium text-xs md:text-sm">Branch</span>
                         <span className="text-sm md:text-base">{getBranchName(selectedSession)}</span>
                      </div>
+
+                     {selectedSession.context?.prNumber && selectedSession.context?.prUrl && (
+                       <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                         <span className="text-text-secondary font-medium text-xs md:text-sm">Pull Request</span>
+                         <a
+                           href={selectedSession.context.prUrl}
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           className="text-sm md:text-base text-inherit hover:underline"
+                         >
+                           PR #{selectedSession.context.prNumber}
+                         </a>
+                       </div>
+                     )}
 
                      {selectedSession.hasWorktree && (
                         <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
