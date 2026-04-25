@@ -215,6 +215,7 @@ async function handleAction(num: string) {
 
     // 直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
     const agentRes = await launchIssueAgent(owner, repoName, taskNo, phase, {
+      trigger: "cli",
       taskData: { title: issueRes.data!.title },
     });
 

@@ -416,6 +416,7 @@ async function execSpawnAgent(
 export interface LaunchIssueAgentOptions {
   taskData?: { title: string };
   repoPath?: string;
+  trigger?: string;
   _planningContinuationCount?: number;
 }
 
@@ -436,9 +437,11 @@ export async function launchIssueAgent(
 ): Promise<Result<void>> {
   const paths = new SessionPathManager(owner, repo, issueNumber);
   const session = new SessionManager(owner, repo, issueNumber);
+  const trigger = options.trigger || "unknown";
+  const invocationId = crypto.randomUUID().slice(0, 8);
 
-  logger.info(`启动 Issue #${issueNumber} Agent (${phase})...`);
-  session.logEvent("issue-agent-launch", { phase, issueNumber });
+  logger.info(`启动 Issue #${issueNumber} Agent (${phase}) [trigger=${trigger}, invocation=${invocationId}]`);
+  session.logEvent("issue-agent-launch", { phase, issueNumber, trigger, invocationId });
 
   let planningContext: PlanningContextPayload | null = null;
   if (phase === PHASE.PLANNING) {
@@ -586,6 +589,8 @@ export async function launchIssueAgent(
       file: contextWriteRes.data,
       hasOpenRound: Boolean(planningContext.openRound),
       proposedPlanVersion: planningContext.proposedPlan?.version,
+      planId: planningContext.proposedPlan?.planId,
+      invocationId,
     });
   }
 
@@ -692,6 +697,7 @@ export async function launchIssueAgent(
           });
           return launchIssueAgent(owner, repo, issueNumber, phase, {
             ...options,
+            trigger: "planning-continuation",
             _planningContinuationCount: count,
           });
         }

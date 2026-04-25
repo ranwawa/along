@@ -1,10 +1,13 @@
 import crypto from "crypto";
 import fs from "fs";
+import { consola } from "consola";
 import { iso_timestamp } from "../core/common";
 import { getDb } from "../core/db";
 import { failure, success, type Result } from "../core/result";
 import { SessionPathManager } from "../core/session-paths";
 import { COMMAND } from "./session-state-machine";
+
+const logger = consola.withTag("planning-state");
 
 export const PLAN_STATUS = {
   DRAFT: "draft",
@@ -729,11 +732,17 @@ export function preparePlanningExecution(
   repo: string,
   issueNumber: number,
 ): Result<PlanningContextPayload> {
+  logger.info(`preparePlanningExecution 开始 (Issue #${issueNumber})`);
+
   const threadRes = getPlanningThread(owner, repo, issueNumber);
   if (!threadRes.success) return threadRes;
 
+  logger.info(`Issue #${issueNumber} thread 状态: currentPlanId=${threadRes.data?.currentPlanId || "无"}, openRoundId=${threadRes.data?.openRoundId || "无"}`);
+
   const currentPlanRes = getCurrentPlanRevision(owner, repo, issueNumber);
   if (!currentPlanRes.success) return currentPlanRes;
+
+  logger.info(`Issue #${issueNumber} 当前 plan: ${currentPlanRes.data ? `version=${currentPlanRes.data.version}, planId=${currentPlanRes.data.planId}` : "无"}`);
 
   let openRound: DiscussionRoundRecord | null = null;
   if (threadRes.data?.openRoundId) {
@@ -808,6 +817,8 @@ export function preparePlanningExecution(
       basedOnPlanId: currentPlanRes.data?.planId,
     },
   };
+
+  logger.info(`Issue #${issueNumber} 生成新 plan: planId=${payload.proposedPlan!.planId}, version=${payload.proposedPlan!.version}, basedOn=${payload.proposedPlan!.basedOnPlanId || "无"}`);
 
   return success(payload);
 }

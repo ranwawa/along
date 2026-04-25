@@ -150,7 +150,7 @@ export async function handleTriagedIssue(
 
       if (!options?.skipAgentLaunch) {
         // 启动 planning 阶段（出方案）
-        const launchRes = await launchIssueAgent(owner, repo, issueNumber, "planning", { taskData: { title: `Issue #${issueNumber}` }, repoPath: options?.repoPath });
+        const launchRes = await launchIssueAgent(owner, repo, issueNumber, "planning", { trigger: "triage", taskData: { title: `Issue #${issueNumber}` }, repoPath: options?.repoPath });
         if (!launchRes.success) return launchRes;
       }
       break;

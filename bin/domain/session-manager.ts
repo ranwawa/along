@@ -1,3 +1,4 @@
+import { consola } from "consola";
 import { iso_timestamp, success } from "../core/common";
 import type { Result } from "../core/common";
 import { SessionPathManager } from "../core/session-paths";
@@ -18,6 +19,8 @@ import {
   type SessionStateEvent,
   type SessionStep,
 } from "./session-state-machine";
+
+const smLogger = consola.withTag("session-manager");
 
 export interface SessionStatus {
   issueNumber: number;
@@ -135,6 +138,7 @@ export class SessionManager {
     const newRes = this.readStatus();
     const newLifecycle = newRes.success ? newRes.data?.lifecycle : undefined;
     if (newLifecycle && newLifecycle !== oldLifecycle) {
+      smLogger.info(`Issue #${this.issueNumber} [状态变更] event=${event.type} lifecycle: ${oldLifecycle || "无"} → ${newLifecycle}`);
       try {
         await syncLifecycleLabel(this.owner, this.repo, this.issueNumber, newLifecycle);
       } catch {}

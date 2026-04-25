@@ -434,8 +434,8 @@ async function handleEvent(
         const sessionRes = session.readStatus();
         const sessionStatus = sessionRes.success ? sessionRes.data : null;
 
-        logger.debug(
-          `Issue #${issueNumber} 评论决策上下文: labels=[${issueLabels.join(",")}] isActionable=${isActionableIssue} session=${sessionStatus ? `phase=${sessionStatus.phase},lifecycle=${sessionStatus.lifecycle}` : "无"} command=${command} author=${commentUser.login}(${commentUser.type})`,
+        logger.info(
+          `[${deliveryId}] Issue #${issueNumber} 评论决策上下文: labels=[${issueLabels.join(",")}] isActionable=${isActionableIssue} session=${sessionStatus ? `phase=${sessionStatus.phase},lifecycle=${sessionStatus.lifecycle}` : "无"} command=${command} author=${commentUser.login}(${commentUser.type})`,
         );
 
         if (command === COMMAND.APPROVE) {
@@ -536,6 +536,7 @@ async function handleEvent(
                 issueNumber,
                 "planning",
                 {
+                  trigger: "planning-feedback",
                   taskData: { title: `Issue #${issueNumber}` },
                   repoPath,
                 },
@@ -1032,7 +1033,7 @@ async function main() {
               repo,
               issueNumber,
               phase,
-              { taskData: { title }, repoPath: apiRepoPath },
+              { trigger: "manual-restart", taskData: { title }, repoPath: apiRepoPath },
             );
             if (!res.success)
               logger.error(`手动重启 Issue #${issueNumber} 失败: ${res.error}`);
