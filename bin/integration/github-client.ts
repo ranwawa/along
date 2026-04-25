@@ -4,14 +4,21 @@ import { success, failure, git } from "../core/common";
 import type { Result } from "../core/common";
 import { resolveAgentToken } from "./agent-config";
 import { consola } from "consola";
-import { LIFECYCLE_LABELS, type SessionLifecycle } from "../domain/session-state-machine";
+import {
+  LIFECYCLE_LABELS,
+  type SessionLifecycle,
+} from "../domain/session-state-machine";
 
 const apiLogger = consola.withTag("github-api");
 
-export type GitHubIssue = RestEndpointMethodTypes["issues"]["get"]["response"]["data"];
-export type GitHubPullRequest = RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
-export type GitHubReviewComment = RestEndpointMethodTypes["pulls"]["listReviewComments"]["response"]["data"][number];
-export type GitHubCheckRun = RestEndpointMethodTypes["checks"]["listForRef"]["response"]["data"]["check_runs"][number];
+export type GitHubIssue =
+  RestEndpointMethodTypes["issues"]["get"]["response"]["data"];
+export type GitHubPullRequest =
+  RestEndpointMethodTypes["pulls"]["get"]["response"]["data"];
+export type GitHubReviewComment =
+  RestEndpointMethodTypes["pulls"]["listReviewComments"]["response"]["data"][number];
+export type GitHubCheckRun =
+  RestEndpointMethodTypes["checks"]["listForRef"]["response"]["data"]["check_runs"][number];
 export interface CreatedIssueComment {
   commentId: number;
   createdAt?: string;
@@ -23,16 +30,16 @@ export interface CreatedIssueComment {
  */
 export class GitHubClient {
   private octokit: Octokit;
-  private owner: string;
-  private repo: string;
+  private _owner: string;
+  private _repo: string;
 
   /** API 调用统计 */
   private stats = { total: 0, success: 0, failed: 0, totalMs: 0 };
 
   constructor(token: string, owner: string, repo: string) {
     this.octokit = new Octokit({ auth: token });
-    this.owner = owner;
-    this.repo = repo;
+    this._owner = owner;
+    this._repo = repo;
 
     // 注册请求钩子，记录每次 API 调用
     this.octokit.hook.wrap("request", async (request, options) => {
@@ -51,12 +58,14 @@ export class GitHubClient {
         const rateLimit = response.headers["x-ratelimit-limit"];
         apiLogger.debug(
           `${method} ${url} → ${response.status} (${duration}ms)` +
-          (rateRemaining ? ` [rate: ${rateRemaining}/${rateLimit}]` : "")
+            (rateRemaining ? ` [rate: ${rateRemaining}/${rateLimit}]` : ""),
         );
 
         // rate limit 低于 100 时发出警告
         if (rateRemaining && Number(rateRemaining) < 100) {
-          apiLogger.warn(`GitHub API rate limit 即将耗尽: ${rateRemaining}/${rateLimit}`);
+          apiLogger.warn(
+            `GitHub API rate limit 即将耗尽: ${rateRemaining}/${rateLimit}`,
+          );
         }
 
         return response;
@@ -66,9 +75,10 @@ export class GitHubClient {
         this.stats.totalMs += duration;
 
         // 404/410 是预期的"资源不存在"响应，降级为 debug
-        const logLevel = (error.status === 404 || error.status === 410) ? "debug" : "warn";
+        const logLevel =
+          error.status === 404 || error.status === 410 ? "debug" : "warn";
         apiLogger[logLevel](
-          `${method} ${url} → ${error.status || "ERR"} (${duration}ms): ${error.message}`
+          `${method} ${url} → ${error.status || "ERR"} (${duration}ms): ${error.message}`,
         );
         throw error;
       }
@@ -77,13 +87,27 @@ export class GitHubClient {
 
   /** 获取 API 调用统计 */
   getStats() {
-    return { ...this.stats, avgMs: this.stats.total > 0 ? Math.round(this.stats.totalMs / this.stats.total) : 0 };
+    return {
+      ...this.stats,
+      avgMs:
+        this.stats.total > 0
+          ? Math.round(this.stats.totalMs / this.stats.total)
+          : 0,
+    };
+  }
+
+  get owner() {
+    return this._owner;
+  }
+
+  get repo() {
+    return this._repo;
   }
 
   private get repoParams() {
     return {
-      owner: this.owner,
-      repo: this.repo,
+      owner: this._owner,
+      repo: this._repo,
     };
   }
 
@@ -102,15 +126,22 @@ export class GitHubClient {
     }
   }
 
-
-
-  async getIssueComments(number: string | number): Promise<Result<RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"]>> {
+  async getIssueComments(
+    number: string | number,
+  ): Promise<
+    Result<
+      RestEndpointMethodTypes["issues"]["listComments"]["response"]["data"]
+    >
+  > {
     try {
-      const data = await this.octokit.paginate(this.octokit.issues.listComments, {
-        ...this.repoParams,
-        issue_number: Number(number),
-        per_page: 100,
-      });
+      const data = await this.octokit.paginate(
+        this.octokit.issues.listComments,
+        {
+          ...this.repoParams,
+          issue_number: Number(number),
+          per_page: 100,
+        },
+      );
       return success(data);
     } catch (e: any) {
       return failure(`获取 Issue #${number} 评论失败: ${e.message}`);
@@ -136,7 +167,10 @@ export class GitHubClient {
     }
   }
 
-  async addIssueLabels(number: string | number, labels: string[]): Promise<Result<void>> {
+  async addIssueLabels(
+    number: string | number,
+    labels: string[],
+  ): Promise<Result<void>> {
     try {
       await this.octokit.issues.addLabels({
         ...this.repoParams,
@@ -149,7 +183,10 @@ export class GitHubClient {
     }
   }
 
-  async removeIssueLabel(number: string | number, label: string): Promise<Result<void>> {
+  async removeIssueLabel(
+    number: string | number,
+    label: string,
+  ): Promise<Result<void>> {
     try {
       await this.octokit.issues.removeLabel({
         ...this.repoParams,
@@ -177,7 +214,9 @@ export class GitHubClient {
     }
   }
 
-  async getRepositoryDetails(): Promise<Result<RestEndpointMethodTypes["repos"]["get"]["response"]["data"]>> {
+  async getRepositoryDetails(): Promise<
+    Result<RestEndpointMethodTypes["repos"]["get"]["response"]["data"]>
+  > {
     try {
       const { data } = await this.octokit.repos.get({
         ...this.repoParams,
@@ -200,20 +239,29 @@ export class GitHubClient {
     }
   }
 
-  async getReviewComments(prNumber: number): Promise<Result<GitHubReviewComment[]>> {
+  async getReviewComments(
+    prNumber: number,
+  ): Promise<Result<GitHubReviewComment[]>> {
     try {
-      const data = await this.octokit.paginate(this.octokit.pulls.listReviewComments, {
-        ...this.repoParams,
-        pull_number: prNumber,
-        per_page: 100,
-      });
+      const data = await this.octokit.paginate(
+        this.octokit.pulls.listReviewComments,
+        {
+          ...this.repoParams,
+          pull_number: prNumber,
+          per_page: 100,
+        },
+      );
       return success(data);
     } catch (e: any) {
       return failure(`获取 PR #${prNumber} 评审评论失败: ${e.message}`);
     }
   }
 
-  async createReviewCommentReply(prNumber: number, commentId: number, body: string): Promise<Result<void>> {
+  async createReviewCommentReply(
+    prNumber: number,
+    commentId: number,
+    body: string,
+  ): Promise<Result<void>> {
     try {
       await this.octokit.pulls.createReplyForReviewComment({
         ...this.repoParams,
@@ -248,7 +296,12 @@ export class GitHubClient {
     prNumber: number,
     body: string,
     event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
-    comments?: Array<{ path: string; line: number; body: string; side?: "LEFT" | "RIGHT" }>,
+    comments?: Array<{
+      path: string;
+      line: number;
+      body: string;
+      side?: "LEFT" | "RIGHT";
+    }>,
   ): Promise<Result<void>> {
     try {
       await this.octokit.pulls.createReview({
@@ -256,7 +309,7 @@ export class GitHubClient {
         pull_number: prNumber,
         body,
         event,
-        comments: comments?.map(c => ({
+        comments: comments?.map((c) => ({
           path: c.path,
           line: c.line,
           body: c.body,
@@ -272,7 +325,11 @@ export class GitHubClient {
   /**
    * 列出 PR 上的所有 Reviews
    */
-  async listReviews(prNumber: number): Promise<Result<RestEndpointMethodTypes["pulls"]["listReviews"]["response"]["data"]>> {
+  async listReviews(
+    prNumber: number,
+  ): Promise<
+    Result<RestEndpointMethodTypes["pulls"]["listReviews"]["response"]["data"]>
+  > {
     try {
       const data = await this.octokit.paginate(this.octokit.pulls.listReviews, {
         ...this.repoParams,
@@ -288,7 +345,11 @@ export class GitHubClient {
   /**
    * 获取 PR 变更文件列表（含 patch/diff）
    */
-  async getPullRequestFiles(prNumber: number): Promise<Result<RestEndpointMethodTypes["pulls"]["listFiles"]["response"]["data"]>> {
+  async getPullRequestFiles(
+    prNumber: number,
+  ): Promise<
+    Result<RestEndpointMethodTypes["pulls"]["listFiles"]["response"]["data"]>
+  > {
     try {
       const data = await this.octokit.paginate(this.octokit.pulls.listFiles, {
         ...this.repoParams,
@@ -321,7 +382,11 @@ export class GitHubClient {
    * 按 head 分支名列出关联的 Pull Request
    * head 格式为 "owner:branch" 或 "branch"（同仓库时自动补全 owner）
    */
-  async listPullRequestsByHead(head: string): Promise<Result<RestEndpointMethodTypes["pulls"]["list"]["response"]["data"]>> {
+  async listPullRequestsByHead(
+    head: string,
+  ): Promise<
+    Result<RestEndpointMethodTypes["pulls"]["list"]["response"]["data"]>
+  > {
     try {
       // 如果 head 不含 ":"，自动补全为 "owner:branch"
       const fullHead = head.includes(":") ? head : `${this.owner}:${head}`;
@@ -341,12 +406,14 @@ export class GitHubClient {
    * 列出仓库 Issue（支持按标签、状态、时间过滤）
    * 注意：GitHub API 会将 PR 混入 issues 列表，此方法自动过滤
    */
-  async listIssues(options: {
-    labels?: string;
-    state?: "open" | "closed" | "all";
-    since?: string;
-    per_page?: number;
-  } = {}): Promise<Result<GitHubIssue[]>> {
+  async listIssues(
+    options: {
+      labels?: string;
+      state?: "open" | "closed" | "all";
+      since?: string;
+      per_page?: number;
+    } = {},
+  ): Promise<Result<GitHubIssue[]>> {
     try {
       const { data } = await this.octokit.issues.listForRepo({
         ...this.repoParams,
@@ -356,7 +423,9 @@ export class GitHubClient {
         per_page: options.per_page || 100,
       });
       // GitHub API 会将 PR 混入 issues 列表，过滤掉
-      const filtered = data.filter((issue: any) => !issue.pull_request) as GitHubIssue[];
+      const filtered = data.filter(
+        (issue: any) => !issue.pull_request,
+      ) as GitHubIssue[];
       return success(filtered);
     } catch (e: any) {
       return failure(`列出 Issue 失败: ${e.message}`);
@@ -366,12 +435,19 @@ export class GitHubClient {
   /**
    * 列出仓库所有 label
    */
-  async listLabels(): Promise<Result<RestEndpointMethodTypes["issues"]["listLabelsForRepo"]["response"]["data"]>> {
+  async listLabels(): Promise<
+    Result<
+      RestEndpointMethodTypes["issues"]["listLabelsForRepo"]["response"]["data"]
+    >
+  > {
     try {
-      const data = await this.octokit.paginate(this.octokit.issues.listLabelsForRepo, {
-        ...this.repoParams,
-        per_page: 100,
-      });
+      const data = await this.octokit.paginate(
+        this.octokit.issues.listLabelsForRepo,
+        {
+          ...this.repoParams,
+          per_page: 100,
+        },
+      );
       return success(data);
     } catch (e: any) {
       return failure(`列出仓库标签失败: ${e.message}`);
@@ -381,7 +457,11 @@ export class GitHubClient {
   /**
    * 创建 label
    */
-  async createLabel(name: string, color: string, description: string): Promise<Result<void>> {
+  async createLabel(
+    name: string,
+    color: string,
+    description: string,
+  ): Promise<Result<void>> {
     try {
       await this.octokit.issues.createLabel({
         ...this.repoParams,
@@ -398,7 +478,11 @@ export class GitHubClient {
   /**
    * 更新 label（颜色/描述）
    */
-  async updateLabel(name: string, color: string, description: string): Promise<Result<void>> {
+  async updateLabel(
+    name: string,
+    color: string,
+    description: string,
+  ): Promise<Result<void>> {
     try {
       await this.octokit.issues.updateLabel({
         ...this.repoParams,
@@ -428,7 +512,6 @@ export class GitHubClient {
       return failure(`删除标签 ${name} 失败: ${e.message}`);
     }
   }
-
 }
 
 /**
@@ -442,7 +525,12 @@ export function isNotFoundError(e: any): boolean {
 
   // 备选方案：检查消息内容
   const message = e.message?.toLowerCase() || "";
-  return message.includes("404") || message.includes("not found") || message.includes("410") || message.includes("gone");
+  return (
+    message.includes("404") ||
+    message.includes("not found") ||
+    message.includes("410") ||
+    message.includes("gone")
+  );
 }
 
 // 默认 token 缓存
@@ -493,15 +581,20 @@ export async function readGithubToken(): Promise<Result<string>> {
     cachedDefaultToken = token.trim();
     return success(cachedDefaultToken);
   } catch {
-    return failure("未找到 GITHUB_TOKEN 且 gh auth token 失败，请先运行 gh auth login");
+    return failure(
+      "未找到 GITHUB_TOKEN 且 gh auth token 失败，请先运行 gh auth login",
+    );
   }
 }
 
 /**
  * 获取仓库所有者和名称
  */
-export async function readRepoInfo(): Promise<Result<{ owner: string; repo: string }>> {
-  if (cachedRepoInfo) return success(cachedRepoInfo as { owner: string; repo: string });
+export async function readRepoInfo(): Promise<
+  Result<{ owner: string; repo: string }>
+> {
+  if (cachedRepoInfo)
+    return success(cachedRepoInfo as { owner: string; repo: string });
 
   try {
     const remoteStr = await git.remote(["get-url", "origin"]);
@@ -527,7 +620,10 @@ export async function readRepoInfo(): Promise<Result<{ owner: string; repo: stri
  * 1. 传入 owner/repo（webhook server 场景）：按 owner/repo 缓存，避免多仓库串台
  * 2. 不传参数（CLI 场景）：从 git remote 自动检测
  */
-export async function get_gh_client(owner?: string, repo?: string): Promise<Result<GitHubClient>> {
+export async function get_gh_client(
+  owner?: string,
+  repo?: string,
+): Promise<Result<GitHubClient>> {
   const tokenRes = await readGithubToken();
   if (!tokenRes.success) return failure(tokenRes.error);
 
@@ -574,17 +670,23 @@ export async function syncLifecycleLabel(
 
   // 提取当前 lifecycle 标签（Issue labels 可能是对象或字符串）
   const currentLifecycleLabels: string[] = issueRes.data.labels
-    .map(l => typeof l === "string" ? l : l.name)
-    .filter((name): name is string => LIFECYCLE_LABELS.includes(name as SessionLifecycle));
+    .map((l) => (typeof l === "string" ? l : l.name))
+    .filter((name): name is string =>
+      LIFECYCLE_LABELS.includes(name as SessionLifecycle),
+    );
 
   // 计算期望的标签集合
   const expectedLabels = [newLifecycle];
 
   // 计算需要添加的标签（只在当前不存在时添加）
-  const labelsToAdd = expectedLabels.filter(l => !currentLifecycleLabels.includes(l));
+  const labelsToAdd = expectedLabels.filter(
+    (l) => !currentLifecycleLabels.includes(l),
+  );
 
   // 计算需要删除的标签（只删当前存在的）
-  const labelsToRemove = currentLifecycleLabels.filter(l => l !== newLifecycle);
+  const labelsToRemove = currentLifecycleLabels.filter(
+    (l) => l !== newLifecycle,
+  );
 
   // 先添加新标签，确保新状态存在
   if (labelsToAdd.length > 0) {

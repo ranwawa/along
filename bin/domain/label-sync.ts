@@ -19,7 +19,11 @@ export interface LabelMeta {
 export const LIFECYCLE_LABELS_META: LabelMeta[] = [
   { name: "running", color: "1E90FF", description: "Session 正在运行中" },
   { name: "waiting_human", color: "4169E1", description: "等待人工介入" },
-  { name: "waiting_external", color: "6495ED", description: "等待外部依赖（PR 审核、CI 等）" },
+  {
+    name: "waiting_external",
+    color: "6495ED",
+    description: "等待外部依赖（PR 审核、CI 等）",
+  },
   { name: "completed", color: "228B22", description: "Session 已完成" },
   { name: "failed", color: "DC143C", description: "Session 执行失败" },
   { name: "interrupted", color: "FF8C00", description: "Session 被中断" },
@@ -29,9 +33,21 @@ export const LIFECYCLE_LABELS_META: LabelMeta[] = [
  * Triage 类 label（红/绿/黄/灰色系）
  */
 export const TRIAGE_LABELS_META: LabelMeta[] = [
-  { name: "bug", color: "D73A4A", description: "缺陷/回归/异常行为，需要代码修复" },
-  { name: "feature", color: "A2EEEF", description: "新功能/增强/重构/文档改进" },
-  { name: "question", color: "D876E3", description: "提问/求助/咨询，不需要代码修改" },
+  {
+    name: "bug",
+    color: "D73A4A",
+    description: "缺陷/回归/异常行为，需要代码修复",
+  },
+  {
+    name: "feature",
+    color: "A2EEEF",
+    description: "新功能/增强/重构/文档改进",
+  },
+  {
+    name: "question",
+    color: "D876E3",
+    description: "提问/求助/咨询，不需要代码修改",
+  },
   { name: "spam", color: "6A737D", description: "广告/无意义/测试内容" },
 ];
 
@@ -42,7 +58,11 @@ export const PHASE_LABELS_META: LabelMeta[] = [
   { name: "planning", color: "8B5CF6", description: "规划阶段" },
   { name: "implementation", color: "7C3AED", description: "实施阶段" },
   { name: "delivery", color: "6D28D9", description: "交付阶段" },
-  { name: "stabilization", color: "5B21B6", description: "稳定化阶段（审核、CI）" },
+  {
+    name: "stabilization",
+    color: "5B21B6",
+    description: "稳定化阶段（审核、CI）",
+  },
   { name: "done", color: "4C1D95", description: "已完成" },
 ];
 
@@ -74,11 +94,7 @@ export const ALL_DEFINED_LABELS = [
 const syncedRepos = new Set<string>();
 
 function getRepoKey(client: GitHubClient): string {
-  // GitHubClient 内部有 owner/repo，但没有暴露 getter
-  // 我们通过客户端实例本身作为 key（同一 owner/repo 的缓存客户端在 get_gh_client 中是同一个实例）
-  // 但 ensureLabelsExist 只接收 client，无法直接获取 owner/repo
-  // 这里用客户端对象引用本身作为 key，因为 get_gh_client 按 owner/repo 缓存实例
-  return (client as any).owner + "/" + (client as any).repo;
+  return client.owner + "/" + client.repo;
 }
 
 /**
@@ -88,7 +104,9 @@ function getRepoKey(client: GitHubClient): string {
  * - 不删除默认 label
  * - 同一进程内对同一仓库只执行一次 API 调用
  */
-export async function ensureLabelsExist(client: GitHubClient): Promise<Result<void>> {
+export async function ensureLabelsExist(
+  client: GitHubClient,
+): Promise<Result<void>> {
   const repoKey = getRepoKey(client);
   if (syncedRepos.has(repoKey)) {
     logger.debug(`Label 已同步，跳过: ${repoKey}`);
@@ -108,13 +126,20 @@ export async function ensureLabelsExist(client: GitHubClient): Promise<Result<vo
     const existing = currentLabels.find((l) => l.name === meta.name);
     if (!existing) {
       toCreate.push(meta);
-    } else if (existing.color !== meta.color || existing.description !== meta.description) {
+    } else if (
+      existing.color !== meta.color ||
+      existing.description !== meta.description
+    ) {
       toUpdate.push(meta);
     }
   }
 
   for (const meta of toCreate) {
-    const res = await client.createLabel(meta.name, meta.color, meta.description);
+    const res = await client.createLabel(
+      meta.name,
+      meta.color,
+      meta.description,
+    );
     if (!res.success) {
       logger.error(`创建标签失败: ${meta.name} - ${res.error}`);
     } else {
@@ -123,7 +148,11 @@ export async function ensureLabelsExist(client: GitHubClient): Promise<Result<vo
   }
 
   for (const meta of toUpdate) {
-    const res = await client.updateLabel(meta.name, meta.color, meta.description);
+    const res = await client.updateLabel(
+      meta.name,
+      meta.color,
+      meta.description,
+    );
     if (!res.success) {
       logger.error(`更新标签失败: ${meta.name} - ${res.error}`);
     } else {
@@ -132,7 +161,9 @@ export async function ensureLabelsExist(client: GitHubClient): Promise<Result<vo
   }
 
   syncedRepos.add(repoKey);
-  logger.info(`Label 同步完成: ${repoKey}（新建 ${toCreate.length}，更新 ${toUpdate.length}）`);
+  logger.info(
+    `Label 同步完成: ${repoKey}（新建 ${toCreate.length}，更新 ${toUpdate.length}）`,
+  );
   return success(undefined);
 }
 
@@ -158,13 +189,20 @@ export async function syncLabels(client: GitHubClient): Promise<Result<void>> {
     const existing = currentLabels.find((l) => l.name === meta.name);
     if (!existing) {
       toCreate.push(meta);
-    } else if (existing.color !== meta.color || existing.description !== meta.description) {
+    } else if (
+      existing.color !== meta.color ||
+      existing.description !== meta.description
+    ) {
       toUpdate.push(meta);
     }
   }
 
   const toDelete = currentLabels
-    .filter((l) => !definedLabelNames.has(l.name) && DEFAULT_LABELS_TO_DELETE.includes(l.name))
+    .filter(
+      (l) =>
+        !definedLabelNames.has(l.name) &&
+        DEFAULT_LABELS_TO_DELETE.includes(l.name),
+    )
     .map((l) => l.name);
 
   let created = 0;
@@ -172,7 +210,11 @@ export async function syncLabels(client: GitHubClient): Promise<Result<void>> {
   let deleted = 0;
 
   for (const meta of toCreate) {
-    const res = await client.createLabel(meta.name, meta.color, meta.description);
+    const res = await client.createLabel(
+      meta.name,
+      meta.color,
+      meta.description,
+    );
     if (res.success) {
       logger.success(`✓ 创建标签: ${meta.name}`);
       created++;
@@ -182,7 +224,11 @@ export async function syncLabels(client: GitHubClient): Promise<Result<void>> {
   }
 
   for (const meta of toUpdate) {
-    const res = await client.updateLabel(meta.name, meta.color, meta.description);
+    const res = await client.updateLabel(
+      meta.name,
+      meta.color,
+      meta.description,
+    );
     if (res.success) {
       logger.success(`✓ 更新标签: ${meta.name}`);
       updated++;
@@ -206,7 +252,9 @@ export async function syncLabels(client: GitHubClient): Promise<Result<void>> {
   logger.info(`  新建: ${created}`);
   logger.info(`  更新: ${updated}`);
   logger.info(`  删除: ${deleted}`);
-  logger.info(`  保留: ${currentLabels.length - deleted + (toCreate.length + toUpdate.length) - deleted}`);
+  logger.info(
+    `  保留: ${currentLabels.length - deleted + (toCreate.length + toUpdate.length) - deleted}`,
+  );
 
   const finalRes = await client.listLabels();
   if (finalRes.success) {
@@ -215,7 +263,9 @@ export async function syncLabels(client: GitHubClient): Promise<Result<void>> {
     if (finalCount === expectedCount) {
       logger.success(`✓ 标签数量验证通过: ${finalCount}/${expectedCount}`);
     } else {
-      logger.warn(`⚠ 标签数量不匹配: 实际 ${finalCount}，期望 ${expectedCount}`);
+      logger.warn(
+        `⚠ 标签数量不匹配: 实际 ${finalCount}，期望 ${expectedCount}`,
+      );
     }
   }
 
