@@ -4,9 +4,12 @@ import {
   check_process_running,
   success,
   failure,
+  getGit,
+  git,
 } from "../core/common";
 import type { Result } from "../core/common";
 import { readRepoInfo } from "../integration/github-client";
+import { getDefaultBranch } from "./worktree-init";
 
 const logger = consola.withTag("cleanup-utils");
 import { config } from "../core/config";
@@ -108,6 +111,37 @@ export function readBranchName(owner: string, repo: string, issueNumber: number)
 }
 
 /**
+ * 将本地默认分支 fast-forward 到远程最新状态
+ * 使用 git branch -f 避免影响主仓库工作区
+ */
+export async function pullDefaultBranch(repoPath?: string): Promise<Result<string>> {
+  const defaultBranchRes = await getDefaultBranch(repoPath);
+  if (!defaultBranchRes.success) {
+    logger.warn(`获取默认分支失败: ${defaultBranchRes.error}`);
+    return failure(defaultBranchRes.error);
+  }
+  const defaultBranch = defaultBranchRes.data;
+  const g = repoPath ? getGit(repoPath) : git;
+
+  try {
+    await g.fetch("origin", defaultBranch);
+  } catch (e: any) {
+    logger.warn(`fetch origin/${defaultBranch} 失败: ${e.message}`);
+    return failure(`fetch 失败: ${e.message}`);
+  }
+
+  try {
+    await g.raw(["branch", "-f", defaultBranch, `origin/${defaultBranch}`]);
+    logger.info(`本地默认分支 ${defaultBranch} 已更新到 origin/${defaultBranch}`);
+    return success(defaultBranch);
+  } catch {
+    // 当前 checkout 在默认分支上时 git branch -f 会失败，降级为仅 fetch
+    logger.warn(`git branch -f ${defaultBranch} 失败（可能当前在该分支上），已完成 fetch`);
+    return success(defaultBranch);
+  }
+}
+
+/**
  * 完整清理一个 Issue 的所有资源
  */
 export async function cleanupIssue(
@@ -150,6 +184,12 @@ export async function cleanupIssue(
 
   // 删除本地分支
   await cleanupBranch(branchName, options.silent, session, repoPath);
+
+  // 更新本地默认分支到远程最新
+  const pullRes = await pullDefaultBranch(repoPath);
+  if (pullRes.success) {
+    session.logEvent("default-branch-updated", { branch: pullRes.data });
+  }
 
   session.logEvent("cleanup-completed", { issueNumber, reason, branchName });
   return success(undefined);
@@ -201,6 +241,9 @@ export async function cleanupIssueAssets(
 
   await cleanupWorktree(worktreePath, options.silent, session, repoPath);
   await cleanupBranch(branchName, options.silent, session, repoPath);
+
+  // 更新本地默认分支到远程最新
+  await pullDefaultBranch(repoPath);
 
   const issueDir = paths.getIssueDir();
   if (fs.existsSync(issueDir)) {
