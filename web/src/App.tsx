@@ -31,6 +31,8 @@ function App() {
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
   const [convLoading, setConvLoading] = useState(false);
   const convSseRef = useRef<EventSource | null>(null);
+  const userSelectedConvFile = useRef(false);
+  const activeConvFileRef = useRef<string | null>(null);
 
   // Poll sessions
   useEffect(() => {
@@ -138,7 +140,9 @@ function App() {
     if (!selectedSession || selectedLogTab !== 'conversation') {
       setConversationFiles([]);
       setActiveConvFile(null);
+      activeConvFileRef.current = null;
       setConversationMessages([]);
+      userSelectedConvFile.current = false;
       return;
     }
 
@@ -155,7 +159,18 @@ function App() {
           const files: ConversationFileInfo[] = await res.json();
           setConversationFiles(files);
           if (files.length > 0) {
-            setActiveConvFile(files[files.length - 1].filename);
+            if (userSelectedConvFile.current) {
+              const stillExists = files.some(f => f.filename === activeConvFileRef.current);
+              if (!stillExists) {
+                const latest = files[files.length - 1].filename;
+                setActiveConvFile(latest);
+                activeConvFileRef.current = latest;
+              }
+            } else {
+              const latest = files[files.length - 1].filename;
+              setActiveConvFile(latest);
+              activeConvFileRef.current = latest;
+            }
           }
         }
       } catch {}
@@ -506,7 +521,11 @@ function App() {
                     ? 'bg-white/10 text-white border-border-color'
                     : 'bg-transparent text-text-secondary border-transparent hover:bg-white/5'
                 }`}
-                onClick={() => setActiveConvFile(f.filename)}
+                onClick={() => {
+                  userSelectedConvFile.current = true;
+                  activeConvFileRef.current = f.filename;
+                  setActiveConvFile(f.filename);
+                }}
               >
                 {f.phase}/{f.workflow}
               </button>
