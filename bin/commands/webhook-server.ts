@@ -41,6 +41,7 @@ import { ensureWebhookSecret, ensureWorkspaces } from "../domain/bootstrap";
 import { buildRegistry, type WorkspaceRegistry } from "../integration/workspace-registry";
 import { cleanupIssue, cleanupIssueAssets } from "../domain/cleanup-utils";
 import { syncLifecycleLabel, get_gh_client } from "../integration/github-client";
+import { ensureLabelsExist } from "../domain/label-sync";
 import {
   isActiveSessionStatus,
   EVENT,
@@ -266,6 +267,16 @@ async function handleEvent(
   }
 
   const { owner, repo } = repoInfo;
+
+  // 自动确保 label 已同步（幂等，带内存缓存）
+  const clientRes = await get_gh_client(owner, repo);
+  if (clientRes.success) {
+    const ensureRes = await ensureLabelsExist(clientRes.data);
+    if (!ensureRes.success) {
+      logger.warn(`Label 同步失败: ${ensureRes.error}`);
+    }
+  }
+
   const repoPath = registry.resolve(owner, repo);
   if (!repoPath) {
     logger.warn(`仓库 ${repoFullName} 未在本地工作区中注册，跳过`);

@@ -9,7 +9,8 @@ import {
 } from "../core/common";
 
 const logger = consola.withTag("run");
-import { readRepoInfo } from "../integration/github-client";
+import { readRepoInfo, get_gh_client } from "../integration/github-client";
+import { ensureLabelsExist } from "../domain/label-sync";
 import chalk from "chalk";
 import { config } from "../core/config";
 import { runGc } from "./worktree-gc";
@@ -265,6 +266,15 @@ async function main() {
   const bootstrapRes = await ensureProjectBootstrap();
   if (!bootstrapRes.success) {
     logger.warn(bootstrapRes.error);
+  }
+
+  // 自动确保 label 已同步（幂等，带内存缓存）
+  const clientRes = await get_gh_client();
+  if (clientRes.success) {
+    const ensureRes = await ensureLabelsExist(clientRes.data);
+    if (!ensureRes.success) {
+      logger.warn(`Label 同步失败: ${ensureRes.error}`);
+    }
   }
 
   const program = configureCommand();
