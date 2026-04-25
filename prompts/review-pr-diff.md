@@ -62,16 +62,9 @@ cat ../review-diff.json
 
 从 `../review-diff.json` 的 `meta` 字段获取 `owner`、`repo`、`pr_number`。
 
-**提交正式 Review**：
+**始终使用 `--input comments.json` 形式提交 Review**，即使没有 inline comments 也传空数组 `[]`：
 
-```bash
-gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
-  -f body="审查总结" \
-  -f event="APPROVE|REQUEST_CHANGES|COMMENT" \
-  --input comments.json
-```
-
-其中 `comments.json` 包含 inline comments（如有）：
+1. 先写入 `comments.json`（有 inline comments 时填入，无则写 `[]`）：
 
 ```json
 [
@@ -83,13 +76,16 @@ gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
 ]
 ```
 
-**简化方式**（无 inline comments 时）：
+2. 提交 Review：
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
   -f body="审查总结" \
-  -f event="APPROVE"
+  -f event="APPROVE|REQUEST_CHANGES|COMMENT" \
+  --input comments.json
 ```
+
+> **注意**：PR 作者无法 APPROVE 自己的 PR。如果提交 APPROVE 返回 422 错误，改用 COMMENT 事件重新提交（保持 `--input comments.json` 不变）。
 
 ## 审查原则
 
