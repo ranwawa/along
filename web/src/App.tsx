@@ -624,8 +624,8 @@ function App() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium truncate">{session.owner}/{session.repo}</span>
-                      <span className="text-text-secondary text-sm">
+                      <span className="text-text-secondary text-sm">{session.owner}/{session.repo}</span>
+                      <span className="text-sm">
                         <a
                           href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
                           target="_blank"
@@ -649,11 +649,13 @@ function App() {
                         {session.hasWorktree && <span className="ml-1 opacity-70" title="Worktree exists">📁</span>}
                       </span>
                     </div>
+                    {session.title && (
+                      <div className="text-sm truncate mb-1">{session.title}</div>
+                    )}
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}>
                         {getLifecycleLabel(session.lifecycle)}
                       </span>
-                      <span className="text-text-muted text-xs">{session.runtime}</span>
                       <span className="text-text-muted text-xs truncate">{getPhaseLabel(session.phase)} / {getStepLabel(session.step)}</span>
                       {getProgressLabel(session) && (
                         <span className="text-text-muted text-xs truncate">{getProgressLabel(session)}</span>
@@ -695,18 +697,16 @@ function App() {
             <table className="hidden lg:table w-full border-collapse text-left">
               <thead>
                 <tr>
-                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Repo</th>
                   <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Issue</th>
+                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Title</th>
                   <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Status</th>
-                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Runtime</th>
-                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">Step</th>
                   <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10 w-16">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredSessions.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center text-text-muted px-6 py-4">No tasks found.</td>
+                    <td colSpan={4} className="text-center text-text-muted px-6 py-4">No tasks found.</td>
                   </tr>
                 ) : null}
                 {filteredSessions.map(session => (
@@ -715,14 +715,14 @@ function App() {
                      onClick={() => setSelectedSession(session)}
                      className="transition-colors cursor-pointer hover:bg-white/5"
                    >
-                     <td className="px-6 py-4 border-b border-white/5 text-sm">{session.owner}/{session.repo}</td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">
+                       <span className="text-text-secondary">{session.owner}/{session.repo}</span>
                        <a
                          href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
                          target="_blank"
                          rel="noopener noreferrer"
                          onClick={e => e.stopPropagation()}
-                         className="text-inherit hover:underline"
+                         className="ml-2 text-inherit hover:underline"
                        >
                          #{session.issueNumber}
                        </a>
@@ -739,14 +739,14 @@ function App() {
                        )}
                        {session.hasWorktree && <span className="ml-2 opacity-70" title="Worktree exists">📁</span>}
                      </td>
+                     <td className="px-6 py-4 border-b border-white/5 text-sm max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis" title={session.title || ''}>
+                       {session.title || '-'}
+                     </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}>
                           {getLifecycleLabel(session.lifecycle)}
                         </span>
-                     </td>
-                     <td className="px-6 py-4 border-b border-white/5 text-sm">{session.runtime}</td>
-                     <td className="px-6 py-4 border-b border-white/5 text-sm max-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
-                        {getPhaseLabel(session.phase)} / {getStepLabel(session.step)}
+                        <span className="ml-2 text-text-muted text-xs">{getPhaseLabel(session.phase)} / {getStepLabel(session.step)}</span>
                      </td>
                      <td className="px-6 py-4 border-b border-white/5 text-sm flex gap-2" onClick={e => e.stopPropagation()}>
                        {isFailedStatus(session.lifecycle) && (
