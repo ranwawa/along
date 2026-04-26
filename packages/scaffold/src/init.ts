@@ -12,6 +12,14 @@ const PRE_COMMIT_HOOK = `#!/bin/sh
 bunx biome check --staged --write --no-errors-on-unmatched
 `;
 
+const PREINSTALL_SCRIPT = `#!/usr/bin/env bun
+if (!process.env.npm_config_user_agent?.includes("bun")) {
+  console.error("\\x1b[31m%s\\x1b[0m", "错误: 必须使用 Bun 进行包管理。");
+  console.error("\\x1b[31m%s\\x1b[0m", "请运行 \\\`bun install\\\` 而不是 npm/yarn/pnpm。");
+  process.exit(1);
+}
+`;
+
 const COMMIT_MSG_HOOK = `#!/bin/sh
 msg=$(head -1 "$1")
 
@@ -55,8 +63,15 @@ export async function init() {
     return;
   }
 
+  const preinstallPath = path.join(cwd, 'bin', 'preinstall.ts');
+  fs.mkdirSync(path.join(cwd, 'bin'), { recursive: true });
+  fs.writeFileSync(preinstallPath, PREINSTALL_SCRIPT);
+  fs.chmodSync(preinstallPath, 0o755);
+  log.success('已写入 bin/preinstall.ts');
+
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
   pkg.scripts = pkg.scripts || {};
+  pkg.scripts.preinstall = 'bun bin/preinstall.ts';
   pkg.scripts.prepare = 'git config core.hooksPath .githooks';
   pkg.scripts.format = pkg.scripts.format || 'biome format --write .';
   pkg.scripts.lint = pkg.scripts.lint || 'biome lint .';
@@ -71,5 +86,5 @@ export async function init() {
   await $`git config core.hooksPath .githooks`.quiet();
   log.success('已配置 git hooks 路径');
 
-  log.box('初始化完成！commit 时将自动运行 Biome 检查 + 提交信息格式校验');
+  log.box('初始化完成！强制 Bun 包管理 + Biome 检查 + 提交信息格式校验');
 }
