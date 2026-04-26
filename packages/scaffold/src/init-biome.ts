@@ -8,9 +8,7 @@ const BIOME_CONFIG = {
   extends: ['@ranwawa/biome-config/biome'],
 };
 
-const PRE_COMMIT_HOOK = `#!/bin/sh
-bunx biome check --staged --write --no-errors-on-unmatched
-`;
+const TEMPLATE_DIR = path.join(import.meta.dirname, 'templates');
 
 export async function initBiome(cwd: string) {
   const log = consola.withTag('scaffold');
@@ -19,12 +17,12 @@ export async function initBiome(cwd: string) {
   fs.writeFileSync(biomeJsonPath, `${JSON.stringify(BIOME_CONFIG, null, 2)}\n`);
   log.success('已写入 biome.json');
 
-  const hooksDir = path.join(cwd, '.githooks');
+  const hooksDir = path.join(cwd, '.ranwawa');
   fs.mkdirSync(hooksDir, { recursive: true });
   const preCommitPath = path.join(hooksDir, 'pre-commit');
-  fs.writeFileSync(preCommitPath, PRE_COMMIT_HOOK);
+  fs.copyFileSync(path.join(TEMPLATE_DIR, 'pre-commit'), preCommitPath);
   fs.chmodSync(preCommitPath, 0o755);
-  log.success('已写入 .githooks/pre-commit');
+  log.success('已写入 .ranwawa/pre-commit');
 
   log.start('安装依赖...');
   await $`bun add -d @biomejs/biome @ranwawa/biome-config`.quiet();

@@ -19,7 +19,7 @@ export async function init() {
   initBunOnly(cwd);
   initScripts(cwd);
 
-  await $`git config core.hooksPath .githooks`.quiet();
+  await $`git config core.hooksPath .ranwawa`.quiet();
   log.success('已配置 git hooks 路径');
 
   log.box('初始化完成！强制 Bun 包管理 + Biome 检查 + 提交信息格式校验');

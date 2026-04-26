@@ -8,8 +8,8 @@ export function initScripts(cwd: string) {
   const pkgPath = path.join(cwd, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
   pkg.scripts = pkg.scripts || {};
-  pkg.scripts.preinstall = 'bun bin/preinstall.ts';
-  pkg.scripts.prepare = 'git config core.hooksPath .githooks';
+  pkg.scripts.preinstall = 'bun .ranwawa/preinstall.ts';
+  pkg.scripts.prepare = 'git config core.hooksPath .ranwawa';
   pkg.scripts.format = pkg.scripts.format || 'biome format --write .';
   pkg.scripts.lint = pkg.scripts.lint || 'biome lint .';
   pkg.scripts.check = pkg.scripts.check || 'biome check --write .';
