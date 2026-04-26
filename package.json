@@ -3,6 +3,9 @@
   "keywords": [],
   "main": "index.js",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "bin": {
     "along": "./bin/setup.ts"
   },
@@ -10,7 +13,11 @@
     "dev:server": "bun --watch bin/commands/webhook-server.ts --port 9876",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preinstall": "bun ./bin/preinstall.ts"
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write .",
+    "preinstall": "bun ./bin/preinstall.ts",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "repository": {
     "type": "git",
@@ -41,6 +48,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@ranwawa/biome-config": "workspace:*",
+    "@ranwawa/scaffold": "workspace:*",
     "vitest": "^4.1.4"
   }
 }

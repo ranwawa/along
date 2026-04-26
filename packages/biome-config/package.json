@@ -1,0 +1,16 @@
+{
+  "name": "@ranwawa/biome-config",
+  "version": "0.0.1",
+  "description": "Shared Biome configuration for @ranwawa projects",
+  "license": "ISC",
+  "author": "ranwawa <274544338@qq.com>",
+  "type": "module",
+  "main": "biome.shared.json",
+  "exports": {
+    "./biome": "./biome.shared.json"
+  },
+  "files": ["biome.shared.json"],
+  "peerDependencies": {
+    "@biomejs/biome": ">=2.0.0"
+  }
+}
