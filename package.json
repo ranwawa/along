@@ -16,8 +16,8 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write .",
-    "preinstall": "bun ./bin/preinstall.ts",
-    "prepare": "git config core.hooksPath .githooks"
+    "preinstall": "bun .ranwawa/preinstall.ts",
+    "prepare": "git config core.hooksPath .ranwawa"
   },
   "repository": {
     "type": "git",

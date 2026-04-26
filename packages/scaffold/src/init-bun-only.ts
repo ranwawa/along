@@ -1,6 +1,6 @@
-import consola from 'consola';
 import fs from 'node:fs';
 import path from 'node:path';
+import consola from 'consola';
 
 const TEMPLATE_DIR = path.join(import.meta.dirname, 'templates');
 

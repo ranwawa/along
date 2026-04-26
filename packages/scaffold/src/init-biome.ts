@@ -1,7 +1,7 @@
-import { $ } from 'bun';
-import consola from 'consola';
 import fs from 'node:fs';
 import path from 'node:path';
+import { $ } from 'bun';
+import consola from 'consola';
 
 const BIOME_CONFIG = {
   $schema: 'https://biomejs.dev/schemas/2.4.13/schema.json',

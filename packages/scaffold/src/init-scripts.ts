@@ -1,6 +1,6 @@
-import consola from 'consola';
 import fs from 'node:fs';
 import path from 'node:path';
+import consola from 'consola';
 
 export function initScripts(cwd: string) {
   const log = consola.withTag('scaffold');
