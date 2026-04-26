@@ -9,7 +9,9 @@
   "exports": {
     "./biome": "./biome.shared.json"
   },
-  "files": ["biome.shared.json"],
+  "files": [
+    "biome.shared.json"
+  ],
   "peerDependencies": {
     "@biomejs/biome": ">=2.0.0"
   }

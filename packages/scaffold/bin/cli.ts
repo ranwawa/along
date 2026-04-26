@@ -4,10 +4,7 @@ import { initBiome } from '../src/init-biome';
 
 const program = new Command();
 
-program
-  .name('scaffold')
-  .description('一键初始化项目工程规范')
-  .version('0.0.1');
+program.name('scaffold').description('一键初始化项目工程规范').version('0.0.1');
 
 program
   .command('init')

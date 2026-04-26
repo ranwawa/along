@@ -8,7 +8,10 @@
   "bin": {
     "scaffold": "./bin/cli.ts"
   },
-  "files": ["bin", "src"],
+  "files": [
+    "bin",
+    "src"
+  ],
   "dependencies": {
     "commander": "^14.0.3",
     "consola": "^3.4.2"
