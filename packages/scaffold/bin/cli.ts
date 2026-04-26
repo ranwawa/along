@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
-import { initBiome } from '../src/init-biome';
+import { init } from '../src/init';
 
 const program = new Command();
 
@@ -8,9 +8,9 @@ program.name('scaffold').description('一键初始化项目工程规范').versio
 
 program
   .command('init')
-  .description('初始化 Biome + Git Hooks（格式化、Lint、pre-commit 检查）')
+  .description('初始化 Biome + Git Hooks（格式化、Lint、pre-commit、commit-msg 校验）')
   .action(async () => {
-    await initBiome();
+    await init();
   });
 
 program.parse();

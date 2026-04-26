@@ -48,7 +48,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0",
+    "@biomejs/biome": "^2.4.13",
     "@ranwawa/biome-config": "workspace:*",
     "@ranwawa/scaffold": "workspace:*",
     "vitest": "^4.1.4"

@@ -12,11 +12,25 @@ const PRE_COMMIT_HOOK = `#!/bin/sh
 bunx biome check --staged --write --no-errors-on-unmatched
 `;
 
-export async function initBiome() {
+const COMMIT_MSG_HOOK = `#!/bin/sh
+msg=$(head -1 "$1")
+
+if ! echo "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci)(\\(.+\\))?: .+'; then
+  echo "错误: commit message 不符合 Conventional Commits 规范"
+  echo ""
+  echo "正确格式: <type>(<scope>): <description>"
+  echo "示例:     feat(auth): 新增登录功能"
+  echo ""
+  echo "允许的 type: feat, fix, docs, style, refactor, perf, test, chore, ci"
+  exit 1
+fi
+`;
+
+export async function init() {
   const cwd = process.cwd();
   const log = consola.withTag('scaffold');
 
-  log.start('开始初始化 Biome + Git Hooks...');
+  log.start('开始初始化项目工程规范...');
 
   const biomeJsonPath = path.join(cwd, 'biome.json');
   fs.writeFileSync(biomeJsonPath, JSON.stringify(BIOME_CONFIG, null, 2) + '\n');
@@ -24,10 +38,16 @@ export async function initBiome() {
 
   const hooksDir = path.join(cwd, '.githooks');
   fs.mkdirSync(hooksDir, { recursive: true });
+
   const preCommitPath = path.join(hooksDir, 'pre-commit');
   fs.writeFileSync(preCommitPath, PRE_COMMIT_HOOK);
   fs.chmodSync(preCommitPath, 0o755);
   log.success('已写入 .githooks/pre-commit');
+
+  const commitMsgPath = path.join(hooksDir, 'commit-msg');
+  fs.writeFileSync(commitMsgPath, COMMIT_MSG_HOOK);
+  fs.chmodSync(commitMsgPath, 0o755);
+  log.success('已写入 .githooks/commit-msg');
 
   const pkgPath = path.join(cwd, 'package.json');
   if (!fs.existsSync(pkgPath)) {
@@ -51,5 +71,5 @@ export async function initBiome() {
   await $`git config core.hooksPath .githooks`.quiet();
   log.success('已配置 git hooks 路径');
 
-  log.box('初始化完成！commit 时将自动运行 Biome 检查');
+  log.box('初始化完成！commit 时将自动运行 Biome 检查 + 提交信息格式校验');
 }

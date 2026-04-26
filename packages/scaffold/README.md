@@ -12,29 +12,32 @@ npx @ranwawa/scaffold init
 
 1. 写入 `biome.json`（继承 `@ranwawa/biome-config` 共享规则）
 2. 创建 `.githooks/pre-commit`（commit 时自动运行 Biome 检查）
-3. 在 `package.json` 中配置 `prepare` 脚本（`bun install` 后自动激活 Git Hooks）
-4. 安装 `@biomejs/biome` 和 `@ranwawa/biome-config` 为 devDependencies
+3. 创建 `.githooks/commit-msg`（校验提交信息是否符合 Conventional Commits 规范）
+4. 在 `package.json` 中配置 `prepare` 脚本（`bun install` 后自动激活 Git Hooks）
+5. 安装 `@biomejs/biome` 和 `@ranwawa/biome-config` 为 devDependencies
 
-完成后，团队成员只需 `bun install` 即可自动激活 pre-commit 检查，无需额外配置。
+完成后，团队成员只需 `bun install` 即可自动激活所有 Git Hooks，无需额外配置。
 
 ## 初始化后的效果
 
 ```bash
 git add .
 git commit -m "feat: something"
-# pre-commit hook 自动运行：
-# biome check --staged --write --no-errors-on-unmatched
+# 1. pre-commit hook 自动运行：biome check --staged --write --no-errors-on-unmatched
+# 2. commit-msg hook 自动校验提交信息格式
 ```
 
 - 仅检查暂存区文件，不影响未暂存的改动
 - 自动修复可修复的格式/lint 问题
 - 检查不通过时阻止 commit
+- 提交信息不符合 `<type>(<scope>): <description>` 格式时阻止 commit
 
 ## 初始化后生成的文件
 
 ```
-biome.json              # Biome 配置，extends @ranwawa/biome-config
-.githooks/pre-commit    # Git pre-commit hook
+biome.json                # Biome 配置，extends @ranwawa/biome-config
+.githooks/pre-commit      # Git pre-commit hook
+.githooks/commit-msg      # Git commit-msg hook
 ```
 
 ## 可用的 npm scripts
