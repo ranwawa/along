@@ -56,6 +56,18 @@ bun run lint      # biome lint .
 bun run check     # biome check --write .
 ```
 
+## 源码结构
+
+```
+src/
+├── init.ts              # 入口编排，依次调用各子模块
+├── preflight.ts         # 前置检查（package.json、.git 是否存在）
+├── init-biome.ts        # Biome 配置 + pre-commit hook + 依赖安装
+├── init-commit-lint.ts  # commit-msg hook（Conventional Commits 校验）
+├── init-bun-only.ts     # preinstall 脚本（强制 Bun 包管理器）
+└── init-scripts.ts      # 配置 package.json scripts
+```
+
 ## 原理
 
 - `preinstall` 脚本检查 `npm_config_user_agent` 环境变量，非 Bun 直接退出
