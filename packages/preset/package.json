@@ -1,0 +1,17 @@
+{
+  "name": "@ranwawa/preset",
+  "version": "0.1.0",
+  "description": "along 项目集中分发引擎",
+  "license": "ISC",
+  "author": "ranwawa <274544338@qq.com>",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "consola": "^3.4.2"
+  }
+}

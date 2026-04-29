@@ -1,0 +1,15 @@
+{
+  "name": "@ranwawa/preset-assets",
+  "version": "0.1.0",
+  "description": "along preset 同步资产源",
+  "license": "ISC",
+  "author": "ranwawa <274544338@qq.com>",
+  "type": "module",
+  "files": [
+    "hooks",
+    "prompts",
+    "quality",
+    "skills",
+    "projects.json"
+  ]
+}
