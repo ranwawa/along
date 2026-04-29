@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'node:fs';
 import type { SessionPathManager } from '../core/session-paths';
 import type { UnifiedLogEntry } from '../logging/log-types';
 import type { SessionStatus } from './session-manager';

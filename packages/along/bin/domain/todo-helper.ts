@@ -1,6 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { consola } from 'consola';
-import fs from 'fs';
-import path from 'path';
 import { iso_timestamp } from '../core/common';
 import type { SessionPathManager } from '../core/session-paths';
 

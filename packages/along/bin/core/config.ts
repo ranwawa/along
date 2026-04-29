@@ -1,6 +1,6 @@
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { Result } from './result';
 import { failure, success } from './result';
 
@@ -134,7 +134,7 @@ export const config = {
         existing.permission = permission;
         if (!existing.$schema)
           existing.$schema = 'https://opencode.ai/config.json';
-        fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + '\n');
+        fs.writeFileSync(configPath, `${JSON.stringify(existing, null, 2)}\n`);
       },
     },
     {
@@ -185,7 +185,7 @@ export const config = {
         allow.push(...missing);
         permissions.allow = allow;
         existing.permissions = permissions;
-        fs.writeFileSync(configPath, JSON.stringify(existing, null, 2) + '\n');
+        fs.writeFileSync(configPath, `${JSON.stringify(existing, null, 2)}\n`);
       },
     },
   ] as EditorConfig[],

@@ -30,7 +30,7 @@ vi.mock('bun', () => ({
 }));
 
 import { git } from '../core/common';
-import { isNotFoundError, readRepoInfo } from '../integration/github-client';
+import { isNotFoundError } from '../integration/github-client';
 
 describe('github-client.ts', () => {
   const originalEnv = process.env;

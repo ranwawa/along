@@ -12,7 +12,6 @@ import {
   LIFECYCLE,
   type SessionLifecycle,
   type SessionStep,
-  STEP,
 } from '../domain/session-state-machine';
 import { readRepoInfo } from '../integration/github-client';
 

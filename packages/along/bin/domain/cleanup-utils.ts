@@ -13,7 +13,7 @@ import { getDefaultBranch } from './worktree-init';
 
 const logger = consola.withTag('cleanup-utils');
 
-import fs from 'fs';
+import fs from 'node:fs';
 import { config } from '../core/config';
 import { readSession } from '../core/db';
 import { SessionPathManager } from '../core/session-paths';

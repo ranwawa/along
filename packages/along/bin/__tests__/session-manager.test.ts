@@ -69,7 +69,6 @@ vi.mock('../core/common', () => ({
   failure: (error: string) => ({ success: false, error }),
 }));
 
-import fs from 'fs';
 import { readSession, transactSession, upsertSession } from '../core/db';
 import { SessionManager } from '../domain/session-manager';
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
+import fs from 'node:fs';
 import { Command } from 'commander';
 import { consola } from 'consola';
-import fs from 'fs';
-import { git, iso_timestamp } from '../core/common';
+import { git } from '../core/common';
 import { readRepoInfo } from '../integration/github-client';
 
 const logger = consola.withTag('branch-create');

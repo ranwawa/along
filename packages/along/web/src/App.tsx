@@ -654,6 +654,7 @@ function App() {
           <div className="flex gap-1.5 flex-wrap shrink-0">
             {conversationFiles.map((f) => (
               <button
+                type="button"
                 key={f.filename}
                 className={`px-2 py-1 rounded text-xs border transition-all cursor-pointer ${
                   activeConvFile === f.filename
@@ -691,9 +692,9 @@ function App() {
       return <div className="p-4 text-text-muted">No logs yet.</div>;
     }
 
-    return entries.map((entry, i) => (
+    return entries.map((entry) => (
       <div
-        key={`log-${i}`}
+        key={`${entry.timestamp}:${entry.category}:${entry.source}:${entry.level}:${entry.message}`}
         className="p-1.5 rounded break-all hover:bg-white/5 whitespace-pre-wrap"
       >
         <span className="text-text-muted mr-2">
@@ -730,6 +731,7 @@ function App() {
         <div className="flex flex-wrap gap-1.5 md:gap-2">
           {statusFilters.map((filter) => (
             <button
+              type="button"
               key={filter}
               className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer text-xs md:text-sm transition-all border ${
                 currentFilter === filter
@@ -763,6 +765,7 @@ function App() {
               />
               {repoFilter && (
                 <button
+                  type="button"
                   onClick={() => setRepoFilter('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-white bg-transparent border-none cursor-pointer"
                 >
@@ -782,74 +785,77 @@ function App() {
               {filteredSessions.map((session) => (
                 <div
                   key={`m-${session.owner}-${session.repo}-${session.issueNumber}`}
-                  onClick={() => setSelectedSession(session)}
-                  className="flex items-center gap-3 px-4 py-3 border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 border-b border-white/5"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-text-secondary text-sm">
-                        {session.owner}/{session.repo}
-                      </span>
-                      <span className="text-sm">
-                        <a
-                          href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-inherit hover:underline"
-                        >
-                          #{session.issueNumber}
-                        </a>
-                        {session.context?.prNumber &&
-                          session.context?.prUrl && (
-                            <a
-                              href={session.context.prUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="ml-1 text-inherit hover:underline"
-                            >
-                              PR #{session.context.prNumber}
-                            </a>
-                          )}
-                        {session.hasWorktree && (
-                          <span
-                            className="ml-1 opacity-70"
-                            title="Worktree exists"
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSession(session)}
+                    className="flex flex-1 min-w-0 items-center gap-3 text-left cursor-pointer hover:bg-white/5 transition-colors rounded-lg"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-text-secondary text-sm">
+                          {session.owner}/{session.repo}
+                        </span>
+                        <span className="text-sm">
+                          <a
+                            href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-inherit hover:underline"
                           >
-                            📁
+                            #{session.issueNumber}
+                          </a>
+                          {session.context?.prNumber &&
+                            session.context?.prUrl && (
+                              <a
+                                href={session.context.prUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="ml-1 text-inherit hover:underline"
+                              >
+                                PR #{session.context.prNumber}
+                              </a>
+                            )}
+                          {session.hasWorktree && (
+                            <span
+                              className="ml-1 opacity-70"
+                              title="Worktree exists"
+                            >
+                              📁
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      {session.title && (
+                        <div className="text-sm truncate mb-1">
+                          {session.title}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}
+                        >
+                          {getLifecycleLabel(session.lifecycle)}
+                        </span>
+                        <span className="text-text-muted text-xs truncate">
+                          {getPhaseLabel(session.phase)} /{' '}
+                          {getStepLabel(session.step)}
+                        </span>
+                        {getProgressLabel(session) && (
+                          <span className="text-text-muted text-xs truncate">
+                            {getProgressLabel(session)}
                           </span>
                         )}
-                      </span>
-                    </div>
-                    {session.title && (
-                      <div className="text-sm truncate mb-1">
-                        {session.title}
                       </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}
-                      >
-                        {getLifecycleLabel(session.lifecycle)}
-                      </span>
-                      <span className="text-text-muted text-xs truncate">
-                        {getPhaseLabel(session.phase)} /{' '}
-                        {getStepLabel(session.step)}
-                      </span>
-                      {getProgressLabel(session) && (
-                        <span className="text-text-muted text-xs truncate">
-                          {getProgressLabel(session)}
-                        </span>
-                      )}
                     </div>
-                  </div>
-                  <div
-                    className="flex gap-1.5 shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  </button>
+                  <div className="flex gap-1.5 shrink-0">
                     {isFailedStatus(session.lifecycle) && (
                       <button
+                        type="button"
                         className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
                           restartingIssues.has(getIssueKey(session))
                             ? 'bg-blue-500/20 text-status-running animate-spin'
@@ -863,6 +869,7 @@ function App() {
                       </button>
                     )}
                     <button
+                      type="button"
                       className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
                         deletingIssues.has(getIssueKey(session))
                           ? 'bg-red-500/20 text-red-400 cursor-wait'
@@ -963,12 +970,10 @@ function App() {
                         {getStepLabel(session.step)}
                       </span>
                     </td>
-                    <td
-                      className="px-6 py-4 border-b border-white/5 text-sm flex gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <td className="px-6 py-4 border-b border-white/5 text-sm flex gap-2">
                       {isFailedStatus(session.lifecycle) && (
                         <button
+                          type="button"
                           className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
                             restartingIssues.has(getIssueKey(session))
                               ? 'bg-blue-500/20 text-status-running animate-spin'
@@ -982,6 +987,7 @@ function App() {
                         </button>
                       )}
                       <button
+                        type="button"
                         className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
                           deletingIssues.has(getIssueKey(session))
                             ? 'bg-red-500/20 text-red-400 cursor-wait'
@@ -1003,14 +1009,14 @@ function App() {
       </div>
 
       {selectedSession && (
-        <div
-          className="fixed inset-0 bg-black/45 backdrop-blur-[2px] z-50 animate-[fadeIn_0.2s_ease]"
-          onClick={() => setSelectedSession(null)}
-        >
-          <div
-            className="absolute inset-y-0 right-0 bg-bg-secondary border-l border-border-color w-full md:w-[88vw] xl:w-[82vw] max-w-[1280px] flex flex-col shadow-2xl animate-[slideInRight_0.28s_cubic-bezier(0.16,1,0.3,1)]"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 animate-[fadeIn_0.2s_ease]">
+          <button
+            type="button"
+            aria-label="Close session details"
+            className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+            onClick={() => setSelectedSession(null)}
+          />
+          <div className="absolute inset-y-0 right-0 bg-bg-secondary border-l border-border-color w-full md:w-[88vw] xl:w-[82vw] max-w-[1280px] flex flex-col shadow-2xl animate-[slideInRight_0.28s_cubic-bezier(0.16,1,0.3,1)]">
             <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center shrink-0">
               <h2 className="text-base md:text-xl font-bold truncate mr-2">
                 {selectedSession.owner}/{selectedSession.repo}{' '}
@@ -1029,6 +1035,7 @@ function App() {
                 )}
               </h2>
               <button
+                type="button"
                 className="bg-transparent border-none text-text-secondary cursor-pointer p-2 rounded-lg transition-colors hover:bg-white/10 hover:text-white shrink-0"
                 onClick={() => setSelectedSession(null)}
               >
@@ -1068,7 +1075,7 @@ function App() {
                             <div className="flex flex-col gap-1">
                               {selectedDiagnostic.hints.map((hint, index) => (
                                 <div
-                                  key={index}
+                                  key={hint}
                                   className="text-xs md:text-sm text-gray-300"
                                 >
                                   {index + 1}. {hint}
@@ -1100,6 +1107,7 @@ function App() {
                       </span>
                       {isFailedStatus(selectedSession.lifecycle) && (
                         <button
+                          type="button"
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                             restartingIssues.has(getIssueKey(selectedSession))
                               ? 'bg-blue-500/20 text-status-running border-blue-500/30 cursor-wait'
@@ -1117,6 +1125,7 @@ function App() {
                         </button>
                       )}
                       <button
+                        type="button"
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                           deletingIssues.has(getIssueKey(selectedSession))
                             ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
@@ -1202,6 +1211,7 @@ function App() {
                           📁 存在
                         </span>
                         <button
+                          type="button"
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                             cleaningIssues.has(getIssueKey(selectedSession))
                               ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
@@ -1264,6 +1274,7 @@ function App() {
                         ] as const
                       ).map((tab) => (
                         <button
+                          type="button"
                           key={tab}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                             selectedLogTab === tab

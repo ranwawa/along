@@ -5,14 +5,14 @@
  * 将 worktree 初始化、session 管理、.along-mode 写入、agent 执行等逻辑统一封装。
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   type Options as ClaudeSDKOptions,
   query,
   type SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { consola } from 'consola';
-import fs from 'fs';
-import path from 'path';
 import type { Result } from '../core/common';
 import {
   check_process_running,
@@ -310,11 +310,11 @@ async function execClaudeAgent(
       }
 
       if (convHandle && shouldPersistMessage(message)) {
-        convHandle.write(JSON.stringify(message) + '\n');
+        convHandle.write(`${JSON.stringify(message)}\n`);
       }
 
       const formatted = formatSDKMessage(message);
-      if (formatted) out.write(formatted + '\n');
+      if (formatted) out.write(`${formatted}\n`);
 
       if (message.type === 'result') {
         receivedResult = true;
@@ -688,9 +688,9 @@ export async function launchIssueAgent(
         if (fs.existsSync(logFile)) {
           const content = fs.readFileSync(logFile, 'utf-8');
           crashLog =
-            content.length > 3000 ? '...' + content.slice(-3000) : content;
+            content.length > 3000 ? `...${content.slice(-3000)}` : content;
         }
-      } catch (e) {}
+      } catch (_e) {}
       const nativeErrorMsg = summary.nativeError
         ? ` [SDK 错误: ${summary.nativeError.message}]`
         : '';

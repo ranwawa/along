@@ -1,7 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import chalk from 'chalk';
 import { consola } from 'consola';
-import fs from 'fs';
-import path from 'path';
 import { ensureEditorPermissions } from '../core/common';
 import { config } from '../core/config';
 import type { Result } from '../core/result';
@@ -22,7 +22,7 @@ export async function ensureProjectBootstrap(): Promise<Result<void>> {
       try {
         fs.writeFileSync(
           alongJsonPath,
-          JSON.stringify({ agent: tagRes.data }, null, 2) + '\n',
+          `${JSON.stringify({ agent: tagRes.data }, null, 2)}\n`,
         );
         logger.info(`已自动创建 .along.json (agent: ${tagRes.data})`);
       } catch (e: any) {

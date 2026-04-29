@@ -36,14 +36,14 @@ describe('config.ts', () => {
 
   describe('基本属性', () => {
     it('USER_ALONG_DIR 应指向 ~/.along', () => {
-      const os = require('os');
-      const path = require('path');
+      const os = require('node:os');
+      const path = require('node:path');
       expect(config.USER_ALONG_DIR).toBe(path.join(os.homedir(), '.along'));
     });
 
     it('CONFIG_FILE 应位于 USER_ALONG_DIR 下', () => {
       expect(config.CONFIG_FILE).toBe(
-        require('path').join(config.USER_ALONG_DIR, 'config.json'),
+        require('node:path').join(config.USER_ALONG_DIR, 'config.json'),
       );
     });
   });
@@ -51,7 +51,7 @@ describe('config.ts', () => {
   describe('getIssueDir()', () => {
     it('应正确拼接路径: ~/.along/{owner}/{repo}/{issueNumber}/', () => {
       const result = config.getIssueDir('ranwawa', 'along', 42);
-      const path = require('path');
+      const path = require('node:path');
       expect(result).toBe(
         path.join(config.USER_ALONG_DIR, 'ranwawa', 'along', '42'),
       );

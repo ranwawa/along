@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../core/config', () => ({
@@ -21,7 +21,7 @@ vi.mock('fs', () => ({
   },
 }));
 
-import fs from 'fs';
+import fs from 'node:fs';
 import { getSessionPaths, SessionPathManager } from '../core/session-paths';
 
 describe('session-paths.ts', () => {

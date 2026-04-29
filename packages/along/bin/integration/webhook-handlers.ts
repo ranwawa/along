@@ -7,8 +7,8 @@
  * - resolveCi: CI 失败时，拉失败信息并启动 Agent 修复
  */
 
+import fs from 'node:fs';
 import { consola } from 'consola';
-import fs from 'fs';
 import type { Result } from '../core/common';
 import { iso_timestamp } from '../core/common';
 import { findSessionByPr } from '../core/db';

@@ -94,7 +94,7 @@ export const ALL_DEFINED_LABELS = [
 const syncedRepos = new Set<string>();
 
 function getRepoKey(client: GitHubClient): string {
-  return client.owner + '/' + client.repo;
+  return `${client.owner}/${client.repo}`;
 }
 
 /**

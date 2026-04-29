@@ -69,7 +69,7 @@ vi.mock('chalk', () => {
   return { default: new Proxy(passthrough, handler) };
 });
 
-import fs from 'fs';
+import fs from 'node:fs';
 import { config } from '../core/config';
 import {
   ensureProjectBootstrap,

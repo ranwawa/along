@@ -1,6 +1,30 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.13/schema.json",
-  "extends": [
-    "@ranwawa/biome-config/biome"
-  ]
+  "extends": ["@ranwawa/biome-config/biome"],
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!!.along", "!!.claude", "!!**/dist"]
+  },
+  "overrides": [
+    {
+      "includes": ["packages/along/bin/**", "packages/along/types/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    }
+  ],
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  }
 }

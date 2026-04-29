@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import path from 'path';
+import path from 'node:path';
 import type { SessionStatus } from '../domain/session-manager';
 import { config } from './config';
 import type { Result } from './result';
@@ -441,7 +441,7 @@ export function findAllSessions(
     }
 
     if (conditions.length > 0) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     const rows = db.prepare(sql).all(...params) as any[];

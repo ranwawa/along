@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'node:fs';
 import type { Result } from '../core/common';
 import { failure, success } from '../core/common';
 import { readSession } from '../core/db';

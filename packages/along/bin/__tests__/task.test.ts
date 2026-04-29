@@ -34,7 +34,7 @@ vi.mock('../core/db', () => ({
   upsertSession: vi.fn(),
 }));
 
-import fs from 'fs';
+import fs from 'node:fs';
 import { readSession } from '../core/db';
 import { Task } from '../domain/task';
 

@@ -35,31 +35,29 @@ describe('session-diagnostics.ts', () => {
   });
 
   it('能将 403 insufficient balance 归类为 auth/billing', () => {
-    const sessionJsonl =
-      [
-        JSON.stringify({
-          timestamp: '2026-04-20T12:00:00.000Z',
-          category: 'lifecycle',
-          source: 'session-manager',
-          level: 'error',
-          message: 'Agent 退出',
-        }),
-        JSON.stringify({
-          timestamp: '2026-04-20T12:00:01.000Z',
-          category: 'conversation',
-          source: 'agent-stderr',
-          level: 'info',
-          message: 'Starting at Mon Apr 20 20:30:30 CST 2026',
-        }),
-        JSON.stringify({
-          timestamp: '2026-04-20T12:00:02.000Z',
-          category: 'conversation',
-          source: 'agent-stderr',
-          level: 'info',
-          message:
-            'Failed to authenticate. API Error: 403 insufficient balance',
-        }),
-      ].join('\n') + '\n';
+    const sessionJsonl = `${[
+      JSON.stringify({
+        timestamp: '2026-04-20T12:00:00.000Z',
+        category: 'lifecycle',
+        source: 'session-manager',
+        level: 'error',
+        message: 'Agent 退出',
+      }),
+      JSON.stringify({
+        timestamp: '2026-04-20T12:00:01.000Z',
+        category: 'conversation',
+        source: 'agent-stderr',
+        level: 'info',
+        message: 'Starting at Mon Apr 20 20:30:30 CST 2026',
+      }),
+      JSON.stringify({
+        timestamp: '2026-04-20T12:00:02.000Z',
+        category: 'conversation',
+        source: 'agent-stderr',
+        level: 'info',
+        message: 'Failed to authenticate. API Error: 403 insufficient balance',
+      }),
+    ].join('\n')}\n`;
 
     fileMap.set(paths.getSessionLogFile(), sessionJsonl);
 

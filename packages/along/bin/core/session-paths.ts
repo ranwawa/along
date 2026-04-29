@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { config } from './config';
 import type { Result } from './result';
 import { failure, success } from './result';

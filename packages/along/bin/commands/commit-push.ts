@@ -1,23 +1,20 @@
 #!/usr/bin/env bun
-import { $ } from 'bun';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Command } from 'commander';
 import { consola } from 'consola';
-import crypto from 'crypto';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { git, iso_timestamp } from '../core/common';
+import { git } from '../core/common';
 import { getDefaultBranch } from '../domain/worktree-init';
 
 const logger = consola.withTag('commit-push');
 
-import chalk from 'chalk';
 import { findSessionByBranch } from '../core/db';
 import { runCommand } from '../core/exec';
 import { SessionPathManager } from '../core/session-paths';
 import { SessionManager } from '../domain/session-manager';
 import { completeTodoStep, saveStepOutput } from '../domain/todo-helper';
-import { readRepoInfo } from '../integration/github-client';
 
 /**
  * .along/bin/commit-push.ts
@@ -70,7 +67,7 @@ async function main() {
   if (opts.json) {
     try {
       commits = JSON.parse(opts.json);
-    } catch (e) {
+    } catch (_e) {
       logger.error('解析 --json 失败，请检查格式');
       process.exit(1);
     }
@@ -117,11 +114,11 @@ async function main() {
           const scripts = pkg.scripts || {};
 
           // TypeScript 类型检查
-          const tscScriptName = scripts['typecheck']
+          const tscScriptName = scripts.typecheck
             ? 'typecheck'
             : scripts['type-check']
               ? 'type-check'
-              : scripts['tsc']
+              : scripts.tsc
                 ? 'tsc'
                 : null;
           if (tscScriptName) {
@@ -143,7 +140,7 @@ async function main() {
           }
 
           // 测试
-          const testScript = scripts['test'];
+          const testScript = scripts.test;
           if (testScript && !testScript.includes('no test specified')) {
             logger.info('运行测试...');
             const testRes = runCommand('npm test');
@@ -172,7 +169,7 @@ async function main() {
         );
         fs.writeFileSync(tempMsgFile, commit.message, 'utf-8');
         try {
-          const commitResult = await git.raw(['commit', '-F', tempMsgFile]);
+          const _commitResult = await git.raw(['commit', '-F', tempMsgFile]);
           // 获取刚创建的 commit SHA
           const sha = (await git.raw(['rev-parse', 'HEAD'])).trim();
           commitShas.push(sha);

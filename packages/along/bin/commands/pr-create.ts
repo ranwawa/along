@@ -2,8 +2,6 @@
 import { $ } from 'bun';
 import { Command } from 'commander';
 import { consola } from 'consola';
-import fs from 'fs';
-import { iso_timestamp } from '../core/common';
 
 const logger = consola.withTag('pr-create');
 

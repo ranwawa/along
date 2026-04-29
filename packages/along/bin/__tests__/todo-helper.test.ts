@@ -38,7 +38,7 @@ vi.mock('fs', () => ({
   },
 }));
 
-import fs from 'fs';
+import fs from 'node:fs';
 import { SessionPathManager } from '../core/session-paths';
 import { completeTodoStep, saveStepOutput } from '../domain/todo-helper';
 

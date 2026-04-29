@@ -3,10 +3,10 @@
  * 供 run.ts 直接调用
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import chalk from 'chalk';
 import { consola } from 'consola';
-import fs from 'fs';
-import path from 'path';
 import { failure, getGit, git, success } from '../core/common';
 
 const logger = consola.withTag('worktree-init');
@@ -25,7 +25,7 @@ export async function getDefaultBranch(
     const g = repoPath ? getGit(repoPath) : git;
     const remoteInfo = await g.raw(['remote', 'show', 'origin']);
     const match = remoteInfo.match(/HEAD branch: (.+)/);
-    if (match && match[1]) {
+    if (match?.[1]) {
       return success(match[1].trim());
     }
   } catch {
@@ -79,7 +79,7 @@ export async function setupWorktree(
   try {
     try {
       await g.raw(['worktree', 'prune']);
-    } catch (e) {}
+    } catch (_e) {}
 
     await g.raw([
       'worktree',

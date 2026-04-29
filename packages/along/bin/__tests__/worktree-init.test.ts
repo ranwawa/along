@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../core/common', () => ({
@@ -50,7 +50,7 @@ vi.mock('../core/db', () => ({
   upsertSession: vi.fn(() => ({ success: true })),
 }));
 
-import fs from 'fs';
+import fs from 'node:fs';
 import { git } from '../core/common';
 // Now that we fixed the source code syntax, we can import it properly!
 import {

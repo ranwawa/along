@@ -1,6 +1,6 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { consola } from 'consola';
-import crypto from 'crypto';
-import fs from 'fs';
 import { iso_timestamp } from '../core/common';
 import { getDb } from '../core/db';
 import { failure, type Result, success } from '../core/result';
@@ -259,10 +259,10 @@ function parsePlanSections(body: string): PlanSections {
 
   return {
     summary: summary || undefined,
-    scope: sections['scope'],
-    changes: sections['changes'],
-    risks: sections['risks'],
-    validation: sections['validation'],
+    scope: sections.scope,
+    changes: sections.changes,
+    risks: sections.risks,
+    validation: sections.validation,
     decisionLog: sections['decision log'],
     changesSinceLastVersion:
       sections['changes since v1'] ||
@@ -844,7 +844,7 @@ export function preparePlanningExecution(
   };
 
   logger.info(
-    `Issue #${issueNumber} 生成新 plan: planId=${payload.proposedPlan!.planId}, version=${payload.proposedPlan!.version}, basedOn=${payload.proposedPlan!.basedOnPlanId || '无'}`,
+    `Issue #${issueNumber} 生成新 plan: planId=${payload.proposedPlan?.planId}, version=${payload.proposedPlan?.version}, basedOn=${payload.proposedPlan?.basedOnPlanId || '无'}`,
   );
 
   return success(payload);
@@ -1279,7 +1279,8 @@ export function approvePlan(
     if (!row) return failure(`未找到 Plan v${target.version}`);
     planId = row.plan_id;
   } else if (target.mode === 'planId') {
-    planId = target.planId!;
+    if (!target.planId) return failure('缺少 planId，无法批准计划');
+    planId = target.planId;
   }
 
   if (planId !== thread.currentPlanId) {

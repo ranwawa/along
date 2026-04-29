@@ -1,7 +1,5 @@
+import { createRequire } from 'node:module';
 import { consola } from 'consola';
-import fs from 'fs';
-import { createRequire } from 'module';
-import path from 'path';
 import { config } from './config';
 
 // simple-git 的 ESM bundle 中 debug 模块在 Bun 下 default export 为 undefined
@@ -53,7 +51,7 @@ export async function get_repo_root(): Promise<string> {
 // 计算运行时间
 export function calculate_runtime(startTime: string): string {
   const start = new Date(startTime).getTime();
-  if (isNaN(start)) return '未知';
+  if (Number.isNaN(start)) return '未知';
 
   const diffSeconds = Math.floor((Date.now() - start) / 1000);
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
+import fs from 'node:fs';
+import path from 'node:path';
 import { consola } from 'consola';
-import fs from 'fs';
-import path from 'path';
 import { checkGitRepo, failure, success } from '../core/common';
 
 const logger = consola.withTag('run');
@@ -208,7 +208,12 @@ async function handleAction(num: string) {
 
     // AI 分类门控（仅首次 planning 阶段执行）
     if (phase === PHASE.PLANNING) {
-      const issueData = issueRes.data!;
+      const issueData = issueRes.data;
+      if (!issueData) {
+        await sessionManager.markAsError('Issue 数据为空，无法继续分类');
+        logger.error(`Issue #${taskNo} 数据为空`);
+        process.exit(1);
+      }
       const issueLabels = (issueData.labels || []).map((l: any) =>
         typeof l === 'string' ? l : l.name,
       );
@@ -261,7 +266,7 @@ async function handleAction(num: string) {
     // 直接委托给 launchIssueAgent（处理 worktree、.along-mode、agent 执行）
     const agentRes = await launchIssueAgent(owner, repoName, taskNo, phase, {
       trigger: 'cli',
-      taskData: { title: issueRes.data!.title },
+      taskData: { title: issueRes.data?.title },
     });
 
     if (!agentRes.success) {

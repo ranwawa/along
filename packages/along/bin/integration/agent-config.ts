@@ -1,6 +1,5 @@
+import fs from 'node:fs';
 import { consola } from 'consola';
-import fs from 'fs';
-import path from 'path';
 import { config } from '../core/config';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';

@@ -227,7 +227,7 @@ export class SessionManager {
   }
 
   logEvent(event: string, details?: Record<string, any>): Result<void> {
-    const detailStr = details ? ' ' + JSON.stringify(details) : '';
+    const detailStr = details ? ` ${JSON.stringify(details)}` : '';
     return this.log(`[EVENT] ${event}${detailStr}`, 'info');
   }
 

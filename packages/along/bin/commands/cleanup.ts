@@ -35,7 +35,7 @@ async function main() {
     { force },
   );
   if (!canProceed) {
-    logger.error(error!);
+    logger.error(error ?? '清理前进程检查失败');
     process.exit(1);
   }
 

@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { config } from '../core/config';
 import type { IssueContext, UnifiedLogEntry } from './log-types';
 
@@ -19,7 +19,7 @@ class LogWriter {
   }
 
   writeGlobal(entry: UnifiedLogEntry): void {
-    this.getStream(GLOBAL_LOG_FILE).write(JSON.stringify(entry) + '\n');
+    this.getStream(GLOBAL_LOG_FILE).write(`${JSON.stringify(entry)}\n`);
   }
 
   writeSession(ctx: IssueContext, entry: UnifiedLogEntry): void {
@@ -28,7 +28,7 @@ class LogWriter {
       'session.jsonl',
     );
     fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
-    this.getStream(sessionPath).write(JSON.stringify(entry) + '\n');
+    this.getStream(sessionPath).write(`${JSON.stringify(entry)}\n`);
     this.writeGlobal(entry);
   }
 

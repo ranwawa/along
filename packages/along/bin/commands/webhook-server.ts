@@ -10,12 +10,11 @@
  *   along webhook-server --port 9876 --secret <your-secret>
  */
 
-import { $ } from 'bun';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Command } from 'commander';
 import { consola } from 'consola';
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { calculate_runtime, check_process_running } from '../core/common';
 import { config } from '../core/config';
 import { findAllSessions, readSession } from '../core/db';
@@ -800,7 +799,7 @@ async function main() {
     initLogRouter();
   }
 
-  const server = Bun.serve({
+  const _server = Bun.serve({
     hostname: host,
     port,
     async fetch(req) {
@@ -1563,7 +1562,7 @@ async function main() {
           if (await fallbackFile.exists()) {
             return new Response(fallbackFile);
           }
-        } catch (e) {}
+        } catch (_e) {}
       }
 
       return new Response('Not Found', { status: 404 });
@@ -1592,9 +1591,9 @@ async function main() {
     logger.info(`Web Dashboard 正在运行: ${dashboardUrl}`);
     try {
       // 尝试自动打开浏览器
-      const { exec } = await import('child_process');
+      const { exec } = await import('node:child_process');
       exec(`start ${dashboardUrl}`);
-    } catch (e) {}
+    } catch (_e) {}
   } else {
     logger.info('按 Ctrl+C 停止服务器');
   }

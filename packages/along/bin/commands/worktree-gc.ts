@@ -6,14 +6,14 @@ import { readRepoInfo } from '../integration/github-client';
 
 const logger = consola.withTag('worktree-gc');
 
+import fs from 'node:fs';
 import chalk from 'chalk';
 import { Command } from 'commander';
-import fs from 'fs';
 import { findAllSessions, readSession } from '../core/db';
 import { SessionPathManager } from '../core/session-paths';
 import { cleanupIssue } from '../domain/cleanup-utils';
 import type { GitHubClient } from '../integration/github-client';
-import { get_gh_client, isNotFoundError } from '../integration/github-client';
+import { get_gh_client } from '../integration/github-client';
 
 // session 信息结构
 interface GcSessionInfo {
