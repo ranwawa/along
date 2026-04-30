@@ -29,7 +29,7 @@
 因此最终只保留：
 
 ```bash
-along project-sync <project-path>
+along project-sync [project-path]
 ```
 
 `preset` 只保留为内部实现包。

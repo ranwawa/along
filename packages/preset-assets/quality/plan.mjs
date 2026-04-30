@@ -144,25 +144,34 @@ function normalizePlan(plan) {
 }
 
 function isRootGateTrigger(file) {
-  if (qualityConfig.rootGateFiles.includes(file)) {
+  const rootGateFiles = qualityConfig.rootGateFiles || [];
+  const rootGatePrefixes = qualityConfig.rootGatePrefixes || [];
+
+  if (rootGateFiles.includes(file)) {
     return true;
   }
 
-  return qualityConfig.rootGatePrefixes.some((prefix) =>
-    file.startsWith(prefix),
-  );
+  return rootGatePrefixes.some((prefix) => file.startsWith(prefix));
 }
 
 function findOwningPackageId(file) {
   for (const [packageId, packageConfig] of Object.entries(
     qualityConfig.packages,
   )) {
-    if (file.startsWith(`${packageConfig.path}/`)) {
+    if (isFileInPackage(file, packageConfig.path)) {
       return packageId;
     }
   }
 
   return null;
+}
+
+function isFileInPackage(file, packagePath) {
+  if (packagePath === '.' || packagePath === '') {
+    return true;
+  }
+
+  return file === packagePath || file.startsWith(`${packagePath}/`);
 }
 
 function resolveValidationTargets(packageId) {

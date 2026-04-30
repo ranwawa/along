@@ -40,6 +40,9 @@ for (const packageId of qualityConfig.packageExecutionOrder) {
   }
 
   if (packagePlan.relatedInputs.length > 0) {
-    runTaskRef(packageConfig.relatedTestsTaskRef, packagePlan.relatedInputs);
+    runTaskRef(
+      packageConfig.relatedTestsTaskRef || packageConfig.fullTestsTaskRef,
+      packagePlan.relatedInputs,
+    );
   }
 }

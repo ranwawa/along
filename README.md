@@ -14,5 +14,5 @@
 ```bash
 bun run dev:server
 bun run test
-along project-sync <project-path>
+along project-sync [project-path]
 ```

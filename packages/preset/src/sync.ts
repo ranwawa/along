@@ -18,6 +18,7 @@ import {
 } from './file-utils';
 import { getWorkspaceRoot } from './paths';
 import { loadManagedProject } from './project-config';
+import { ensureManagedProjectConfig } from './project-init';
 import {
   renderAgentsDoc,
   renderQualityDoc,
@@ -31,10 +32,20 @@ import type {
 
 const logger = consola.withTag('preset');
 
-export async function syncProject(projectPath: string) {
+export interface SyncProjectOptions {
+  yes?: boolean;
+  interactive?: boolean;
+}
+
+export async function syncProject(
+  projectPath = '.',
+  options: SyncProjectOptions = {},
+) {
   const projectDir = path.resolve(process.cwd(), projectPath);
+  ensureProjectShape(projectDir);
+  await ensureManagedProjectConfig(projectDir, options);
+
   const project = loadManagedProject(projectDir);
-  ensureProjectShape(project.projectDir);
 
   logger.start(`开始同步项目基建资产: ${project.config.id}`);
 

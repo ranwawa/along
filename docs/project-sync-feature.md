@@ -91,10 +91,13 @@
 只保留一个公开入口：
 
 ```bash
-along project-sync <project-path>
+along project-sync [project-path]
 ```
 
 不再保留独立的 `scaffold` 命令心智。
+
+当目标项目缺少 `.along.json.distribution` 时，命令会先进入初始化向导；
+非交互环境可使用 `along project-sync --yes [project-path]` 采用自动推断值。
 
 ## 同步结果
 

@@ -10,7 +10,7 @@
 对外入口只保留：
 
 ```bash
-along project-sync <project-path>
+along project-sync [project-path]
 ```
 
 这个包不再暴露独立 CLI，避免出现 `along` / `scaffold` 两套命令心智。

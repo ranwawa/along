@@ -6,7 +6,7 @@ import type {
   ManagedProjectRootConfig,
 } from './types';
 
-const CONFIG_FILE_NAME = '.along.json';
+export const CONFIG_FILE_NAME = '.along.json';
 
 export function loadManagedProject(projectDir: string): LoadedManagedProject {
   const configPath = path.join(projectDir, CONFIG_FILE_NAME);
@@ -61,24 +61,44 @@ function validateProjectConfig(
     throw new Error(`${configPath}: 缺少 projectDocPath`);
   }
 
-  if (!config.tooling?.installCommand) {
-    throw new Error(`${configPath}: 缺少 tooling.installCommand`);
+  if (!config.agent?.editors?.length) {
+    throw new Error(`${configPath}: agent.editors 不能为空`);
   }
 
-  if (!config.tooling?.nodeVersion) {
-    throw new Error(`${configPath}: 缺少 tooling.nodeVersion`);
-  }
+  if (config.ci?.qualityGateAction?.enabled) {
+    if (!config.tooling?.installCommand) {
+      throw new Error(`${configPath}: 缺少 tooling.installCommand`);
+    }
 
-  if (!config.tooling?.bunVersionFile) {
-    throw new Error(`${configPath}: 缺少 tooling.bunVersionFile`);
+    if (!config.tooling?.nodeVersion) {
+      throw new Error(`${configPath}: 缺少 tooling.nodeVersion`);
+    }
+
+    if (!config.tooling?.bunVersionFile) {
+      throw new Error(`${configPath}: 缺少 tooling.bunVersionFile`);
+    }
   }
 
   if (!config.quality?.changedWorkspaceCheckTaskRef) {
     throw new Error(`${configPath}: 缺少 quality.changedWorkspaceCheckTaskRef`);
   }
 
+  if (
+    !config.quality?.tasks ||
+    Object.keys(config.quality.tasks).length === 0
+  ) {
+    throw new Error(`${configPath}: quality.tasks 不能为空`);
+  }
+
   if (!config.quality?.packageExecutionOrder?.length) {
     throw new Error(`${configPath}: quality.packageExecutionOrder 不能为空`);
+  }
+
+  if (
+    !config.quality?.packages ||
+    Object.keys(config.quality.packages).length === 0
+  ) {
+    throw new Error(`${configPath}: quality.packages 不能为空`);
   }
 
   if (!config.quality?.fullSequence?.length) {
