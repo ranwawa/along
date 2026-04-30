@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getProjectRegistryPath, getWorkspaceRoot } from './paths';
 import type {
   LoadedManagedProject,
   ManagedProjectConfig,
@@ -8,22 +7,6 @@ import type {
 } from './types';
 
 const CONFIG_FILE_NAME = '.along.json';
-
-export function resolveManagedProjectTarget(target: string): string {
-  const registryPath = getProjectRegistryPath();
-
-  if (fs.existsSync(registryPath)) {
-    const registry = JSON.parse(
-      fs.readFileSync(registryPath, 'utf8'),
-    ) as Record<string, string>;
-
-    if (registry[target]) {
-      return path.resolve(getWorkspaceRoot(), registry[target]);
-    }
-  }
-
-  return path.resolve(process.cwd(), target);
-}
 
 export function loadManagedProject(projectDir: string): LoadedManagedProject {
   const configPath = path.join(projectDir, CONFIG_FILE_NAME);

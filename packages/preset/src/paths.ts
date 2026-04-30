@@ -23,7 +23,3 @@ export function getPresetPromptsDir(): string {
 export function getPresetSkillsDir(): string {
   return path.join(getPresetAssetsRoot(), 'skills');
 }
-
-export function getProjectRegistryPath(): string {
-  return path.join(getPresetAssetsRoot(), 'projects.json');
-}

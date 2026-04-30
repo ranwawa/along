@@ -9,7 +9,6 @@
     "hooks",
     "prompts",
     "quality",
-    "skills",
-    "projects.json"
+    "skills"
   ]
 }

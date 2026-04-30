@@ -29,7 +29,7 @@
 因此最终只保留：
 
 ```bash
-along project-sync <project-id|path>
+along project-sync <project-path>
 ```
 
 `preset` 只保留为内部实现包。
@@ -66,7 +66,6 @@ packages/preset-assets/
 
 当前资产分类：
 
-- `projects.json`
 - `hooks/`
 - `quality/`
 - `prompts/`
@@ -88,7 +87,7 @@ packages/preset-assets/
 
 这里不保存事实源，只负责：
 
-- 读取注册表与项目配置
+- 读取项目配置
 - 组合通用资产
 - 渲染文档
 - 写入业务仓

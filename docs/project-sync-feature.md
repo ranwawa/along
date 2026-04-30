@@ -18,13 +18,12 @@
   - 负责读取项目配置、渲染文档、写入受管文件
 - `packages/preset-assets`
   - 集中分发的唯一资产源
-  - 负责保存 prompts、skills、quality engine、hooks、项目注册表
+  - 负责保存 prompts、skills、quality engine、hooks
 
 ## 单一事实源
 
 通用资产只允许放在 `packages/preset-assets/`：
 
-- `packages/preset-assets/projects.json`
 - `packages/preset-assets/hooks/`
 - `packages/preset-assets/quality/`
 - `packages/preset-assets/prompts/`
@@ -92,15 +91,7 @@
 只保留一个公开入口：
 
 ```bash
-along project-sync <project-id|path>
-```
-
-其中 `<project-id>` 来自 `packages/preset-assets/projects.json`，例如：
-
-```json
-{
-  "kinkeeper": "../kinkeeper"
-}
+along project-sync <project-path>
 ```
 
 不再保留独立的 `scaffold` 命令心智。

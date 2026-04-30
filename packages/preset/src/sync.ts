@@ -2,6 +2,13 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import consola from 'consola';
+import {
+  collectHookFiles,
+  collectPromptFiles,
+  collectQualityEngineFiles,
+  collectSkillFiles,
+  renderQualityConfig,
+} from './collect-assets';
 import { EDITOR_PROMPT_DIRS, EDITOR_SKILL_DIRS } from './editor-targets';
 import {
   ensureParentDir,
@@ -10,22 +17,12 @@ import {
   writeGeneratedFiles,
 } from './file-utils';
 import { getWorkspaceRoot } from './paths';
-import {
-  loadManagedProject,
-  resolveManagedProjectTarget,
-} from './project-config';
+import { loadManagedProject } from './project-config';
 import {
   renderAgentsDoc,
   renderQualityDoc,
   renderQualityGateAction,
 } from './render-docs';
-import {
-  collectHookFiles,
-  collectPromptFiles,
-  collectQualityEngineFiles,
-  collectSkillFiles,
-  renderQualityConfig,
-} from './render-quality-preset';
 import type {
   GeneratedFile,
   LoadedManagedProject,
@@ -34,8 +31,8 @@ import type {
 
 const logger = consola.withTag('preset');
 
-export async function syncProject(target: string) {
-  const projectDir = resolveManagedProjectTarget(target);
+export async function syncProject(projectPath: string) {
+  const projectDir = path.resolve(process.cwd(), projectPath);
   const project = loadManagedProject(projectDir);
   ensureProjectShape(project.projectDir);
 
