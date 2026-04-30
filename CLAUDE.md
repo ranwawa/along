@@ -15,7 +15,7 @@ Along (`@ranwawa/along`) is a CLI automation tool that orchestrates AI coding ag
 
 ## CLI Entry Point
 
-The global command `along` maps to `bin/setup.ts`, which dispatches subcommands by spawning the corresponding `bin/commands/<subcommand>.ts` file.
+The global command `along` maps to `bin/along.ts`, a thin executable shim that imports `src/cli.ts`. The CLI dispatches subcommands by spawning the corresponding `src/commands/<subcommand>.ts` file.
 
 ```bash
 along webhook-server --port 9876    # 启动本地 webhook 服务器，接收 GitHub App webhook 事件
@@ -45,15 +45,15 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Directory Layout
 
-- `bin/` — CLI entry points and all source modules, organized into subdirectories:
-  - `bin/setup.ts` — CLI entry point, dispatches subcommands from `commands/`
-  - `bin/preinstall.ts` — Package manager guard (ensures Bun)
-  - `bin/commands/` — CLI subcommands (dispatched by `setup.ts`): `run.ts`, `webhook-server.ts`, `cleanup.ts`, `worktree-gc.ts`, `branch-create.ts`, `commit-push.ts`, `pr-create.ts`, `issue-comment.ts`, `issue-status.ts`, `label-sync.ts`, `log-reader.ts`
-  - `bin/core/` — Foundational modules: `config.ts`, `common.ts`, `result.ts`, `exec.ts`, `db.ts`, `types.ts`, `session-paths.ts`
-  - `bin/domain/` — Business logic: `session-manager.ts`, `session-state-machine.ts`, `session-diagnostics.ts`, `planning-state.ts`, `task.ts`, `issue.ts`, `issue-agent.ts`, `issue-triage.ts`, `todo-helper.ts`, `analyze-error.ts`, `cleanup-utils.ts`, `worktree-init.ts`, `bootstrap.ts`
-  - `bin/integration/` — External service adapters: `github-client.ts`, `agent-config.ts`, `webhook-handlers.ts`, `workspace-registry.ts`
-  - `bin/logging/` — Structured logging: `log-types.ts`, `log-writer.ts`, `log-router.ts`
-  - `bin/__tests__/` — Vitest test files
+- `bin/` — Thin executable entry points:
+  - `bin/along.ts` — CLI shim, imports `src/cli.ts`
+- `src/` — Runtime source modules, with tests colocated beside source files:
+  - `src/cli.ts` — CLI dispatcher
+  - `src/commands/` — CLI subcommands: `run.ts`, `webhook-server.ts`, `cleanup.ts`, `worktree-gc.ts`, `branch-create.ts`, `commit-push.ts`, `pr-create.ts`, `issue-comment.ts`, `issue-status.ts`, `label-sync.ts`, `log-reader.ts`
+  - `src/core/` — Foundational modules: `config.ts`, `common.ts`, `result.ts`, `exec.ts`, `db.ts`, `types.ts`, `session-paths.ts`
+  - `src/domain/` — Business logic: `session-manager.ts`, `session-state-machine.ts`, `session-diagnostics.ts`, `planning-state.ts`, `task.ts`, `issue.ts`, `issue-agent.ts`, `issue-triage.ts`, `todo-helper.ts`, `analyze-error.ts`, `cleanup-utils.ts`, `worktree-init.ts`, `bootstrap.ts`
+  - `src/integration/` — External service adapters: `github-client.ts`, `agent-config.ts`, `webhook-handlers.ts`, `workspace-registry.ts`
+  - `src/logging/` — Structured logging: `log-types.ts`, `log-writer.ts`, `log-router.ts`
 - `prompts/` — SOP templates consumed by AI agents. `$1` is replaced with the issue/PR number.
 - `skills/` — Reusable skill definitions (branch naming, conventional commits, PR summary, unit testing) synced into worktrees.
 - `types/` — Type declarations for external agent SDKs.

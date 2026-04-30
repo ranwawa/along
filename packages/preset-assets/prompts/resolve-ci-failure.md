@@ -50,8 +50,8 @@ description: 修复 CI 检查失败，分析日志并修复代码
 
 **必须全部通过才能继续**：
 
-1. **格式化**：`npx prettier --check <修改的文件>` → 如有问题 `npx prettier --write`
-2. **Lint**：`npx eslint <修改的文件>` → 必须 0 error、0 warning
+1. **Biome 自动修复**：`bunx biome check --write <修改的文件>` → 修复格式、import 与可自动修复的 lint 问题
+2. **Biome 校验**：`bunx biome check <修改的文件>` → 必须 0 error、0 warning
 3. **类型检查**：`npx tsc --noEmit` → 必须 0 error
 4. **测试**：`npm test -- --coverage --testPathPattern="<相关文件>"` → 必须通过
 

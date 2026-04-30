@@ -7,6 +7,8 @@
   ],
   "scripts": {
     "dev:server": "bun --filter @ranwawa/along dev:server",
+    "dev:web": "bun --filter @ranwawa/along-web dev",
+    "build:web": "bun --filter @ranwawa/along-web build",
     "test": "bun --filter @ranwawa/along test",
     "test:watch": "bun --filter @ranwawa/along test:watch",
     "format": "biome format --write .",
@@ -29,6 +31,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.13",
     "@ranwawa/along": "workspace:*",
+    "@ranwawa/along-web": "workspace:*",
     "@ranwawa/biome-config": "workspace:*",
     "@ranwawa/preset": "workspace:*",
     "@ranwawa/preset-assets": "workspace:*"

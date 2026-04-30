@@ -6,18 +6,20 @@
   "author": "ranwawa <274544338@qq.com>",
   "type": "module",
   "bin": {
-    "along": "./bin/setup.ts"
+    "along": "./bin/along.ts"
   },
   "files": [
     "bin",
+    "src",
     "types"
   ],
   "scripts": {
-    "dev:server": "bun --watch bin/commands/webhook-server.ts --port 9876",
+    "dev:server": "bun --watch src/commands/webhook-server.ts --port 9876",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts"
   },
   "dependencies": {
+    "@ranwawa/along-web": "workspace:*",
     "@anthropic-ai/claude-agent-sdk": "^0.2.119",
     "@anthropic-ai/sdk": "^0.87.0",
     "@langchain/openai": "^1.4.4",

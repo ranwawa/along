@@ -12,7 +12,11 @@
   },
   "overrides": [
     {
-      "includes": ["packages/along/bin/**", "packages/along/types/**"],
+      "includes": [
+        "packages/along/bin/**",
+        "packages/along/src/**",
+        "packages/along/types/**"
+      ],
       "linter": {
         "rules": {
           "suspicious": {

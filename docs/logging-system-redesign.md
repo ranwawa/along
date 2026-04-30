@@ -548,7 +548,7 @@ function readLogFile(
 | `LogWriter` | `bin/log-writer.ts` | 统一写入器（append JSONL） | ~80 |
 | `LogRouter` | `bin/log-router.ts` | consola reporter + AsyncLocalStorage context 管理 + category 判定 | ~100 |
 | `LogReader` | `bin/log-reader.ts` | 统一读取器（过滤、分页） | ~60 |
-| 前端类型更新 | `web/src/types.ts` | 更新 `ConversationMessage` → 使用 `UnifiedLogEntry` | ~20 |
+| 前端类型更新 | `packages/along-web/src/types.ts` | 更新 `ConversationMessage` → 使用 `UnifiedLogEntry` | ~20 |
 
 总新增约 330 行，删除 `log-buffer.ts`（61 行）、`session-diagnostics.ts` 中的日志解析函数（约 80 行）、`webhook-server.ts` 中的 4 个旧端点（约 200 行）。
 
