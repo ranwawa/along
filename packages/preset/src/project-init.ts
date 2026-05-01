@@ -3,7 +3,12 @@ import path from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface, type Interface } from 'node:readline/promises';
 import consola from 'consola';
-import { CONFIG_FILE_NAME } from './project-config';
+import {
+  CONFIG_FILE_NAME,
+  LEGACY_CONFIG_FILE_NAME,
+  toDisplayName,
+  toProjectId,
+} from './project-config';
 import type {
   ManagedAgentEditor,
   ManagedProjectConfig,
@@ -29,11 +34,6 @@ const EDITOR_DETECT_DIRS: Record<ManagedAgentEditor, string> = {
   claude: '.claude',
 };
 
-const LOCKFILE_INSTALL_COMMANDS: Array<[string, string]> = [
-  ['bun.lock', 'bun install --frozen-lockfile'],
-  ['bun.lockb', 'bun install --frozen-lockfile'],
-];
-
 type QualityTemplate = 'single' | 'workspace';
 
 interface InitProjectOptions {
@@ -45,10 +45,6 @@ interface PackageJson {
   name?: string;
   scripts?: Record<string, string>;
   workspaces?: string[] | { packages?: string[] };
-  packageManager?: string;
-  engines?: {
-    node?: string;
-  };
 }
 
 interface ProjectPackage {
@@ -71,9 +67,12 @@ export async function ensureManagedProjectConfig(
   options: InitProjectOptions = {},
 ): Promise<boolean> {
   const configPath = path.join(projectDir, CONFIG_FILE_NAME);
-  const rootConfig = readRootConfig(configPath);
+  const legacyConfigPath = path.join(projectDir, LEGACY_CONFIG_FILE_NAME);
+  const rootConfig = readRootConfig(configPath, legacyConfigPath);
 
   if (rootConfig.distribution) {
+    writeRootConfig(configPath, rootConfig);
+    removeLegacyConfig(legacyConfigPath);
     return false;
   }
 
@@ -90,21 +89,45 @@ export async function ensureManagedProjectConfig(
     ? buildManagedProjectConfig(snapshot, snapshot.defaultTemplate)
     : await promptManagedProjectConfig(snapshot);
 
-  fs.writeFileSync(
-    configPath,
-    `${JSON.stringify({ ...rootConfig, distribution }, null, 2)}\n`,
-  );
+  writeRootConfig(configPath, { ...rootConfig, distribution });
+  removeLegacyConfig(legacyConfigPath);
   logger.success(`已写入 ${CONFIG_FILE_NAME}.distribution`);
 
   return true;
 }
 
-function readRootConfig(configPath: string): ManagedProjectRootConfig {
+function readRootConfig(
+  configPath: string,
+  legacyConfigPath: string,
+): ManagedProjectRootConfig {
   if (!fs.existsSync(configPath)) {
-    return {};
+    if (!fs.existsSync(legacyConfigPath)) {
+      return {};
+    }
+
+    return JSON.parse(fs.readFileSync(legacyConfigPath, 'utf8'));
   }
 
   return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+}
+
+function writeRootConfig(
+  configPath: string,
+  rootConfig: ManagedProjectRootConfig,
+) {
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(rootConfig, null, 2)}\n`);
+}
+
+function removeLegacyConfig(legacyConfigPath: string) {
+  if (!fs.existsSync(legacyConfigPath)) {
+    return;
+  }
+
+  fs.rmSync(legacyConfigPath, { force: true });
+  logger.success(
+    `已迁移旧配置 ${LEGACY_CONFIG_FILE_NAME} 到 ${CONFIG_FILE_NAME}`,
+  );
 }
 
 function createProjectSnapshot(
@@ -148,34 +171,14 @@ async function promptManagedProjectConfig(
       snapshot.defaultTemplate,
     );
     const defaults = buildManagedProjectConfig(snapshot, template);
+    const qualityGateActionEnabled = await askYesNo(
+      rl,
+      '是否生成 GitHub Action 质量门禁',
+      Boolean(defaults.ci?.qualityGateAction?.enabled),
+    );
 
     return {
       ...defaults,
-      id: await askText(rl, '项目 ID', defaults.id),
-      displayName: await askText(rl, '项目显示名称', defaults.displayName),
-      projectDocPath: await askText(
-        rl,
-        '项目专属文档路径',
-        defaults.projectDocPath,
-      ),
-      tooling: {
-        ...defaults.tooling,
-        nodeVersion: await askText(
-          rl,
-          'GitHub Action Node.js 版本',
-          defaults.tooling.nodeVersion,
-        ),
-        bunVersionFile: await askText(
-          rl,
-          'Bun 版本文件路径',
-          defaults.tooling.bunVersionFile,
-        ),
-        installCommand: await askText(
-          rl,
-          '依赖安装命令',
-          defaults.tooling.installCommand,
-        ),
-      },
       agent: {
         editors: await askMultiSelect(
           rl,
@@ -187,15 +190,15 @@ async function promptManagedProjectConfig(
           defaults.agent.editors,
         ),
       },
-      ci: {
-        qualityGateAction: {
-          enabled: await askYesNo(
-            rl,
-            '是否生成 GitHub Action 质量门禁',
-            Boolean(defaults.ci?.qualityGateAction?.enabled),
-          ),
-        },
-      },
+      ...(qualityGateActionEnabled
+        ? {
+            ci: {
+              qualityGateAction: {
+                enabled: true,
+              },
+            },
+          }
+        : {}),
     };
   } finally {
     rl.close();
@@ -206,27 +209,24 @@ function buildManagedProjectConfig(
   snapshot: ProjectSnapshot,
   template: QualityTemplate,
 ): ManagedProjectConfig {
+  const qualityGateActionEnabled = fs.existsSync(
+    path.join(snapshot.projectDir, '.github'),
+  );
+
   return {
-    id: toProjectId(snapshot.packageName),
-    displayName: toDisplayName(snapshot.packageName),
-    presetVersion: readPresetVersion(),
-    projectDocPath: inferProjectDocPath(snapshot.projectDir),
-    cleanupPaths: [],
-    tooling: {
-      packageManager: 'bun',
-      installCommand: inferInstallCommand(snapshot.projectDir),
-      nodeVersion: inferNodeVersion(snapshot.projectDir, snapshot.packageJson),
-      bunVersionFile: inferBunVersionFile(snapshot.projectDir),
-    },
     quality: buildQualityConfig(snapshot, template),
     agent: {
       editors: inferEditors(snapshot.projectDir, snapshot.rootConfig),
     },
-    ci: {
-      qualityGateAction: {
-        enabled: fs.existsSync(path.join(snapshot.projectDir, '.github')),
-      },
-    },
+    ...(qualityGateActionEnabled
+      ? {
+          ci: {
+            qualityGateAction: {
+              enabled: true,
+            },
+          },
+        }
+      : {}),
   };
 }
 
@@ -268,10 +268,7 @@ function buildQualityConfig(
   }
 
   return {
-    rootGateFiles: inferRootGateFiles(snapshot.projectDir),
-    rootGatePrefixes: ['.along/preset/', '.github/', '.ranwawa/'],
     changedWorkspaceCheckTaskRef: 'workspace:changed',
-    changedPrerequisiteSequence: [],
     fullSequence: [...fullSequence],
     packageExecutionOrder: packages.map((projectPackage) => projectPackage.id),
     tasks,
@@ -327,13 +324,10 @@ function createQualityPackageConfig(
     ) || undefined;
 
   return {
-    displayName: projectPackage.displayName,
     path: projectPackage.path,
     ...(projectPackage.path === '.'
       ? {}
       : { relatedInputPrefixes: [projectPackage.path] }),
-    relatedInputExtensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
-    ignoredSuffixes: ['.test.ts', '.test.tsx', '.spec.ts', '.spec.tsx'],
     ...(typecheckTaskRef ? { typecheckTaskRef } : {}),
     ...(relatedTestsTaskRef ? { relatedTestsTaskRef } : {}),
     ...(fullTestsTaskRef ? { fullTestsTaskRef } : {}),
@@ -479,68 +473,6 @@ function expandWorkspacePatterns(
   return [...results].sort();
 }
 
-function inferRootGateFiles(projectDir: string): string[] {
-  const required = ['.along.json', 'package.json'];
-  const candidates = [
-    '.bun-version',
-    '.node-version',
-    '.nvmrc',
-    'biome.json',
-    'biome.jsonc',
-    'bun.lock',
-    'bun.lockb',
-    'tsconfig.json',
-  ];
-
-  return [
-    ...required,
-    ...candidates.filter((file) => fs.existsSync(path.join(projectDir, file))),
-  ];
-}
-
-function inferProjectDocPath(projectDir: string): string {
-  if (fs.existsSync(path.join(projectDir, 'PROJECT.md'))) {
-    return 'PROJECT.md';
-  }
-
-  if (fs.existsSync(path.join(projectDir, 'README.md'))) {
-    return 'README.md';
-  }
-
-  return 'PROJECT.md';
-}
-
-function inferInstallCommand(projectDir: string): string {
-  for (const [lockfile, command] of LOCKFILE_INSTALL_COMMANDS) {
-    if (fs.existsSync(path.join(projectDir, lockfile))) {
-      return command;
-    }
-  }
-
-  return 'bun install';
-}
-
-function inferNodeVersion(
-  projectDir: string,
-  packageJson: PackageJson,
-): string {
-  for (const versionFile of ['.node-version', '.nvmrc']) {
-    const filePath = path.join(projectDir, versionFile);
-
-    if (fs.existsSync(filePath)) {
-      return fs.readFileSync(filePath, 'utf8').trim();
-    }
-  }
-
-  return packageJson.engines?.node?.replace(/^[^\d]*/, '') || '20';
-}
-
-function inferBunVersionFile(projectDir: string): string {
-  return fs.existsSync(path.join(projectDir, '.bun-version'))
-    ? '.bun-version'
-    : '.bun-version';
-}
-
 function inferEditors(
   projectDir: string,
   rootConfig: ManagedProjectRootConfig,
@@ -579,35 +511,6 @@ function normalizeEditor(value: string | undefined): ManagedAgentEditor | null {
 
 function readPackageJson(filePath: string): PackageJson {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function readPresetVersion(): string {
-  const packageJsonPath = path.resolve(import.meta.dirname, '../package.json');
-  const packageJson = readPackageJson(packageJsonPath);
-
-  return packageJson.version || '0.0.0';
-}
-
-function toProjectId(value: string): string {
-  return value
-    .replace(/^@[^/]+\//, '')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase();
-}
-
-function toDisplayName(value: string): string {
-  return value.replace(/^@[^/]+\//, '');
-}
-
-async function askText(
-  rl: Interface,
-  question: string,
-  defaultValue: string,
-): Promise<string> {
-  const answer = await rl.question(`${question} (${defaultValue}): `);
-
-  return answer.trim() || defaultValue;
 }
 
 async function askYesNo(

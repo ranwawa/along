@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { qualityConfig } from './config.mjs';
 import { runCommand } from './utils.mjs';

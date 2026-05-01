@@ -38,7 +38,7 @@ along worktree-gc                   # Batch cleanup of worktrees for closed/merg
 
 ### Data Flow
 
-1. `along run <N>` validates environment (git repo, GitHub remote), runs idempotent project bootstrap (auto-creates `.along.json`, syncs editor mappings/permissions), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, then creates editor-path symlinks back to the repo `skills/` and `prompts/` directories before launching the configured AI agent via Bun.spawn.
+1. `along run <N>` validates environment (git repo, GitHub remote), runs idempotent project bootstrap (auto-creates `.along/setting.json`, syncs editor mappings/permissions), fetches Issue #N via Octokit, creates a git worktree at `~/.along/{owner}/{repo}/{N}/worktree/`, then creates editor-path symlinks back to the repo `skills/` and `prompts/` directories before launching the configured AI agent via Bun.spawn.
 2. The agent follows the phase-specific SOP in `prompts/resolve-github-issue-planning.md` and `prompts/resolve-github-issue-implementation.md`.
 3. Subcommands (`branch-create`, `commit-push`, `pr-create`) are called by the agent during execution. Each automatically updates the session status in SQLite and `todo.md` in the issue directory.
 4. **Event-driven mode**: A GitHub App sends webhook events (issue opened, issue labeled, PR created, PR review submitted, check run completed) to the local `along webhook-server`. The server resolves the webhook secret via three-level priority (CLI `--secret` > `ALONG_WEBHOOK_SECRET` env var > `~/.along/config.json` `webhookSecret` field); if no secret is found, it prints the GitHub App setup guide and exits.

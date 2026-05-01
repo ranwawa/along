@@ -15,4 +15,5 @@
 bun run dev:server
 bun run test
 along project-sync [project-path]
+along project-sync --check [project-path]
 ```

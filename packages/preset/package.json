@@ -12,6 +12,7 @@
     "src"
   ],
   "dependencies": {
+    "@ranwawa/biome-config": "workspace:*",
     "consola": "^3.4.2"
   }
 }

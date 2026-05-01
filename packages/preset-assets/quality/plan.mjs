@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { qualityConfig } from './config.mjs';
 import {
@@ -7,6 +7,21 @@ import {
   splitLines,
   toAbsolutePath,
 } from './utils.mjs';
+
+const DEFAULT_RELATED_INPUT_EXTENSIONS = [
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+];
+const DEFAULT_IGNORED_SUFFIXES = [
+  '.test.ts',
+  '.test.tsx',
+  '.spec.ts',
+  '.spec.tsx',
+];
 
 export function collectChangedFiles() {
   const stagedFiles = collectStagedFiles();
@@ -229,8 +244,10 @@ function markAllValidationPackagesForFullRun(plan) {
 
 function isRelatedInput(packageConfig, file) {
   const prefixes = packageConfig.relatedInputPrefixes || [];
-  const extensions = packageConfig.relatedInputExtensions || [];
-  const ignoredSuffixes = packageConfig.ignoredSuffixes || [];
+  const extensions =
+    packageConfig.relatedInputExtensions ?? DEFAULT_RELATED_INPUT_EXTENSIONS;
+  const ignoredSuffixes =
+    packageConfig.ignoredSuffixes ?? DEFAULT_IGNORED_SUFFIXES;
 
   if (
     prefixes.length > 0 &&

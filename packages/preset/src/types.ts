@@ -1,9 +1,7 @@
 export type ManagedAgentEditor = 'opencode' | 'pi' | 'codex' | 'claude';
 
 export interface ManagedProjectTooling {
-  packageManager: 'bun';
   installCommand: string;
-  nodeVersion: string;
   bunVersionFile: string;
 }
 
@@ -38,10 +36,10 @@ export interface ManagedQualityPackageConfig {
 }
 
 export interface ManagedQualityConfig {
-  rootGateFiles: string[];
-  rootGatePrefixes: string[];
+  rootGateFiles?: string[];
+  rootGatePrefixes?: string[];
   changedWorkspaceCheckTaskRef: string;
-  changedPrerequisiteSequence: string[];
+  changedPrerequisiteSequence?: string[];
   fullSequence: string[];
   packageExecutionOrder: string[];
   tasks: Record<string, ManagedQualityTaskConfig>;
@@ -61,15 +59,43 @@ export interface ManagedCiConfig {
 }
 
 export interface ManagedProjectConfig {
+  id?: string;
+  displayName?: string;
+  projectDocPath?: string;
+  cleanupPaths?: string[];
+  tooling?: Partial<ManagedProjectTooling>;
+  quality: ManagedQualityConfig;
+  agent: ManagedAgentConfig;
+  ci?: ManagedCiConfig;
+}
+
+export interface ResolvedManagedQualityConfig
+  extends Omit<
+    ManagedQualityConfig,
+    'rootGateFiles' | 'rootGatePrefixes' | 'changedPrerequisiteSequence'
+  > {
+  rootGateFiles: string[];
+  rootGatePrefixes: string[];
+  changedPrerequisiteSequence: string[];
+}
+
+export interface ResolvedManagedProjectConfig
+  extends Omit<
+    ManagedProjectConfig,
+    | 'id'
+    | 'displayName'
+    | 'projectDocPath'
+    | 'cleanupPaths'
+    | 'tooling'
+    | 'quality'
+  > {
   id: string;
   displayName: string;
   presetVersion: string;
   projectDocPath: string;
-  cleanupPaths?: string[];
+  cleanupPaths: string[];
   tooling: ManagedProjectTooling;
-  quality: ManagedQualityConfig;
-  agent: ManagedAgentConfig;
-  ci?: ManagedCiConfig;
+  quality: ResolvedManagedQualityConfig;
 }
 
 export interface ManagedProjectRootConfig {
@@ -81,6 +107,7 @@ export interface LoadedManagedProject {
   configPath: string;
   projectDir: string;
   config: ManagedProjectConfig;
+  resolved: ResolvedManagedProjectConfig;
   rootConfig: ManagedProjectRootConfig;
 }
 

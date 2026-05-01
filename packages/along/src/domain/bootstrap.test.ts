@@ -56,6 +56,9 @@ vi.mock('consola', () => ({
 vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn(),
+    mkdirSync: vi.fn(),
+    readFileSync: vi.fn(() => '{"agent":"claude"}\n'),
+    rmSync: vi.fn(),
     writeFileSync: vi.fn(),
   },
 }));
@@ -85,21 +88,38 @@ describe('bootstrap.ts', () => {
   });
 
   describe('ensureProjectBootstrap()', () => {
-    it('当 .along.json 不存在时自动创建', async () => {
+    it('当 .along/setting.json 不存在时自动创建', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       const result = await ensureProjectBootstrap();
       expect(result.success).toBe(true);
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        expect.stringContaining('.along.json'),
+        expect.stringContaining('.along/setting.json'),
         expect.stringContaining('"agent": "claude"'),
       );
     });
 
-    it('当 .along.json 已存在时跳过创建', async () => {
+    it('当 .along/setting.json 已存在时跳过创建', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       const result = await ensureProjectBootstrap();
       expect(result.success).toBe(true);
       expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it('当旧 .along.json 存在时迁移到 .along/setting.json', async () => {
+      vi.mocked(fs.existsSync)
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true);
+      const result = await ensureProjectBootstrap();
+      expect(result.success).toBe(true);
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('.along/setting.json'),
+        expect.stringContaining('"agent":"claude"'),
+      );
+      expect(fs.rmSync).toHaveBeenCalledWith(
+        expect.stringContaining('.along.json'),
+        { force: true },
+      );
     });
 
     it('当 getLogTag 失败时返回 failure', async () => {

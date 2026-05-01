@@ -1,4 +1,7 @@
+import { createRequire } from 'node:module';
 import path from 'node:path';
+
+const require = createRequire(import.meta.url);
 
 export function getWorkspaceRoot(): string {
   return path.resolve(import.meta.dirname, '../../..');
@@ -6,6 +9,10 @@ export function getWorkspaceRoot(): string {
 
 export function getPresetAssetsRoot(): string {
   return path.resolve(import.meta.dirname, '../../preset-assets');
+}
+
+export function getBiomeSharedConfigPath(): string {
+  return require.resolve('@ranwawa/biome-config/biome');
 }
 
 export function getPresetHooksDir(): string {

@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import consola from 'consola';
 import {
+  collectBiomeFiles,
   collectHookFiles,
   collectPromptFiles,
   collectQualityEngineFiles,
@@ -10,14 +12,14 @@ import {
   renderQualityConfig,
 } from './collect-assets';
 import { EDITOR_PROMPT_DIRS, EDITOR_SKILL_DIRS } from './editor-targets';
-import {
-  ensureParentDir,
-  hashContent,
-  readText,
-  writeGeneratedFiles,
-} from './file-utils';
+import { hashContent, readText, writeGeneratedFiles } from './file-utils';
 import { getWorkspaceRoot } from './paths';
-import { loadManagedProject } from './project-config';
+import {
+  CONFIG_FILE_NAME,
+  LEGACY_CONFIG_FILE_NAME,
+  loadManagedProject,
+  normalizeManagedProjectConfig,
+} from './project-config';
 import { ensureManagedProjectConfig } from './project-init';
 import {
   renderAgentsDoc,
@@ -31,10 +33,16 @@ import type {
 } from './types';
 
 const logger = consola.withTag('preset');
+const GIT_HOOKS_DIR = '.along/git-hooks';
+const PREINSTALL_SCRIPT = `${GIT_HOOKS_DIR}/preinstall.ts`;
+const QUALITY_CHANGED_SCRIPT =
+  'bun ./.along/preset/scripts/quality/run-changed.mjs';
+const QUALITY_FULL_SCRIPT = 'bun ./.along/preset/scripts/quality/run-full.mjs';
 
 export interface SyncProjectOptions {
   yes?: boolean;
   interactive?: boolean;
+  check?: boolean;
 }
 
 export async function syncProject(
@@ -42,26 +50,35 @@ export async function syncProject(
   options: SyncProjectOptions = {},
 ) {
   const projectDir = path.resolve(process.cwd(), projectPath);
-  ensureProjectShape(projectDir);
-  await ensureManagedProjectConfig(projectDir, options);
+  ensureProjectShape(projectDir, {
+    requireClean: !options.check,
+  });
+
+  if (!options.check) {
+    await ensureManagedProjectConfig(projectDir, options);
+  }
 
   const project = loadManagedProject(projectDir);
+  const expectedFiles = buildExpectedFiles(project);
 
-  logger.start(`开始同步项目基建资产: ${project.config.id}`);
+  if (options.check) {
+    checkProjectDrift(project, expectedFiles);
+    return;
+  }
 
-  const generatedFiles = formatGeneratedFiles(buildGeneratedFiles(project));
+  logger.start(`开始同步项目基建资产: ${project.resolved.id}`);
+
   cleanupManagedOutputRoots(project);
-  writeGeneratedFiles(project.projectDir, generatedFiles);
-  updatePackageJson(project);
-  normalizeProjectConfigFile(project);
-  updateGitignore(project);
+  writeGeneratedFiles(project.projectDir, expectedFiles);
   cleanupLegacyPaths(project);
-  writeManifest(project, generatedFiles);
 
   logger.success(`同步完成: ${project.projectDir}`);
 }
 
-function ensureProjectShape(projectDir: string) {
+function ensureProjectShape(
+  projectDir: string,
+  options: { requireClean: boolean },
+) {
   const packageJsonPath = path.join(projectDir, 'package.json');
   const gitPath = path.join(projectDir, '.git');
 
@@ -72,10 +89,39 @@ function ensureProjectShape(projectDir: string) {
   if (!fs.existsSync(gitPath)) {
     throw new Error(`目标目录不是 Git 仓库: ${projectDir}`);
   }
+
+  if (!options.requireClean) {
+    return;
+  }
+
+  const status = spawnSync('git', ['status', '--porcelain'], {
+    cwd: projectDir,
+    encoding: 'utf8',
+  });
+
+  if (status.error) {
+    throw status.error;
+  }
+
+  if (typeof status.status === 'number' && status.status !== 0) {
+    const details = status.stderr?.trim();
+    throw new Error(
+      details
+        ? `检查 Git 工作区状态失败: ${details}`
+        : '检查 Git 工作区状态失败',
+    );
+  }
+
+  if (status.stdout.trim()) {
+    throw new Error(
+      '目标仓库存在未提交变更。请先提交、暂存或清理工作区后再运行 along project-sync。',
+    );
+  }
 }
 
 function buildGeneratedFiles(project: LoadedManagedProject): GeneratedFile[] {
   const files: GeneratedFile[] = [
+    ...collectBiomeFiles(),
     {
       path: 'AGENTS.md',
       content: renderAgentsDoc(project),
@@ -94,7 +140,7 @@ function buildGeneratedFiles(project: LoadedManagedProject): GeneratedFile[] {
     ...collectSkillFiles(project),
   ];
 
-  if (project.config.ci?.qualityGateAction?.enabled) {
+  if (project.resolved.ci?.qualityGateAction?.enabled) {
     files.push({
       path: '.github/actions/along-quality-gate/action.yml',
       content: renderQualityGateAction(project),
@@ -102,6 +148,23 @@ function buildGeneratedFiles(project: LoadedManagedProject): GeneratedFile[] {
   }
 
   return dedupeGeneratedFiles(files);
+}
+
+function buildExpectedFiles(project: LoadedManagedProject): GeneratedFile[] {
+  const assetFiles = buildGeneratedFiles(project);
+  const nonManifestFiles = prepareGeneratedFiles([
+    ...assetFiles,
+    buildPackageJsonFile(project),
+    buildProjectConfigFile(project),
+    buildGitignoreFile(project),
+  ]);
+
+  return dedupeGeneratedFiles(
+    prepareGeneratedFiles([
+      ...nonManifestFiles,
+      buildManifestFile(project, nonManifestFiles),
+    ]),
+  );
 }
 
 function dedupeGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
@@ -119,29 +182,25 @@ function dedupeGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
     }));
 }
 
-function updatePackageJson(project: LoadedManagedProject) {
+function buildPackageJsonFile(project: LoadedManagedProject): GeneratedFile {
   const packageJsonPath = path.join(project.projectDir, 'package.json');
   const packageJson = JSON.parse(readText(packageJsonPath));
 
   packageJson.scripts = packageJson.scripts || {};
-  packageJson.scripts.preinstall = 'bun .ranwawa/preinstall.ts';
-  packageJson.scripts.prepare = 'git config core.hooksPath .ranwawa';
-  packageJson.scripts['quality:changed'] =
-    'node ./.along/preset/scripts/quality/run-changed.mjs';
-  packageJson.scripts['quality:full'] =
-    'node ./.along/preset/scripts/quality/run-full.mjs';
+  packageJson.scripts.preinstall = `bun ${PREINSTALL_SCRIPT}`;
+  packageJson.scripts.prepare = `git config core.hooksPath ${GIT_HOOKS_DIR}`;
+  packageJson.scripts['quality:changed'] = QUALITY_CHANGED_SCRIPT;
+  packageJson.scripts['quality:full'] = QUALITY_FULL_SCRIPT;
+  packageJson.devDependencies = packageJson.devDependencies || {};
+  packageJson.devDependencies['@biomejs/biome'] = getManagedBiomeVersion();
 
-  fs.writeFileSync(
-    packageJsonPath,
-    formatWithBiome(
-      'package.json',
-      `${JSON.stringify(packageJson, null, 2)}\n`,
-    ),
-  );
-  logger.success('已更新 package.json 质量脚本');
+  return {
+    path: 'package.json',
+    content: `${JSON.stringify(packageJson, null, 2)}\n`,
+  };
 }
 
-function updateGitignore(project: LoadedManagedProject) {
+function buildGitignoreFile(project: LoadedManagedProject): GeneratedFile {
   const gitignorePath = path.join(project.projectDir, '.gitignore');
   const existing = fs.existsSync(gitignorePath)
     ? fs.readFileSync(gitignorePath, 'utf8')
@@ -155,19 +214,24 @@ function updateGitignore(project: LoadedManagedProject) {
     ? existing.replace(pattern, blockContent)
     : `${existing.replace(/\s*$/, '')}\n\n${blockContent}\n`;
 
-  fs.writeFileSync(gitignorePath, next);
-  logger.success('已更新 .gitignore 受管目录放行规则');
+  return {
+    path: '.gitignore',
+    content: next,
+  };
 }
 
 function buildManagedGitignoreBlock(project: LoadedManagedProject): string {
   const lines = [
     '!.along/',
     '.along/*',
+    '!.along/setting.json',
     '!.along/preset/',
     '!.along/preset/**',
+    '!.along/git-hooks/',
+    '!.along/git-hooks/**',
   ];
 
-  for (const editor of project.config.agent.editors) {
+  for (const editor of project.resolved.agent.editors) {
     lines.push(...buildEditorGitignoreRules(editor));
   }
 
@@ -175,7 +239,7 @@ function buildManagedGitignoreBlock(project: LoadedManagedProject): string {
 }
 
 function cleanupLegacyPaths(project: LoadedManagedProject) {
-  for (const relativePath of project.config.cleanupPaths || []) {
+  for (const relativePath of project.resolved.cleanupPaths) {
     const targetPath = path.join(project.projectDir, relativePath);
 
     if (!fs.existsSync(targetPath)) {
@@ -188,16 +252,22 @@ function cleanupLegacyPaths(project: LoadedManagedProject) {
 }
 
 function cleanupManagedOutputRoots(project: LoadedManagedProject) {
+  for (const relativePath of getManagedOutputRoots(project)) {
+    const targetPath = path.join(project.projectDir, relativePath);
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  }
+}
+
+function getManagedOutputRoots(project: LoadedManagedProject): string[] {
   const pathsToReset = [
     '.along/preset',
+    '.along/git-hooks',
     'prompts/along',
     'skills/along',
-    '.ranwawa/pre-commit',
-    '.ranwawa/commit-msg',
-    '.ranwawa/preinstall.ts',
+    '.ranwawa',
   ];
 
-  for (const editor of project.config.agent.editors) {
+  for (const editor of project.resolved.agent.editors) {
     pathsToReset.push(
       EDITOR_PROMPT_DIRS[editor],
       path.dirname(EDITOR_SKILL_DIRS[editor]),
@@ -205,111 +275,207 @@ function cleanupManagedOutputRoots(project: LoadedManagedProject) {
     );
   }
 
-  if (project.config.ci?.qualityGateAction?.enabled) {
+  if (project.resolved.ci?.qualityGateAction?.enabled) {
     pathsToReset.push('.github/actions/along-quality-gate');
   }
 
-  for (const relativePath of pathsToReset) {
-    const targetPath = path.join(project.projectDir, relativePath);
-    fs.rmSync(targetPath, { recursive: true, force: true });
-  }
+  return [...new Set(pathsToReset)];
 }
 
-function writeManifest(
+function buildManifestFile(
   project: LoadedManagedProject,
   generatedFiles: GeneratedFile[],
-) {
-  const manifestPath = path.join(
-    project.projectDir,
-    '.along/preset/manifest.json',
-  );
+): GeneratedFile {
   const manifest = {
     managedBy: '@ranwawa/along',
-    projectId: project.config.id,
-    displayName: project.config.displayName,
-    presetVersion: project.config.presetVersion,
-    generatedAt: new Date().toISOString(),
+    projectId: project.resolved.id,
+    displayName: project.resolved.displayName,
+    presetVersion: project.resolved.presetVersion,
     files: generatedFiles.map((file) => ({
       path: file.path,
-      sha256: hashContent(
-        fs.readFileSync(path.join(project.projectDir, file.path), 'utf8'),
-      ),
+      sha256: hashContent(file.content),
     })),
     packageJsonScripts: {
-      preinstall: 'bun .ranwawa/preinstall.ts',
-      prepare: 'git config core.hooksPath .ranwawa',
-      'quality:changed': 'node ./.along/preset/scripts/quality/run-changed.mjs',
-      'quality:full': 'node ./.along/preset/scripts/quality/run-full.mjs',
+      preinstall: `bun ${PREINSTALL_SCRIPT}`,
+      prepare: `git config core.hooksPath ${GIT_HOOKS_DIR}`,
+      'quality:changed': QUALITY_CHANGED_SCRIPT,
+      'quality:full': QUALITY_FULL_SCRIPT,
+    },
+    packageJsonDevDependencies: {
+      '@biomejs/biome': getManagedBiomeVersion(),
     },
   };
 
-  ensureParentDir(manifestPath);
-  fs.writeFileSync(
-    manifestPath,
-    formatWithBiome('manifest.json', `${JSON.stringify(manifest, null, 2)}\n`),
+  return {
+    path: '.along/preset/manifest.json',
+    content: `${JSON.stringify(manifest, null, 2)}\n`,
+  };
+}
+
+function buildProjectConfigFile(project: LoadedManagedProject): GeneratedFile {
+  const distribution = normalizeManagedProjectConfig(
+    project.projectDir,
+    project.config,
   );
-}
-
-function formatGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
-  return files.map((file) => {
-    if (!shouldFormatWithBiome(file.path)) {
-      return file;
-    }
-
-    return {
-      ...file,
-      content: formatWithBiome(file.path, file.content),
-    };
-  });
-}
-
-function normalizeProjectConfigFile(project: LoadedManagedProject) {
-  const configPath = project.configPath;
   const nextValue = project.rootConfig
     ? {
         ...project.rootConfig,
-        distribution: project.config,
+        distribution,
       }
-    : project.config;
+    : distribution;
 
-  fs.writeFileSync(
+  return {
+    path: CONFIG_FILE_NAME,
+    content: `${JSON.stringify(nextValue, null, 2)}\n`,
+  };
+}
+
+function prepareGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'along-preset-'));
+
+  try {
+    writeGeneratedFiles(tempDir, files);
+    runBiomeGeneratedCheck(tempDir, files, { write: true });
+    runBiomeGeneratedCheck(tempDir, files, { write: false });
+
+    return files.map((file) => ({
+      ...file,
+      content: fs.readFileSync(path.join(tempDir, file.path), 'utf8'),
+    }));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function runBiomeGeneratedCheck(
+  tempDir: string,
+  files: GeneratedFile[],
+  options: { write: boolean },
+) {
+  const configPath = path.join(tempDir, '.along/preset/biome.shared.json');
+  const args = [
+    'biome',
+    'check',
+    ...(options.write ? ['--write'] : []),
+    '--config-path',
     configPath,
-    formatWithBiome(
-      path.basename(configPath),
-      `${JSON.stringify(nextValue, null, 2)}\n`,
-    ),
-  );
-}
-
-function shouldFormatWithBiome(filePath: string): boolean {
-  return filePath.endsWith('.json') || filePath.endsWith('.mjs');
-}
-
-function formatWithBiome(filePath: string, content: string): string {
-  const result = spawnSync(
-    'bunx',
-    ['biome', 'format', '--stdin-file-path', filePath],
-    {
-      cwd: getWorkspaceRoot(),
-      encoding: 'utf8',
-      input: content,
-    },
-  );
+    '--files-ignore-unknown=true',
+    ...files.map((file) => path.join(tempDir, file.path)),
+  ];
+  const result = spawnSync('bunx', args, {
+    cwd: getWorkspaceRoot(),
+    encoding: 'utf8',
+  });
 
   if (result.error) {
     throw result.error;
   }
 
   if (typeof result.status === 'number' && result.status !== 0) {
-    const details = result.stderr?.trim();
+    const details = [result.stdout, result.stderr]
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .join('\n');
     throw new Error(
       details
-        ? `格式化内容失败 (${filePath}): ${details}`
-        : `格式化内容失败 (${filePath})`,
+        ? `生成文件不符合共享 Biome 配置:\n${details}`
+        : '生成文件不符合共享 Biome 配置',
     );
   }
+}
 
-  return result.stdout;
+function checkProjectDrift(
+  project: LoadedManagedProject,
+  expectedFiles: GeneratedFile[],
+) {
+  const drifts: Array<{ path: string; reason: string }> = [];
+  const expectedPathSet = new Set(expectedFiles.map((file) => file.path));
+
+  for (const file of expectedFiles) {
+    const actualPath = path.join(project.projectDir, file.path);
+
+    if (!fs.existsSync(actualPath)) {
+      drifts.push({ path: file.path, reason: '缺少受管文件' });
+      continue;
+    }
+
+    const actualContent = fs.readFileSync(actualPath, 'utf8');
+    if (actualContent !== file.content) {
+      drifts.push({ path: file.path, reason: '内容与预期不一致' });
+    }
+  }
+
+  for (const filePath of collectManagedOutputFilePaths(project)) {
+    if (!expectedPathSet.has(filePath)) {
+      drifts.push({ path: filePath, reason: '存在未受管的历史文件' });
+    }
+  }
+
+  for (const legacyPath of [
+    LEGACY_CONFIG_FILE_NAME,
+    ...project.resolved.cleanupPaths,
+  ]) {
+    if (fs.existsSync(path.join(project.projectDir, legacyPath))) {
+      drifts.push({ path: legacyPath, reason: '存在需要清理的历史路径' });
+    }
+  }
+
+  if (drifts.length === 0) {
+    logger.success(`项目基建资产无漂移: ${project.projectDir}`);
+    return;
+  }
+
+  logger.error('检测到项目基建资产漂移:');
+  for (const drift of drifts) {
+    logger.error(`  ${drift.path} - ${drift.reason}`);
+  }
+
+  throw new Error('项目基建资产存在漂移，请运行 along project-sync 修复。');
+}
+
+function collectManagedOutputFilePaths(
+  project: LoadedManagedProject,
+): string[] {
+  const results: string[] = [];
+
+  for (const outputRoot of getManagedOutputRoots(project)) {
+    const absoluteRoot = path.join(project.projectDir, outputRoot);
+    if (!fs.existsSync(absoluteRoot)) {
+      continue;
+    }
+
+    collectFiles(absoluteRoot);
+  }
+
+  return results.sort();
+
+  function collectFiles(currentPath: string) {
+    const stat = fs.lstatSync(currentPath);
+    if (stat.isSymbolicLink() || stat.isFile()) {
+      results.push(path.relative(project.projectDir, currentPath));
+      return;
+    }
+
+    if (!stat.isDirectory()) {
+      return;
+    }
+
+    for (const entry of fs.readdirSync(currentPath)) {
+      collectFiles(path.join(currentPath, entry));
+    }
+  }
+}
+
+function getManagedBiomeVersion(): string {
+  const packageJson = JSON.parse(
+    readText(path.join(getWorkspaceRoot(), 'package.json')),
+  );
+
+  return (
+    packageJson.devDependencies?.['@biomejs/biome'] ||
+    packageJson.dependencies?.['@biomejs/biome'] ||
+    '^2.4.13'
+  );
 }
 
 function buildEditorGitignoreRules(editor: ManagedAgentEditor): string[] {

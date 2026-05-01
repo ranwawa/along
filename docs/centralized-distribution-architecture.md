@@ -9,10 +9,13 @@
   - 唯一公开命令入口
 - `packages/preset`
   - 分发引擎
-  - 负责读取 `.along.json`、渲染文档、生成受管文件
+  - 负责读取 `.along/setting.json`、渲染文档、生成受管文件
 - `packages/preset-assets`
   - 事实源
-  - 保存全部可分发通用资产
+  - 保存 prompts / skills / hooks / quality engine 资产
+- `packages/biome-config`
+  - 共享 Biome 规则源
+  - 由 preset 分发为业务仓受管 Biome 配置
 
 根目录不再承担业务逻辑，只作为 workspace 容器。
 
@@ -71,17 +74,18 @@ packages/preset-assets/
 - `prompts/`
 - `skills/`
 
-### 目标仓 `.along.json`
+Biome 配置单独由 `packages/biome-config/biome.shared.json` 维护，避免和运行时 prompt / hook 资产混在一起。
+
+### 目标仓 `.along/setting.json`
 
 这里只描述项目差异，不复制通用规则正文。
 
 负责表达：
 
-- 项目标识
 - 质量门禁编排
-- 安装命令与版本约束
 - 需要分发到哪些编辑器目录
 - 是否生成通用 CI action
+- 项目标识、安装命令、root gate 等可选覆盖项
 
 ### `packages/preset`
 
@@ -91,6 +95,9 @@ packages/preset-assets/
 - 组合通用资产
 - 渲染文档
 - 写入业务仓
+- 在临时目录使用共享 Biome 配置预校验生成结果
+- 通过确定性生成结果和目标仓文件比较做漂移检测
+- 在写入前检查目标 Git 工作区是否干净
 - 维护受管目录和 manifest
 
 ## 扩展方式
@@ -98,7 +105,7 @@ packages/preset-assets/
 后续只允许两种正规扩展路径：
 
 1. 新资产放进 `packages/preset-assets`
-2. 新差异字段放进 `.along.json.distribution`
+2. 新差异字段放进 `.along/setting.json.distribution`
 
 不再接受：
 

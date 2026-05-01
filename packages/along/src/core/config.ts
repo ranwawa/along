@@ -68,9 +68,13 @@ export const config = {
     // 1. 最高优先级：环境变量
     if (process.env.AGENT_TYPE) return success(process.env.AGENT_TYPE);
 
-    // 2. 项目级配置文件：.along.json 或 package.json 中的 along.agent
+    // 2. 项目级配置文件：.along/setting.json 或 package.json 中的 along.agent
     const workingDir = process.cwd();
-    const alongConfigPath = path.join(workingDir, '.along.json');
+    const settingConfigPath = path.join(workingDir, '.along/setting.json');
+    const legacyConfigPath = path.join(workingDir, '.along.json');
+    const alongConfigPath = fs.existsSync(settingConfigPath)
+      ? settingConfigPath
+      : legacyConfigPath;
     if (fs.existsSync(alongConfigPath)) {
       try {
         const alongConfig = JSON.parse(
@@ -103,7 +107,7 @@ export const config = {
     return failure(
       `无法检测 Agent 类型。请通过以下方式之一指定：\n` +
         `  1. 设置环境变量 AGENT_TYPE=${editorIds}\n` +
-        `  2. 在项目根目录创建 .along.json，内容为 {"agent": "${editorIds}"}\n` +
+        `  2. 在项目根目录创建 .along/setting.json，内容为 {"agent": "${editorIds}"}\n` +
         `  3. 在 package.json 中添加 "along": {"agent": "${editorIds}"}`,
     );
   },

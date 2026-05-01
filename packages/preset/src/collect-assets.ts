@@ -2,6 +2,7 @@ import path from 'node:path';
 import { EDITOR_PROMPT_DIRS, EDITOR_SKILL_DIRS } from './editor-targets';
 import { collectFilesRecursively, readText } from './file-utils';
 import {
+  getBiomeSharedConfigPath,
   getPresetHooksDir,
   getPresetPromptsDir,
   getPresetQualityDir,
@@ -14,7 +15,36 @@ import type {
 } from './types';
 
 export function renderQualityConfig(project: LoadedManagedProject): string {
-  return `${JSON.stringify(project.config.quality, null, 2)}\n`;
+  return `${JSON.stringify(project.resolved.quality, null, 2)}\n`;
+}
+
+export function collectBiomeFiles(): GeneratedFile[] {
+  return [
+    {
+      path: '.along/preset/biome.shared.json',
+      content: readText(getBiomeSharedConfigPath()),
+    },
+    {
+      path: 'biome.json',
+      content: `${JSON.stringify(
+        {
+          $schema: 'https://biomejs.dev/schemas/2.4.13/schema.json',
+          extends: ['./.along/preset/biome.shared.json'],
+          files: {
+            ignoreUnknown: true,
+            includes: ['**', '!!.along', '!!.claude', '!!.codex', '!!**/dist'],
+          },
+          vcs: {
+            enabled: true,
+            clientKind: 'git',
+            useIgnoreFile: true,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    },
+  ];
 }
 
 export function collectQualityEngineFiles(): GeneratedFile[] {
@@ -33,7 +63,7 @@ export function collectHookFiles(): GeneratedFile[] {
   const sourceRoot = getPresetHooksDir();
 
   return collectFilesRecursively(sourceRoot).map((absolutePath) => ({
-    path: path.join('.ranwawa', path.basename(absolutePath)),
+    path: path.join('.along/git-hooks', path.basename(absolutePath)),
     content: readText(absolutePath),
   }));
 }
@@ -53,7 +83,7 @@ export function collectPromptFiles(
       },
     ];
 
-    for (const editor of project.config.agent.editors) {
+    for (const editor of project.resolved.agent.editors) {
       outputs.push({
         path: path.join(getEditorPromptTargetDir(editor), fileName),
         content,
@@ -79,7 +109,7 @@ export function collectSkillFiles(
       },
     ];
 
-    for (const editor of project.config.agent.editors) {
+    for (const editor of project.resolved.agent.editors) {
       outputs.push({
         path: path.join(getEditorSkillTargetDir(editor), relativePath),
         content,
