@@ -8,7 +8,6 @@
         "@biomejs/biome": "^2.4.13",
         "@ranwawa/along": "workspace:*",
         "@ranwawa/along-web": "workspace:*",
-        "@ranwawa/biome-config": "workspace:*",
         "@ranwawa/preset": "workspace:*",
         "@ranwawa/preset-assets": "workspace:*",
       },
@@ -33,7 +32,6 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^2.4.13",
-        "@ranwawa/biome-config": "workspace:*",
         "@ranwawa/preset": "workspace:*",
         "vitest": "^4.1.4",
       },
@@ -43,7 +41,6 @@
       "version": "0.0.1",
       "devDependencies": {
         "@biomejs/biome": "^2.4.13",
-        "@ranwawa/biome-config": "workspace:*",
         "@tailwindcss/postcss": "^4.2.2",
         "@types/node": "^24.12.2",
         "@types/react": "^19.2.14",
@@ -59,17 +56,11 @@
         "vite": "^8.0.4",
       },
     },
-    "packages/biome-config": {
-      "name": "@ranwawa/biome-config",
-      "version": "0.0.1",
-      "peerDependencies": {
-        "@biomejs/biome": ">=2.0.0",
-      },
-    },
     "packages/preset": {
       "name": "@ranwawa/preset",
       "version": "0.1.0",
       "dependencies": {
+        "@ranwawa/preset-assets": "workspace:*",
         "consola": "^3.4.2",
       },
     },
@@ -182,8 +173,6 @@
     "@ranwawa/along": ["@ranwawa/along@workspace:packages/along"],
 
     "@ranwawa/along-web": ["@ranwawa/along-web@workspace:packages/along-web"],
-
-    "@ranwawa/biome-config": ["@ranwawa/biome-config@workspace:packages/biome-config"],
 
     "@ranwawa/preset": ["@ranwawa/preset@workspace:packages/preset"],
 

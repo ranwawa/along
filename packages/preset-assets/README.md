@@ -4,6 +4,7 @@
 
 当前包含：
 
+- `biome/`：共享 Biome 规则
 - `hooks/`：Git hooks 与 preinstall 模板
 - `quality/`：通用质量门禁执行引擎
 - `prompts/`：项目侧通用提示词

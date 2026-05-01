@@ -8,11 +8,7 @@
   "bin": {
     "along": "./bin/along.ts"
   },
-  "files": [
-    "bin",
-    "src",
-    "types"
-  ],
+  "files": ["bin", "src", "types"],
   "scripts": {
     "dev:server": "bun --watch src/commands/webhook-server.ts --port 9876",
     "test": "vitest run --config vitest.config.ts",
@@ -32,7 +28,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.13",
-    "@ranwawa/biome-config": "workspace:*",
     "@ranwawa/preset": "workspace:*",
     "vitest": "^4.1.4"
   }

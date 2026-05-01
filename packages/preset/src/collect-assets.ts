@@ -30,15 +30,6 @@ export function collectBiomeFiles(): GeneratedFile[] {
         {
           $schema: 'https://biomejs.dev/schemas/2.4.13/schema.json',
           extends: ['./.along/preset/biome.shared.json'],
-          files: {
-            ignoreUnknown: true,
-            includes: ['**', '!!.along', '!!.claude', '!!.codex', '!!**/dist'],
-          },
-          vcs: {
-            enabled: true,
-            clientKind: 'git',
-            useIgnoreFile: true,
-          },
         },
         null,
         2,

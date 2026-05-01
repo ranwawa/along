@@ -8,11 +8,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "files": [
-    "src"
-  ],
+  "files": ["src"],
   "dependencies": {
-    "@ranwawa/biome-config": "workspace:*",
+    "@ranwawa/preset-assets": "workspace:*",
     "consola": "^3.4.2"
   }
 }

@@ -335,6 +335,7 @@ function prepareGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
 
   try {
     writeGeneratedFiles(tempDir, files);
+    prepareBiomeVcsIgnoreFiles(tempDir);
     runBiomeGeneratedCheck(tempDir, files, { write: true });
     runBiomeGeneratedCheck(tempDir, files, { write: false });
 
@@ -345,6 +346,14 @@ function prepareGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+function prepareBiomeVcsIgnoreFiles(tempDir: string) {
+  fs.writeFileSync(path.join(tempDir, '.gitignore'), '');
+  fs.writeFileSync(path.join(tempDir, '.along/preset/.gitignore'), '');
+  const gitInfoDir = path.join(tempDir, '.git/info');
+  fs.mkdirSync(gitInfoDir, { recursive: true });
+  fs.writeFileSync(path.join(gitInfoDir, 'exclude'), '');
 }
 
 function runBiomeGeneratedCheck(

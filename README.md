@@ -7,7 +7,6 @@
 - `packages/along`：GitHub Agent CLI 与运行时
 - `packages/preset`：集中分发引擎
 - `packages/preset-assets`：分发资产唯一事实源
-- `packages/biome-config`：共享 Biome 规则
 
 常用命令：
 
