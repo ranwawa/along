@@ -30,3 +30,11 @@ export function getPresetPromptsDir(): string {
 export function getPresetSkillsDir(): string {
   return path.join(getPresetAssetsRoot(), 'skills');
 }
+
+export function getPresetTemplatesDir(): string {
+  return path.join(getPresetAssetsRoot(), 'templates');
+}
+
+export function getPresetTemplatePath(fileName: string): string {
+  return path.join(getPresetTemplatesDir(), fileName);
+}

@@ -160,11 +160,9 @@ export function resolveManagedProjectConfig(
   const packageName = packageJson.name || path.basename(projectDir);
 
   return {
-    ...config,
     id: config.id || toProjectId(packageName),
     displayName: config.displayName || toDisplayName(packageName),
     presetVersion: readPresetVersion(),
-    projectDocPath: config.projectDocPath || inferProjectDocPath(projectDir),
     cleanupPaths: config.cleanupPaths || [],
     tooling: {
       installCommand:
@@ -173,6 +171,8 @@ export function resolveManagedProjectConfig(
         config.tooling?.bunVersionFile || inferBunVersionFile(projectDir),
     },
     quality: resolveQualityConfig(projectDir, config.quality),
+    agent: config.agent,
+    ...(config.ci ? { ci: config.ci } : {}),
   };
 }
 
@@ -197,13 +197,6 @@ export function normalizeManagedProjectConfig(
 
   if (config.displayName && config.displayName !== toDisplayName(packageName)) {
     normalized.displayName = config.displayName;
-  }
-
-  if (
-    config.projectDocPath &&
-    config.projectDocPath !== inferProjectDocPath(projectDir)
-  ) {
-    normalized.projectDocPath = config.projectDocPath;
   }
 
   if (config.cleanupPaths?.length) {
@@ -313,18 +306,6 @@ export function inferRootGateFiles(projectDir: string): string[] {
     ...required,
     ...candidates.filter((file) => fs.existsSync(path.join(projectDir, file))),
   ];
-}
-
-export function inferProjectDocPath(projectDir: string): string {
-  if (fs.existsSync(path.join(projectDir, 'PROJECT.md'))) {
-    return 'PROJECT.md';
-  }
-
-  if (fs.existsSync(path.join(projectDir, 'README.md'))) {
-    return 'README.md';
-  }
-
-  return 'PROJECT.md';
 }
 
 export function inferInstallCommand(projectDir: string): string {

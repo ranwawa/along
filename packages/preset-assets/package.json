@@ -9,6 +9,7 @@
     "hooks",
     "prompts",
     "quality",
-    "skills"
+    "skills",
+    "templates"
   ]
 }

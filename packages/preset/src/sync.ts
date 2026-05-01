@@ -124,7 +124,7 @@ function buildGeneratedFiles(project: LoadedManagedProject): GeneratedFile[] {
     ...collectBiomeFiles(),
     {
       path: 'AGENTS.md',
-      content: renderAgentsDoc(project),
+      content: renderAgentsDoc(),
     },
     {
       path: 'QUALITY.md',
