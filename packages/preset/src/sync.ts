@@ -13,7 +13,7 @@ import {
 } from './collect-assets';
 import { EDITOR_PROMPT_DIRS, EDITOR_SKILL_DIRS } from './editor-targets';
 import { hashContent, readText, writeGeneratedFiles } from './file-utils';
-import { getWorkspaceRoot } from './paths';
+import { getPresetGitignorePath, getWorkspaceRoot } from './paths';
 import {
   CONFIG_FILE_NAME,
   LEGACY_CONFIG_FILE_NAME,
@@ -26,11 +26,7 @@ import {
   renderQualityDoc,
   renderQualityGateAction,
 } from './render-docs';
-import type {
-  GeneratedFile,
-  LoadedManagedProject,
-  ManagedAgentEditor,
-} from './types';
+import type { GeneratedFile, LoadedManagedProject } from './types';
 
 const logger = consola.withTag('preset');
 const GIT_HOOKS_DIR = '.along/git-hooks';
@@ -207,7 +203,7 @@ function buildGitignoreFile(project: LoadedManagedProject): GeneratedFile {
     : '';
   const startMarker = '# begin along managed assets';
   const endMarker = '# end along managed assets';
-  const managedBlock = buildManagedGitignoreBlock(project);
+  const managedBlock = buildManagedGitignoreBlock();
   const blockContent = `${startMarker}\n${managedBlock}\n${endMarker}`;
   const pattern = new RegExp(`${startMarker}[\\s\\S]*?${endMarker}`, 'm');
   const next = pattern.test(existing)
@@ -220,22 +216,8 @@ function buildGitignoreFile(project: LoadedManagedProject): GeneratedFile {
   };
 }
 
-function buildManagedGitignoreBlock(project: LoadedManagedProject): string {
-  const lines = [
-    '!.along/',
-    '.along/*',
-    '!.along/setting.json',
-    '!.along/preset/',
-    '!.along/preset/**',
-    '!.along/git-hooks/',
-    '!.along/git-hooks/**',
-  ];
-
-  for (const editor of project.resolved.agent.editors) {
-    lines.push(...buildEditorGitignoreRules(editor));
-  }
-
-  return lines.join('\n');
+function buildManagedGitignoreBlock(): string {
+  return readText(getPresetGitignorePath()).trim();
 }
 
 function cleanupLegacyPaths(project: LoadedManagedProject) {
@@ -349,8 +331,12 @@ function prepareGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
 }
 
 function prepareBiomeVcsIgnoreFiles(tempDir: string) {
-  fs.writeFileSync(path.join(tempDir, '.gitignore'), '');
-  fs.writeFileSync(path.join(tempDir, '.along/preset/.gitignore'), '');
+  const gitignoreContent = readText(getPresetGitignorePath());
+  fs.writeFileSync(path.join(tempDir, '.gitignore'), gitignoreContent);
+  fs.writeFileSync(
+    path.join(tempDir, '.along/preset/.gitignore'),
+    gitignoreContent,
+  );
   const gitInfoDir = path.join(tempDir, '.git/info');
   fs.mkdirSync(gitInfoDir, { recursive: true });
   fs.writeFileSync(path.join(gitInfoDir, 'exclude'), '');
@@ -485,21 +471,4 @@ function getManagedBiomeVersion(): string {
     packageJson.dependencies?.['@biomejs/biome'] ||
     '^2.4.13'
   );
-}
-
-function buildEditorGitignoreRules(editor: ManagedAgentEditor): string[] {
-  const promptDir = EDITOR_PROMPT_DIRS[editor];
-  const skillDir = EDITOR_SKILL_DIRS[editor];
-  const promptParent = path.dirname(promptDir);
-  const skillParent = path.dirname(skillDir);
-
-  return [
-    `!${promptParent}/`,
-    `${promptParent}/*`,
-    `!${promptDir}/`,
-    `!${promptDir}/**`,
-    `!${skillParent}/`,
-    `!${skillDir}/`,
-    `!${skillDir}/**`,
-  ];
 }

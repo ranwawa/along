@@ -12,6 +12,10 @@ export function getBiomeSharedConfigPath(): string {
   return path.join(getPresetAssetsRoot(), 'biome/biome.shared.json');
 }
 
+export function getPresetGitignorePath(): string {
+  return path.join(getPresetAssetsRoot(), 'gitignore/base.gitignore');
+}
+
 export function getPresetHooksDir(): string {
   return path.join(getPresetAssetsRoot(), 'hooks');
 }

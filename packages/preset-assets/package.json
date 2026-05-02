@@ -5,5 +5,13 @@
   "license": "ISC",
   "author": "ranwawa <274544338@qq.com>",
   "type": "module",
-  "files": ["biome", "hooks", "prompts", "quality", "skills", "templates"]
+  "files": [
+    "biome",
+    "gitignore",
+    "hooks",
+    "prompts",
+    "quality",
+    "skills",
+    "templates"
+  ]
 }

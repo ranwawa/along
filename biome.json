@@ -1,6 +1,5 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.13/schema.json",
-  "extends": ["@ranwawa/biome-config/biome"],
   "css": {
     "parser": {
       "tailwindDirectives": true
