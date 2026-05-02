@@ -1,4 +1,51 @@
-node_modules/
-.env
+# 点开头目录
+.*/
+**/.*/
+
+# 编辑器
+.idea/
+.vscode/
+
+# Agent
 .claude/
 .codex/
+.opencode/
+.pi/
+
+# Node
+node_modules/
+
+# 包管理器
+.bun/
+.npm/
+.pnpm-store/
+.pnpm/
+.yarn/
+
+# 环境变量
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# 构建与覆盖率
+build/
+coverage/
+dist/
+
+# 缓存
+.cache/
+.parcel-cache/
+.turbo/
+.vite/
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 系统文件
+.DS_Store
+Thumbs.db

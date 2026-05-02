@@ -2,9 +2,7 @@
   "name": "@ranwawa/along-monorepo",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
+  "workspaces": ["packages/*"],
   "scripts": {
     "dev:server": "bun --filter @ranwawa/along dev:server",
     "dev:web": "bun --filter @ranwawa/along-web dev",
@@ -15,7 +13,9 @@
     "lint": "biome lint .",
     "check": "biome check --write .",
     "preinstall": "bun .along/git-hooks/preinstall.ts",
-    "prepare": "git config core.hooksPath .along/git-hooks"
+    "prepare": "git config core.hooksPath .along/git-hooks",
+    "quality:changed": "bun ./.along/preset/scripts/quality/run-changed.mjs",
+    "quality:full": "bun ./.along/preset/scripts/quality/run-full.mjs"
   },
   "repository": {
     "type": "git",
