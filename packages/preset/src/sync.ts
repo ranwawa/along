@@ -16,7 +16,6 @@ import { hashContent, readText, writeGeneratedFiles } from './file-utils';
 import { getPresetGitignorePath, getWorkspaceRoot } from './paths';
 import {
   CONFIG_FILE_NAME,
-  LEGACY_CONFIG_FILE_NAME,
   loadManagedProject,
   normalizeManagedProjectConfig,
 } from './project-config';
@@ -66,7 +65,6 @@ export async function syncProject(
 
   cleanupManagedOutputRoots(project);
   writeGeneratedFiles(project.projectDir, expectedFiles);
-  cleanupLegacyPaths(project);
 
   logger.success(`同步完成: ${project.projectDir}`);
 }
@@ -220,19 +218,6 @@ function buildManagedGitignoreBlock(): string {
   return readText(getPresetGitignorePath()).trim();
 }
 
-function cleanupLegacyPaths(project: LoadedManagedProject) {
-  for (const relativePath of project.resolved.cleanupPaths) {
-    const targetPath = path.join(project.projectDir, relativePath);
-
-    if (!fs.existsSync(targetPath)) {
-      continue;
-    }
-
-    fs.rmSync(targetPath, { recursive: true, force: true });
-    logger.success(`已清理历史路径: ${relativePath}`);
-  }
-}
-
 function cleanupManagedOutputRoots(project: LoadedManagedProject) {
   for (const relativePath of getManagedOutputRoots(project)) {
     const targetPath = path.join(project.projectDir, relativePath);
@@ -241,13 +226,7 @@ function cleanupManagedOutputRoots(project: LoadedManagedProject) {
 }
 
 function getManagedOutputRoots(project: LoadedManagedProject): string[] {
-  const pathsToReset = [
-    '.along/preset',
-    '.along/git-hooks',
-    'prompts/along',
-    'skills/along',
-    '.ranwawa',
-  ];
+  const pathsToReset = ['.along/preset', '.along/git-hooks', '.ranwawa'];
 
   for (const editor of project.resolved.agent.editors) {
     pathsToReset.push(
@@ -403,15 +382,6 @@ function checkProjectDrift(
   for (const filePath of collectManagedOutputFilePaths(project)) {
     if (!expectedPathSet.has(filePath)) {
       drifts.push({ path: filePath, reason: '存在未受管的历史文件' });
-    }
-  }
-
-  for (const legacyPath of [
-    LEGACY_CONFIG_FILE_NAME,
-    ...project.resolved.cleanupPaths,
-  ]) {
-    if (fs.existsSync(path.join(project.projectDir, legacyPath))) {
-      drifts.push({ path: legacyPath, reason: '存在需要清理的历史路径' });
     }
   }
 

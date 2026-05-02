@@ -31,11 +31,23 @@ export interface EditorConfig {
   ensurePermissions?: (worktreePath: string, userAlongDir: string) => void;
 }
 
+type JsonObject = Record<string, unknown>;
+
 // 确保目录存在
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+}
+
+function toJsonObject(value: unknown): JsonObject {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonObject)
+    : {};
+}
+
+function readJsonObject(filePath: string): JsonObject {
+  return toJsonObject(JSON.parse(fs.readFileSync(filePath, 'utf-8')));
 }
 
 export const config = {
@@ -71,27 +83,24 @@ export const config = {
     // 2. 项目级配置文件：.along/setting.json 或 package.json 中的 along.agent
     const workingDir = process.cwd();
     const settingConfigPath = path.join(workingDir, '.along/setting.json');
-    const legacyConfigPath = path.join(workingDir, '.along.json');
-    const alongConfigPath = fs.existsSync(settingConfigPath)
-      ? settingConfigPath
-      : legacyConfigPath;
-    if (fs.existsSync(alongConfigPath)) {
+    if (fs.existsSync(settingConfigPath)) {
       try {
-        const alongConfig = JSON.parse(
-          fs.readFileSync(alongConfigPath, 'utf-8'),
-        );
-        if (alongConfig.agent) return success(alongConfig.agent);
+        const alongConfig = readJsonObject(settingConfigPath);
+        if (typeof alongConfig.agent === 'string') {
+          return success(alongConfig.agent);
+        }
       } catch {}
     }
     const pkgPath = path.join(workingDir, 'package.json');
     if (fs.existsSync(pkgPath)) {
       try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-        if (pkg.along?.agent) return success(pkg.along.agent);
+        const pkg = readJsonObject(pkgPath);
+        const along = toJsonObject(pkg.along);
+        if (typeof along.agent === 'string') return success(along.agent);
       } catch {}
     }
 
-    // 3. 目录特征检测（向后兼容已有项目）
+    // 3. 目录特征检测
     const execPath = process.argv[1] || '';
     for (const editor of config.EDITORS) {
       if (
@@ -122,17 +131,17 @@ export const config = {
       mappings: [],
       ensurePermissions: (worktreePath: string, userAlongDir: string) => {
         const configPath = path.join(worktreePath, 'opencode.json');
-        let existing: any = {};
+        let existing: JsonObject = {};
         if (fs.existsSync(configPath)) {
           try {
-            existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            existing = readJsonObject(configPath);
           } catch {
             existing = {};
           }
         }
         const alongPattern = `${userAlongDir}/**`;
-        const permission = existing.permission || {};
-        const extDir = permission.external_directory || {};
+        const permission = toJsonObject(existing.permission);
+        const extDir = toJsonObject(permission.external_directory);
         if (extDir[alongPattern] === 'allow') return;
         extDir[alongPattern] = 'allow';
         permission.external_directory = extDir;
@@ -169,16 +178,20 @@ export const config = {
         if (!fs.existsSync(claudeDir))
           fs.mkdirSync(claudeDir, { recursive: true });
         const configPath = path.join(claudeDir, 'settings.local.json');
-        let existing: any = {};
+        let existing: JsonObject = {};
         if (fs.existsSync(configPath)) {
           try {
-            existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            existing = readJsonObject(configPath);
           } catch {
             existing = {};
           }
         }
-        const permissions = existing.permissions || {};
-        const allow: string[] = permissions.allow || [];
+        const permissions = toJsonObject(existing.permissions);
+        const allow = Array.isArray(permissions.allow)
+          ? permissions.allow.filter((item): item is string => {
+              return typeof item === 'string';
+            })
+          : [];
         const requiredPatterns = [
           `Bash(along *)`,
           `Read(${userAlongDir}/**)`,

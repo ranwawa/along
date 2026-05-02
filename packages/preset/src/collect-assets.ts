@@ -67,21 +67,10 @@ export function collectPromptFiles(
   return collectFilesRecursively(sourceRoot).flatMap((absolutePath) => {
     const fileName = path.basename(absolutePath);
     const content = readText(absolutePath);
-    const outputs: GeneratedFile[] = [
-      {
-        path: path.join('prompts/along', fileName),
-        content,
-      },
-    ];
-
-    for (const editor of project.resolved.agent.editors) {
-      outputs.push({
-        path: path.join(getEditorPromptTargetDir(editor), fileName),
-        content,
-      });
-    }
-
-    return outputs;
+    return project.resolved.agent.editors.map((editor) => ({
+      path: path.join(getEditorPromptTargetDir(editor), fileName),
+      content,
+    }));
   });
 }
 
@@ -93,21 +82,10 @@ export function collectSkillFiles(
   return collectFilesRecursively(sourceRoot).flatMap((absolutePath) => {
     const relativePath = path.relative(sourceRoot, absolutePath);
     const content = readText(absolutePath);
-    const outputs: GeneratedFile[] = [
-      {
-        path: path.join('skills/along', relativePath),
-        content,
-      },
-    ];
-
-    for (const editor of project.resolved.agent.editors) {
-      outputs.push({
-        path: path.join(getEditorSkillTargetDir(editor), relativePath),
-        content,
-      });
-    }
-
-    return outputs;
+    return project.resolved.agent.editors.map((editor) => ({
+      path: path.join(getEditorSkillTargetDir(editor), relativePath),
+      content,
+    }));
   });
 }
 

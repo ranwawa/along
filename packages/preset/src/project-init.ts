@@ -3,12 +3,7 @@ import path from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface, type Interface } from 'node:readline/promises';
 import consola from 'consola';
-import {
-  CONFIG_FILE_NAME,
-  LEGACY_CONFIG_FILE_NAME,
-  toDisplayName,
-  toProjectId,
-} from './project-config';
+import { CONFIG_FILE_NAME, toDisplayName, toProjectId } from './project-config';
 import type {
   ManagedAgentEditor,
   ManagedProjectConfig,
@@ -67,12 +62,10 @@ export async function ensureManagedProjectConfig(
   options: InitProjectOptions = {},
 ): Promise<boolean> {
   const configPath = path.join(projectDir, CONFIG_FILE_NAME);
-  const legacyConfigPath = path.join(projectDir, LEGACY_CONFIG_FILE_NAME);
-  const rootConfig = readRootConfig(configPath, legacyConfigPath);
+  const rootConfig = readRootConfig(configPath);
 
   if (rootConfig.distribution) {
     writeRootConfig(configPath, rootConfig);
-    removeLegacyConfig(legacyConfigPath);
     return false;
   }
 
@@ -90,22 +83,14 @@ export async function ensureManagedProjectConfig(
     : await promptManagedProjectConfig(snapshot);
 
   writeRootConfig(configPath, { ...rootConfig, distribution });
-  removeLegacyConfig(legacyConfigPath);
   logger.success(`已写入 ${CONFIG_FILE_NAME}.distribution`);
 
   return true;
 }
 
-function readRootConfig(
-  configPath: string,
-  legacyConfigPath: string,
-): ManagedProjectRootConfig {
+function readRootConfig(configPath: string): ManagedProjectRootConfig {
   if (!fs.existsSync(configPath)) {
-    if (!fs.existsSync(legacyConfigPath)) {
-      return {};
-    }
-
-    return JSON.parse(fs.readFileSync(legacyConfigPath, 'utf8'));
+    return {};
   }
 
   return JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -117,17 +102,6 @@ function writeRootConfig(
 ) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(rootConfig, null, 2)}\n`);
-}
-
-function removeLegacyConfig(legacyConfigPath: string) {
-  if (!fs.existsSync(legacyConfigPath)) {
-    return;
-  }
-
-  fs.rmSync(legacyConfigPath, { force: true });
-  logger.success(
-    `已迁移旧配置 ${LEGACY_CONFIG_FILE_NAME} 到 ${CONFIG_FILE_NAME}`,
-  );
 }
 
 function createProjectSnapshot(

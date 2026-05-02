@@ -61,7 +61,6 @@ export interface ManagedCiConfig {
 export interface ManagedProjectConfig {
   id?: string;
   displayName?: string;
-  cleanupPaths?: string[];
   tooling?: Partial<ManagedProjectTooling>;
   quality: ManagedQualityConfig;
   agent: ManagedAgentConfig;
@@ -81,12 +80,11 @@ export interface ResolvedManagedQualityConfig
 export interface ResolvedManagedProjectConfig
   extends Omit<
     ManagedProjectConfig,
-    'id' | 'displayName' | 'cleanupPaths' | 'tooling' | 'quality'
+    'id' | 'displayName' | 'tooling' | 'quality'
   > {
   id: string;
   displayName: string;
   presetVersion: string;
-  cleanupPaths: string[];
   tooling: ManagedProjectTooling;
   quality: ResolvedManagedQualityConfig;
 }

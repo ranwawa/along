@@ -19,12 +19,12 @@ vi.mock('../core/config', () => ({
 }));
 
 vi.mock('../core/result', () => ({
-  success: (data: any) => ({ success: true, data }),
+  success: (data: unknown) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
 }));
 
 vi.mock('../core/common', () => ({
-  success: (data: any) => ({ success: true, data }),
+  success: (data: unknown) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
   ensureEditorPermissions: vi.fn(),
 }));
@@ -65,9 +65,9 @@ vi.mock('fs', () => ({
 
 vi.mock('chalk', () => {
   const passthrough = (s: string) => s;
-  const handler: ProxyHandler<any> = {
+  const handler: ProxyHandler<(value: string) => string> = {
     get: () => new Proxy(passthrough, handler),
-    apply: (_target: any, _thisArg: any, args: any[]) => args[0],
+    apply: (_target, _thisArg, args: [string]) => args[0],
   };
   return { default: new Proxy(passthrough, handler) };
 });
@@ -105,29 +105,12 @@ describe('bootstrap.ts', () => {
       expect(fs.writeFileSync).not.toHaveBeenCalled();
     });
 
-    it('当旧 .along.json 存在时迁移到 .along/setting.json', async () => {
-      vi.mocked(fs.existsSync)
-        .mockReturnValueOnce(false)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true);
-      const result = await ensureProjectBootstrap();
-      expect(result.success).toBe(true);
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        expect.stringContaining('.along/setting.json'),
-        expect.stringContaining('"agent":"claude"'),
-      );
-      expect(fs.rmSync).toHaveBeenCalledWith(
-        expect.stringContaining('.along.json'),
-        { force: true },
-      );
-    });
-
     it('当 getLogTag 失败时返回 failure', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(config.getLogTag).mockReturnValue({
         success: false,
         error: '无法检测',
-      } as any);
+      });
       const result = await ensureProjectBootstrap();
       expect(result.success).toBe(false);
     });

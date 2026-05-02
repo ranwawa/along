@@ -15,20 +15,6 @@ const logger = consola.withTag('bootstrap');
 export async function ensureProjectBootstrap(): Promise<Result<void>> {
   const workingDir = process.cwd();
   const settingPath = path.join(workingDir, '.along/setting.json');
-  const legacyPath = path.join(workingDir, '.along.json');
-
-  if (!fs.existsSync(settingPath)) {
-    if (fs.existsSync(legacyPath)) {
-      try {
-        fs.mkdirSync(path.dirname(settingPath), { recursive: true });
-        fs.writeFileSync(settingPath, fs.readFileSync(legacyPath, 'utf8'));
-        fs.rmSync(legacyPath, { force: true });
-        logger.info('已迁移 .along.json 到 .along/setting.json');
-      } catch (e: any) {
-        logger.warn(`迁移 .along/setting.json 失败: ${e.message}`);
-      }
-    }
-  }
 
   if (!fs.existsSync(settingPath)) {
     const tagRes = config.getLogTag();
@@ -40,8 +26,9 @@ export async function ensureProjectBootstrap(): Promise<Result<void>> {
           `${JSON.stringify({ agent: tagRes.data }, null, 2)}\n`,
         );
         logger.info(`已自动创建 .along/setting.json (agent: ${tagRes.data})`);
-      } catch (e: any) {
-        logger.warn(`创建 .along/setting.json 失败: ${e.message}`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn(`创建 .along/setting.json 失败: ${message}`);
       }
     }
   }

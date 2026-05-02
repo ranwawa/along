@@ -10,7 +10,6 @@ import type {
   ResolvedManagedQualityConfig,
 } from './types';
 
-export const LEGACY_CONFIG_FILE_NAME = '.along.json';
 export const CONFIG_FILE_NAME = '.along/setting.json';
 export const DEFAULT_ROOT_GATE_PREFIXES = [
   '.along/preset/',
@@ -70,11 +69,6 @@ function resolveConfigPath(projectDir: string): string | null {
   const configPath = path.join(projectDir, CONFIG_FILE_NAME);
   if (fs.existsSync(configPath)) {
     return configPath;
-  }
-
-  const legacyConfigPath = path.join(projectDir, LEGACY_CONFIG_FILE_NAME);
-  if (fs.existsSync(legacyConfigPath)) {
-    return legacyConfigPath;
   }
 
   return null;
@@ -163,7 +157,6 @@ export function resolveManagedProjectConfig(
     id: config.id || toProjectId(packageName),
     displayName: config.displayName || toDisplayName(packageName),
     presetVersion: readPresetVersion(),
-    cleanupPaths: config.cleanupPaths || [],
     tooling: {
       installCommand:
         config.tooling?.installCommand || inferInstallCommand(projectDir),
@@ -197,10 +190,6 @@ export function normalizeManagedProjectConfig(
 
   if (config.displayName && config.displayName !== toDisplayName(packageName)) {
     normalized.displayName = config.displayName;
-  }
-
-  if (config.cleanupPaths?.length) {
-    normalized.cleanupPaths = config.cleanupPaths;
   }
 
   if (

@@ -8,8 +8,8 @@ export const EDITOR_PROMPT_DIRS: Record<ManagedAgentEditor, string> = {
 };
 
 export const EDITOR_SKILL_DIRS: Record<ManagedAgentEditor, string> = {
-  opencode: '.opencode/skills/along',
-  pi: '.pi/skills/along',
-  codex: '.codex/skills/along',
-  claude: '.claude/skills/along',
+  opencode: '.opencode/skills',
+  pi: '.pi/skills',
+  codex: '.codex/skills',
+  claude: '.claude/skills',
 };
