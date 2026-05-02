@@ -8,11 +8,7 @@ import {
   getPresetQualityDir,
   getPresetSkillsDir,
 } from './paths';
-import type {
-  GeneratedFile,
-  LoadedManagedProject,
-  ManagedAgentEditor,
-} from './types';
+import type { GeneratedFile, LoadedManagedProject } from './types';
 
 export function renderQualityConfig(project: LoadedManagedProject): string {
   return `${JSON.stringify(project.resolved.quality, null, 2)}\n`;
@@ -68,7 +64,7 @@ export function collectPromptFiles(
     const fileName = path.basename(absolutePath);
     const content = readText(absolutePath);
     return project.resolved.agent.editors.map((editor) => ({
-      path: path.join(getEditorPromptTargetDir(editor), fileName),
+      path: path.join(EDITOR_PROMPT_DIRS[editor], fileName),
       content,
     }));
   });
@@ -83,16 +79,8 @@ export function collectSkillFiles(
     const relativePath = path.relative(sourceRoot, absolutePath);
     const content = readText(absolutePath);
     return project.resolved.agent.editors.map((editor) => ({
-      path: path.join(getEditorSkillTargetDir(editor), relativePath),
+      path: path.join(EDITOR_SKILL_DIRS[editor], relativePath),
       content,
     }));
   });
-}
-
-function getEditorPromptTargetDir(editor: ManagedAgentEditor): string {
-  return EDITOR_PROMPT_DIRS[editor];
-}
-
-function getEditorSkillTargetDir(editor: ManagedAgentEditor): string {
-  return EDITOR_SKILL_DIRS[editor];
 }

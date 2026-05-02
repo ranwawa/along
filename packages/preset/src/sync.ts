@@ -12,7 +12,7 @@ import {
   renderQualityConfig,
 } from './collect-assets';
 import { EDITOR_PROMPT_DIRS, EDITOR_SKILL_DIRS } from './editor-targets';
-import { hashContent, readText, writeGeneratedFiles } from './file-utils';
+import { readText, writeGeneratedFiles } from './file-utils';
 import { getPresetGitignorePath, getWorkspaceRoot } from './paths';
 import {
   CONFIG_FILE_NAME,
@@ -144,24 +144,19 @@ function buildGeneratedFiles(project: LoadedManagedProject): GeneratedFile[] {
     });
   }
 
-  return dedupeGeneratedFiles(files);
+  return files;
 }
 
 function buildExpectedFiles(project: LoadedManagedProject): GeneratedFile[] {
   const assetFiles = buildGeneratedFiles(project);
-  const nonManifestFiles = prepareGeneratedFiles([
+  const formattedFiles = prepareGeneratedFiles([
     ...assetFiles,
     buildPackageJsonFile(project),
     buildProjectConfigFile(project),
     buildGitignoreFile(project),
   ]);
 
-  return dedupeGeneratedFiles(
-    prepareGeneratedFiles([
-      ...nonManifestFiles,
-      buildManifestFile(project, nonManifestFiles),
-    ]),
-  );
+  return dedupeGeneratedFiles(formattedFiles);
 }
 
 function dedupeGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
@@ -229,14 +224,10 @@ function cleanupManagedOutputRoots(project: LoadedManagedProject) {
 }
 
 function getManagedOutputRoots(project: LoadedManagedProject): string[] {
-  const pathsToReset = ['.along/preset', '.along/git-hooks', '.ranwawa'];
+  const pathsToReset = ['.along/preset', '.along/git-hooks'];
 
   for (const editor of project.resolved.agent.editors) {
-    pathsToReset.push(
-      EDITOR_PROMPT_DIRS[editor],
-      path.dirname(EDITOR_SKILL_DIRS[editor]),
-      EDITOR_SKILL_DIRS[editor],
-    );
+    pathsToReset.push(EDITOR_PROMPT_DIRS[editor], EDITOR_SKILL_DIRS[editor]);
   }
 
   if (project.resolved.ci?.qualityGateAction?.enabled) {
@@ -244,36 +235,6 @@ function getManagedOutputRoots(project: LoadedManagedProject): string[] {
   }
 
   return [...new Set(pathsToReset)];
-}
-
-function buildManifestFile(
-  project: LoadedManagedProject,
-  generatedFiles: GeneratedFile[],
-): GeneratedFile {
-  const manifest = {
-    managedBy: '@ranwawa/along',
-    projectId: project.resolved.id,
-    displayName: project.resolved.displayName,
-    presetVersion: project.resolved.presetVersion,
-    files: generatedFiles.map((file) => ({
-      path: file.path,
-      sha256: hashContent(file.content),
-    })),
-    packageJsonScripts: {
-      preinstall: `bun ${PREINSTALL_SCRIPT}`,
-      prepare: `git config core.hooksPath ${GIT_HOOKS_DIR}`,
-      'quality:changed': QUALITY_CHANGED_SCRIPT,
-      'quality:full': QUALITY_FULL_SCRIPT,
-    },
-    packageJsonDevDependencies: {
-      '@biomejs/biome': getManagedBiomeVersion(),
-    },
-  };
-
-  return {
-    path: '.along/preset/manifest.json',
-    content: `${JSON.stringify(manifest, null, 2)}\n`,
-  };
 }
 
 function buildProjectConfigFile(project: LoadedManagedProject): GeneratedFile {
@@ -300,8 +261,7 @@ function prepareGeneratedFiles(files: GeneratedFile[]): GeneratedFile[] {
   try {
     writeGeneratedFiles(tempDir, files);
     prepareBiomeVcsIgnoreFiles(tempDir);
-    runBiomeGeneratedCheck(tempDir, files, { write: true });
-    runBiomeGeneratedCheck(tempDir, files, { write: false });
+    runBiomeGeneratedCheck(tempDir, files);
 
     return files.map((file) => ({
       ...file,
@@ -319,21 +279,14 @@ function prepareBiomeVcsIgnoreFiles(tempDir: string) {
     path.join(tempDir, '.along/preset/.gitignore'),
     gitignoreContent,
   );
-  const gitInfoDir = path.join(tempDir, '.git/info');
-  fs.mkdirSync(gitInfoDir, { recursive: true });
-  fs.writeFileSync(path.join(gitInfoDir, 'exclude'), '');
 }
 
-function runBiomeGeneratedCheck(
-  tempDir: string,
-  files: GeneratedFile[],
-  options: { write: boolean },
-) {
+function runBiomeGeneratedCheck(tempDir: string, files: GeneratedFile[]) {
   const configPath = path.join(tempDir, '.along/preset/biome.shared.json');
   const args = [
     'biome',
     'check',
-    ...(options.write ? ['--write'] : []),
+    '--write',
     '--config-path',
     configPath,
     '--files-ignore-unknown=true',

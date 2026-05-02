@@ -178,6 +178,12 @@ export function normalizeManagedProjectConfig(
   const tooling: Partial<ResolvedManagedProjectConfig['tooling']> = {};
   const normalizedQuality: ManagedQualityConfig = {
     ...config.quality,
+    packages: Object.fromEntries(
+      Object.entries(config.quality.packages).map(([id, pkg]) => [
+        id,
+        { ...pkg },
+      ]),
+    ),
   };
   const normalized: ManagedProjectConfig = {
     quality: normalizedQuality,
@@ -230,12 +236,8 @@ export function normalizeManagedProjectConfig(
     normalizePackageConfig(projectDir, packageConfig);
   }
 
-  if (config.ci?.qualityGateAction?.enabled) {
-    normalized.ci = {
-      qualityGateAction: {
-        enabled: true,
-      },
-    };
+  if (config.ci) {
+    normalized.ci = config.ci;
   }
 
   return normalized;
@@ -307,10 +309,8 @@ export function inferInstallCommand(projectDir: string): string {
   return 'bun install';
 }
 
-export function inferBunVersionFile(projectDir: string): string {
-  return fs.existsSync(path.join(projectDir, '.bun-version'))
-    ? '.bun-version'
-    : '.bun-version';
+export function inferBunVersionFile(_projectDir: string): string {
+  return '.bun-version';
 }
 
 function inferPackageDisplayName(
