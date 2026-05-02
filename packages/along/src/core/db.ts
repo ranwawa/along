@@ -11,6 +11,12 @@ export interface SessionInfo {
   issueNumber: number;
 }
 
+interface SessionInfoRow {
+  owner: string;
+  repo: string;
+  issue_number: number;
+}
+
 const JSON_FIELDS = new Set([
   'progress',
   'context',
@@ -63,8 +69,8 @@ export function getDb(): Result<Database> {
     _db.exec('PRAGMA busy_timeout = 5000');
     initSchema(_db);
     return success(_db);
-  } catch (e: any) {
-    return failure(`打开数据库失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`打开数据库失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -72,6 +78,17 @@ function tryAddColumn(db: Database, sql: string) {
   try {
     db.exec(sql);
   } catch {}
+}
+
+interface SessionRow extends Record<string, unknown> {
+  id?: number;
+  owner: string;
+  repo: string;
+  issue_number: number;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function initSchema(db: Database) {
@@ -194,6 +211,120 @@ function initSchema(db: Database) {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_items (
+      task_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      active_thread_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_threads (
+      thread_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      status TEXT NOT NULL,
+      current_plan_id TEXT,
+      open_round_id TEXT,
+      approved_plan_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      role TEXT NOT NULL,
+      body TEXT NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
+      FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_plan_revisions (
+      plan_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      based_on_plan_id TEXT,
+      status TEXT NOT NULL,
+      artifact_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(thread_id, version),
+      FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
+      FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE,
+      FOREIGN KEY(artifact_id) REFERENCES task_artifacts(artifact_id) ON DELETE CASCADE
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_feedback_rounds (
+      round_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      based_on_plan_id TEXT NOT NULL,
+      feedback_artifact_ids TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL,
+      resolution TEXT,
+      produced_plan_id TEXT,
+      created_at TEXT NOT NULL,
+      resolved_at TEXT,
+      FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
+      FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_agent_bindings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      provider_session_id TEXT,
+      cwd TEXT,
+      model TEXT,
+      personality_version TEXT,
+      updated_at TEXT NOT NULL,
+      UNIQUE(thread_id, agent_id, provider),
+      FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_agent_runs (
+      run_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      provider_session_id_at_start TEXT,
+      provider_session_id_at_end TEXT,
+      status TEXT NOT NULL,
+      input_artifact_ids TEXT NOT NULL DEFAULT '[]',
+      output_artifact_ids TEXT NOT NULL DEFAULT '[]',
+      error TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
+      FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
+    );
+  `);
+
   try {
     db.exec(
       'CREATE INDEX IF NOT EXISTS idx_sessions_lifecycle ON sessions(lifecycle)',
@@ -234,6 +365,36 @@ function initSchema(db: Database) {
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_discussion_rounds_open_issue ON discussion_rounds(owner, repo, issue_number) WHERE status IN ('open','processing','stale_partial')",
     );
   } catch {}
+  try {
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_task_items_status ON task_items(status, updated_at)',
+    );
+  } catch {}
+  try {
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_task_threads_task ON task_threads(task_id, purpose, status)',
+    );
+  } catch {}
+  try {
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_task_artifacts_thread ON task_artifacts(thread_id, created_at)',
+    );
+  } catch {}
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_plan_revisions_active_thread ON task_plan_revisions(thread_id) WHERE status = 'active'",
+    );
+  } catch {}
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_feedback_rounds_open_thread ON task_feedback_rounds(thread_id) WHERE status IN ('open','processing','stale_partial')",
+    );
+  } catch {}
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_agent_runs_active ON task_agent_runs(thread_id, agent_id, provider) WHERE status = 'running'",
+    );
+  } catch {}
 
   tryAddColumn(db, 'ALTER TABLE sessions ADD COLUMN lifecycle TEXT');
   tryAddColumn(db, 'ALTER TABLE sessions ADD COLUMN phase TEXT');
@@ -247,8 +408,8 @@ function initSchema(db: Database) {
   tryAddColumn(db, 'ALTER TABLE sessions ADD COLUMN claude_session_id TEXT');
 }
 
-function rowToSessionStatus(row: any): SessionStatus {
-  const result: any = {};
+function rowToSessionStatus(row: SessionRow): SessionStatus {
+  const result: Partial<SessionStatus> = {};
   for (const [snakeKey, value] of Object.entries(row)) {
     if (snakeKey === 'id') continue;
     if (snakeKey === 'owner' || snakeKey === 'repo') continue;
@@ -261,7 +422,7 @@ function rowToSessionStatus(row: any): SessionStatus {
         result[camelKey] = undefined;
       }
     } else {
-      result[camelKey] = value;
+      result[camelKey as keyof SessionStatus] = value as never;
     }
   }
 
@@ -291,13 +452,16 @@ function rowToSessionStatus(row: any): SessionStatus {
   return result as SessionStatus;
 }
 
-function statusToColumns(data: Partial<SessionStatus>): Record<string, any> {
-  const columns: Record<string, any> = {};
+function statusToColumns(
+  data: Partial<SessionStatus>,
+): Record<string, unknown> {
+  const columns: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(data)) {
     if (key === 'repo' && value && typeof value === 'object') {
-      columns.owner = (value as any).owner;
-      columns.repo = (value as any).name;
+      const repoValue = value as { owner?: unknown; name?: unknown };
+      if (typeof repoValue.owner === 'string') columns.owner = repoValue.owner;
+      if (typeof repoValue.name === 'string') columns.repo = repoValue.name;
       continue;
     }
 
@@ -347,12 +511,12 @@ export function readSession(
       .prepare(
         'SELECT * FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?',
       )
-      .get(owner, repo, issueNumber) as any;
+      .get(owner, repo, issueNumber) as SessionRow | null;
 
     if (!row) return success(null);
     return success(rowToSessionStatus(row));
-  } catch (e: any) {
-    return failure(`查询 Session 失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`查询 Session 失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -371,7 +535,7 @@ export function upsertSession(
       .prepare(
         'SELECT id FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?',
       )
-      .get(owner, repo, issueNumber) as any;
+      .get(owner, repo, issueNumber) as { id: number } | null;
 
     if (!existing) {
       const columns = statusToColumns(data);
@@ -413,8 +577,8 @@ export function upsertSession(
     }
 
     return success(undefined);
-  } catch (e: any) {
-    return failure(`保存 Session 失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`保存 Session 失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -428,7 +592,7 @@ export function findAllSessions(
 
   try {
     let sql = 'SELECT owner, repo, issue_number FROM sessions';
-    const params: any[] = [];
+    const params: unknown[] = [];
     const conditions: string[] = [];
 
     if (filterOwner) {
@@ -444,7 +608,7 @@ export function findAllSessions(
       sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
-    const rows = db.prepare(sql).all(...params) as any[];
+    const rows = db.prepare(sql).all(...params) as Array<SessionInfoRow>;
     return success(
       rows.map((row) => ({
         owner: row.owner,
@@ -452,8 +616,8 @@ export function findAllSessions(
         issueNumber: row.issue_number,
       })),
     );
-  } catch (e: any) {
-    return failure(`列出 Session 失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`列出 Session 失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -471,14 +635,14 @@ export function findSessionByPr(
       .prepare(
         'SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_number = ?',
       )
-      .get(owner, repo, prNumber) as any;
+      .get(owner, repo, prNumber) as SessionRow | null;
 
     if (!row) {
       row = db
         .prepare(
           'SELECT * FROM sessions WHERE owner = ? AND repo = ? AND pr_url LIKE ?',
         )
-        .get(owner, repo, `%/pull/${prNumber}%`) as any;
+        .get(owner, repo, `%/pull/${prNumber}%`) as SessionRow | null;
     }
 
     if (!row) {
@@ -486,7 +650,7 @@ export function findSessionByPr(
         .prepare(
           'SELECT * FROM sessions WHERE owner = ? AND repo = ? AND context LIKE ?',
         )
-        .get(owner, repo, `%"prNumber":${prNumber}%`) as any;
+        .get(owner, repo, `%"prNumber":${prNumber}%`) as SessionRow | null;
     }
 
     if (!row) return success(null);
@@ -495,8 +659,8 @@ export function findSessionByPr(
       issueNumber: row.issue_number,
       statusData: rowToSessionStatus(row),
     });
-  } catch (e: any) {
-    return failure(`通过 PR 查找 Session 失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`通过 PR 查找 Session 失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -513,12 +677,12 @@ export function findSessionByBranch(branchName: string): Result<{
   try {
     let row = db
       .prepare('SELECT * FROM sessions WHERE branch_name = ?')
-      .get(branchName) as any;
+      .get(branchName) as SessionRow | null;
 
     if (!row) {
       row = db
         .prepare('SELECT * FROM sessions WHERE context LIKE ?')
-        .get(`%"branchName":"${branchName}"%`) as any;
+        .get(`%"branchName":"${branchName}"%`) as SessionRow | null;
     }
 
     if (!row) return success(null);
@@ -529,8 +693,8 @@ export function findSessionByBranch(branchName: string): Result<{
       issueNumber: row.issue_number,
       statusData: rowToSessionStatus(row),
     });
-  } catch (e: any) {
-    return failure(`通过分支查找 Session 失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`通过分支查找 Session 失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -550,7 +714,7 @@ export function transactSession(
         .prepare(
           'SELECT * FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?',
         )
-        .get(owner, repo, issueNumber) as any;
+        .get(owner, repo, issueNumber) as SessionRow | null;
 
       const current = row ? rowToSessionStatus(row) : null;
       const updates = modifier(current);
@@ -602,8 +766,8 @@ export function transactSession(
 
     txn();
     return success(undefined);
-  } catch (e: any) {
-    return failure(`事务执行失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`事务执行失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -621,8 +785,8 @@ export function deleteSession(
       'DELETE FROM sessions WHERE owner = ? AND repo = ? AND issue_number = ?',
     ).run(owner, repo, issueNumber);
     return success(undefined);
-  } catch (e: any) {
-    return failure(`删除 Session 记录失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`删除 Session 记录失败: ${getErrorMessage(error)}`);
   }
 }
 
