@@ -20,11 +20,7 @@ import {
   normalizeManagedProjectConfig,
 } from './project-config';
 import { ensureManagedProjectConfig } from './project-init';
-import {
-  renderAgentsDoc,
-  renderQualityDoc,
-  renderQualityGateAction,
-} from './render-docs';
+import { renderAgentsDoc, renderQualityGateAction } from './render-docs';
 import type { GeneratedFile, LoadedManagedProject } from './types';
 
 const logger = consola.withTag('preset');
@@ -119,10 +115,6 @@ function buildGeneratedFiles(project: LoadedManagedProject): GeneratedFile[] {
     {
       path: 'AGENTS.md',
       content: renderAgentsDoc(),
-    },
-    {
-      path: 'QUALITY.md',
-      content: renderQualityDoc(project),
     },
     {
       path: '.along/preset/quality.config.json',

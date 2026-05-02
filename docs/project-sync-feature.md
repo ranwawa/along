@@ -119,7 +119,6 @@ along project-sync --check [project-path]
 同步后，目标项目会生成或更新这些受管结果：
 
 - `AGENTS.md`
-- `QUALITY.md`
 - `biome.json`
 - `.along/git-hooks/pre-commit`
 - `.along/git-hooks/commit-msg`
