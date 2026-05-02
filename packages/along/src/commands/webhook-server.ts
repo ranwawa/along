@@ -45,12 +45,19 @@ import {
   isActiveSessionStatus,
   LIFECYCLE,
   PHASE,
+  type SessionLifecycle,
   STEP,
 } from '../domain/session-state-machine';
+import { runTaskPlanningAgent } from '../domain/task-planning-agent';
 import {
   get_gh_client,
   syncLifecycleLabel,
 } from '../integration/github-client';
+import {
+  handleTaskApiRequest,
+  isTaskApiPath,
+  type ScheduledTaskPlanningRun,
+} from '../integration/task-api';
 import {
   cleanupIssueSession,
   resolveCi,
@@ -62,6 +69,7 @@ import {
   type WorkspaceRegistry,
 } from '../integration/workspace-registry';
 import { initLogRouter } from '../logging/log-router';
+import type { LogCategory, UnifiedLogEntry } from '../logging/log-types';
 import {
   getConversationDir,
   getGlobalLogPath as getGlobalLogPathFn,
@@ -75,7 +83,113 @@ import {
 const logger = consola.withTag('webhook-server');
 const require = createRequire(import.meta.url);
 
+interface BunFile extends Blob {
+  exists(): Promise<boolean>;
+}
+
+declare const Bun: {
+  serve(options: {
+    hostname: string;
+    port: number;
+    fetch(req: Request): Response | Promise<Response>;
+  }): unknown;
+  file(filePath: string): BunFile;
+};
+
+interface GitHubUserPayload {
+  login?: string;
+  type?: string;
+}
+
+interface GitHubIssuePayload {
+  number?: number;
+  title?: string;
+  body?: string;
+  labels?: Array<string | { name?: string }>;
+}
+
+interface GitHubCommentPayload {
+  id?: number;
+  body?: string;
+  user?: GitHubUserPayload;
+  created_at?: string;
+}
+
+interface GitHubPullRequestPayload {
+  number?: number;
+  merged?: boolean;
+  body?: string;
+}
+
+interface GitHubCheckRunPayload {
+  conclusion?: string;
+  pull_requests?: Array<{ number?: number }>;
+}
+
+interface GitHubWebhookPayload {
+  repository?: { full_name?: string };
+  action?: string;
+  sender?: GitHubUserPayload;
+  issue?: GitHubIssuePayload;
+  comment?: GitHubCommentPayload;
+  pull_request?: GitHubPullRequestPayload;
+  check_run?: GitHubCheckRunPayload;
+  zen?: string;
+}
+
+type DashboardLifecycle = SessionLifecycle | 'zombie';
+type UnknownRecord = Record<string, unknown>;
+
 let registry: WorkspaceRegistry;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function parseIssueLabels(
+  labels: GitHubIssuePayload['labels'] | undefined,
+): string[] {
+  if (!Array.isArray(labels)) return [];
+  return labels.flatMap((label) => {
+    if (typeof label === 'string') return [label];
+    return label.name ? [label.name] : [];
+  });
+}
+
+function isLogCategory(value: string): value is LogCategory {
+  return (
+    value === 'lifecycle' ||
+    value === 'conversation' ||
+    value === 'diagnostic' ||
+    value === 'webhook' ||
+    value === 'server'
+  );
+}
+
+function isLogLevel(value: string): value is UnifiedLogEntry['level'] {
+  return (
+    value === 'info' ||
+    value === 'warn' ||
+    value === 'error' ||
+    value === 'success'
+  );
+}
+
+function parseLogCategories(value: string | null): LogCategory[] | undefined {
+  const items = value?.split(',').filter(isLogCategory);
+  return items && items.length > 0 ? items : undefined;
+}
+
+function parseLogLevels(
+  value: string | null,
+): UnifiedLogEntry['level'][] | undefined {
+  const items = value?.split(',').filter(isLogLevel);
+  return items && items.length > 0 ? items : undefined;
+}
 
 function resolveWebDistDir(): string {
   try {
@@ -151,9 +265,9 @@ const MAX_CONCURRENT_AGENTS = parseInt(
   10,
 );
 let runningAgents = 0;
-const agentQueue: Array<{ fn: () => Promise<any>; label: string }> = [];
+const agentQueue: Array<{ fn: () => Promise<unknown>; label: string }> = [];
 
-function enqueueAgent(label: string, fn: () => Promise<any>) {
+function enqueueAgent(label: string, fn: () => Promise<unknown>) {
   if (runningAgents < MAX_CONCURRENT_AGENTS) {
     runAgent(label, fn);
   } else {
@@ -164,7 +278,7 @@ function enqueueAgent(label: string, fn: () => Promise<any>) {
   }
 }
 
-function runAgent(label: string, fn: () => Promise<any>) {
+function runAgent(label: string, fn: () => Promise<unknown>) {
   runningAgents++;
   logger.info(
     `[并发限制] ${label} 开始执行（${runningAgents}/${MAX_CONCURRENT_AGENTS}）`,
@@ -189,7 +303,8 @@ function runAgent(label: string, fn: () => Promise<any>) {
 // ── Webhook 事件去重（防止 GitHub 超时重发） ──
 const DEDUP_MAX_SIZE = 1000;
 const processedDeliveries = new Set<string>();
-const issueCommentLocks = new Map<string, Promise<any>>();
+const issueCommentLocks = new Map<string, Promise<unknown>>();
+const taskPlanningLocks = new Map<string, Promise<void>>();
 
 // ── Dashboard 兜底同步节流（防止频繁调用 GitHub API） ──
 const FALLBACK_SYNC_INTERVAL_MS = 60_000;
@@ -223,6 +338,43 @@ function withIssueCommentLock<T>(
     }
   });
   return next;
+}
+
+function withTaskPlanningLock(
+  taskId: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const previous = taskPlanningLocks.get(taskId) || Promise.resolve();
+  const next = previous.then(fn, fn);
+  taskPlanningLocks.set(taskId, next);
+  next.finally(() => {
+    if (taskPlanningLocks.get(taskId) === next) {
+      taskPlanningLocks.delete(taskId);
+    }
+  });
+  return next;
+}
+
+function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
+  enqueueAgent(`Task ${input.taskId} planning`, async () => {
+    await withTaskPlanningLock(input.taskId, async () => {
+      logger.info(`[Task ${input.taskId}] planning 开始: ${input.reason}`);
+      const result = await runTaskPlanningAgent({
+        taskId: input.taskId,
+        agentId: input.agentId,
+        cwd: input.cwd,
+        model: input.model,
+        personalityVersion: input.personalityVersion,
+      });
+      if (!result.success) {
+        logger.error(`[Task ${input.taskId}] planning 失败: ${result.error}`);
+        return;
+      }
+      logger.info(
+        `[Task ${input.taskId}] planning 完成: ${result.data.action}`,
+      );
+    });
+  });
 }
 
 /**
@@ -261,7 +413,7 @@ function parseRepository(
 /**
  * 异步执行处理函数（fire-and-forget，不阻塞 HTTP 响应）
  */
-function fireAndForget(fn: () => Promise<any>) {
+function fireAndForget(fn: () => Promise<unknown>) {
   fn().catch((err) => {
     logger.error(`处理函数执行内部异常: ${err.message}`);
   });
@@ -282,7 +434,7 @@ function getSessionQuery(
  */
 async function handleEvent(
   eventType: string,
-  payload: any,
+  payload: GitHubWebhookPayload,
   deliveryId: string,
 ): Promise<{ status: number; message: string }> {
   const repoFullName = payload.repository?.full_name;
@@ -329,9 +481,7 @@ async function handleEvent(
 
         const issueTitle = payload.issue?.title || '';
         const issueBody = payload.issue?.body || '';
-        const issueLabels = (payload.issue?.labels || []).map((l: any) =>
-          typeof l === 'string' ? l : l.name,
-        );
+        const issueLabels = parseIssueLabels(payload.issue?.labels);
 
         logger.info(`Issue #${issueNumber} 已创建，开始分类...`);
         enqueueAgent(`Issue #${issueNumber} 分类+处理`, async () => {
@@ -438,7 +588,8 @@ async function handleEvent(
         const body = (payload.comment?.body || '').trim();
         const command = body.split(/\s/)[0]?.toLowerCase();
         const commentId = Number(payload.comment?.id || 0);
-        const commentUser = payload.comment?.user || payload.sender || {};
+        const commentUser: GitHubUserPayload =
+          payload.comment?.user || payload.sender || {};
         const mirrorRes = mirrorIssueComment({
           owner,
           repo,
@@ -469,11 +620,9 @@ async function handleEvent(
           return { status: 500, message: planningCommentRes.error };
         }
 
-        const issueLabels = (payload.issue?.labels || []).map((l: any) =>
-          typeof l === 'string' ? l : l.name,
-        );
+        const issueLabels = parseIssueLabels(payload.issue?.labels);
         const isActionableIssue = issueLabels.some(
-          (l: string) => l === 'bug' || l === 'feature',
+          (label) => label === 'bug' || label === 'feature',
         );
         const session = new SessionManager(owner, repo, issueNumber);
         const sessionRes = session.readStatus();
@@ -842,9 +991,16 @@ async function main() {
           }
         }
 
-        let payload: any;
+        let payload: GitHubWebhookPayload;
         try {
-          payload = JSON.parse(body);
+          const parsed = JSON.parse(body) as unknown;
+          if (!isRecord(parsed)) {
+            return new Response(JSON.stringify({ error: '无效的 JSON' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          payload = parsed as GitHubWebhookPayload;
         } catch {
           return new Response(JSON.stringify({ error: '无效的 JSON' }), {
             status: 400,
@@ -904,6 +1060,15 @@ async function main() {
         });
       }
 
+      // ── API: /api/tasks ──
+      if (isTaskApiPath(url.pathname)) {
+        return handleTaskApiRequest(req, url, {
+          defaultCwd: process.cwd(),
+          resolveRepoPath: (owner, repo) => registry.resolve(owner, repo),
+          schedulePlanner: enqueueTaskPlanningRun,
+        });
+      }
+
       // ── API: /api/sessions ──
       if (url.pathname === '/api/sessions' && req.method === 'GET') {
         const allRes = findAllSessions();
@@ -917,10 +1082,10 @@ async function main() {
         for (const info of allRes.data) {
           const res = readSession(info.owner, info.repo, info.issueNumber);
           if (res.success && res.data) {
-            let displayLifecycle = res.data.lifecycle;
+            let displayLifecycle: DashboardLifecycle = res.data.lifecycle;
             if (isActiveSessionStatus(displayLifecycle) && res.data.pid) {
               const alive = await check_process_running(res.data.pid);
-              if (!alive) displayLifecycle = 'zombie' as any;
+              if (!alive) displayLifecycle = 'zombie';
             }
             sessions.push({
               ...res.data,
@@ -1039,9 +1204,9 @@ async function main() {
                       );
                     }
                   }
-                } catch (err: any) {
+                } catch (err: unknown) {
                   logger.warn(
-                    `[兜底同步] Issue #${s.issueNumber} 同步异常: ${err.message}`,
+                    `[兜底同步] Issue #${s.issueNumber} 同步异常: ${getErrorMessage(err)}`,
                   );
                 }
               }
@@ -1153,8 +1318,8 @@ async function main() {
               },
             },
           );
-        } catch (e: any) {
-          return new Response(JSON.stringify({ error: e.message }), {
+        } catch (e: unknown) {
+          return new Response(JSON.stringify({ error: getErrorMessage(e) }), {
             status: 500,
             headers: {
               'Content-Type': 'application/json',
@@ -1212,8 +1377,8 @@ async function main() {
               },
             },
           );
-        } catch (e: any) {
-          return new Response(JSON.stringify({ error: e.message }), {
+        } catch (e: unknown) {
+          return new Response(JSON.stringify({ error: getErrorMessage(e) }), {
             status: 500,
             headers: {
               'Content-Type': 'application/json',
@@ -1272,8 +1437,8 @@ async function main() {
               },
             },
           );
-        } catch (e: any) {
-          return new Response(JSON.stringify({ error: e.message }), {
+        } catch (e: unknown) {
+          return new Response(JSON.stringify({ error: getErrorMessage(e) }), {
             status: 500,
             headers: {
               'Content-Type': 'application/json',
@@ -1301,8 +1466,8 @@ async function main() {
               },
             },
           );
-        } catch (e: any) {
-          return new Response(JSON.stringify({ error: e.message }), {
+        } catch (e: unknown) {
+          return new Response(JSON.stringify({ error: getErrorMessage(e) }), {
             status: 500,
             headers: {
               'Content-Type': 'application/json',
@@ -1314,14 +1479,8 @@ async function main() {
 
       // ── NEW API: /api/logs/global ──
       if (url.pathname === '/api/logs/global' && req.method === 'GET') {
-        const category = url.searchParams
-          .get('category')
-          ?.split(',')
-          .filter(Boolean) as any[] | undefined;
-        const level = url.searchParams
-          .get('level')
-          ?.split(',')
-          .filter(Boolean) as any[] | undefined;
+        const category = parseLogCategories(url.searchParams.get('category'));
+        const level = parseLogLevels(url.searchParams.get('level'));
         const maxLines = url.searchParams.has('maxLines')
           ? Number(url.searchParams.get('maxLines'))
           : 200;
@@ -1350,14 +1509,8 @@ async function main() {
             },
           );
         }
-        const category = url.searchParams
-          .get('category')
-          ?.split(',')
-          .filter(Boolean) as any[] | undefined;
-        const level = url.searchParams
-          .get('level')
-          ?.split(',')
-          .filter(Boolean) as any[] | undefined;
+        const category = parseLogCategories(url.searchParams.get('category'));
+        const level = parseLogLevels(url.searchParams.get('level'));
         const maxLines = url.searchParams.has('maxLines')
           ? Number(url.searchParams.get('maxLines'))
           : 500;

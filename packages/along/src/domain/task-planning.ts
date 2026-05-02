@@ -197,6 +197,7 @@ export interface PublishPlanningUpdateInput {
   taskId: string;
   body: string;
   agentId?: string;
+  kind?: string;
 }
 
 export interface EnsureTaskAgentBindingInput {
@@ -223,6 +224,15 @@ export interface FinishTaskAgentRunInput {
   providerSessionIdAtEnd?: string;
   outputArtifactIds?: string[];
   error?: string;
+}
+
+export interface RecordTaskAgentResultInput {
+  taskId: string;
+  threadId: string;
+  body: string;
+  agentId?: string;
+  provider?: string;
+  runId?: string;
 }
 
 interface TaskItemRow {
@@ -309,6 +319,10 @@ interface TaskAgentRunRow {
   error: string | null;
   started_at: string;
   ended_at: string | null;
+}
+
+interface TaskIdRow {
+  task_id: string;
 }
 
 function generateId(prefix: string): string {
@@ -646,6 +660,35 @@ export function readTaskPlanningSnapshot(
   }
 }
 
+export function listTaskPlanningSnapshots(
+  limit = 100,
+): Result<TaskPlanningSnapshot[]> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
+
+  try {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+    const rows = db
+      .prepare(
+        'SELECT task_id FROM task_items ORDER BY updated_at DESC LIMIT ?',
+      )
+      .all(safeLimit) as TaskIdRow[];
+    const snapshots: TaskPlanningSnapshot[] = [];
+
+    for (const row of rows) {
+      const snapshotRes = readTaskPlanningSnapshot(row.task_id);
+      if (!snapshotRes.success) return snapshotRes;
+      if (snapshotRes.data) snapshots.push(snapshotRes.data);
+    }
+
+    return success(snapshots);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`列出 Task Planning 快照失败: ${message}`);
+  }
+}
+
 export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
   artifact: TaskArtifactRecord;
   round: TaskFeedbackRoundRecord | null;
@@ -919,9 +962,10 @@ export function publishPlanningUpdate(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
-  if (!snapshot.currentPlan)
-    return failure('当前没有正式 Plan，无法发布 Update');
-  if (!snapshot.openRound)
+  if (snapshot.thread.status === THREAD_STATUS.APPROVED) {
+    return failure('当前 Planning 已批准，不能发布 Update');
+  }
+  if (snapshot.currentPlan && !snapshot.openRound)
     return failure('当前没有待处理反馈，无法发布 Update');
 
   const dbRes = getDb();
@@ -943,29 +987,43 @@ export function publishPlanningUpdate(
           agentId: input.agentId || 'planner',
           roundId: snapshot.openRound?.roundId,
           basedOnPlanId: snapshot.currentPlan?.planId,
+          kind:
+            input.kind ||
+            (snapshot.currentPlan ? 'answer_only' : 'pre_plan_clarification'),
         },
         createdAt: now,
       });
 
-      db.prepare(
-        `
-          UPDATE task_feedback_rounds
-          SET status = ?, resolution = ?, resolved_at = ?
-          WHERE round_id = ?
-        `,
-      ).run(
-        ROUND_STATUS.RESOLVED,
-        ROUND_RESOLUTION.ANSWER_ONLY,
-        now,
-        snapshot.openRound?.roundId,
-      );
-      db.prepare(
-        `
-          UPDATE task_threads
-          SET status = ?, open_round_id = NULL, updated_at = ?
-          WHERE thread_id = ?
-        `,
-      ).run(THREAD_STATUS.AWAITING_APPROVAL, now, snapshot.thread.threadId);
+      if (snapshot.openRound) {
+        db.prepare(
+          `
+            UPDATE task_feedback_rounds
+            SET status = ?, resolution = ?, resolved_at = ?
+            WHERE round_id = ?
+          `,
+        ).run(
+          ROUND_STATUS.RESOLVED,
+          ROUND_RESOLUTION.ANSWER_ONLY,
+          now,
+          snapshot.openRound.roundId,
+        );
+        db.prepare(
+          `
+            UPDATE task_threads
+            SET status = ?, open_round_id = NULL, updated_at = ?
+            WHERE thread_id = ?
+          `,
+        ).run(THREAD_STATUS.AWAITING_APPROVAL, now, snapshot.thread.threadId);
+      } else {
+        db.prepare(
+          `
+            UPDATE task_threads
+            SET status = ?, updated_at = ?
+            WHERE thread_id = ?
+          `,
+        ).run(THREAD_STATUS.DISCUSSING, now, snapshot.thread.threadId);
+      }
+
       db.prepare('UPDATE task_items SET updated_at = ? WHERE task_id = ?').run(
         now,
         snapshot.task.taskId,
@@ -977,6 +1035,33 @@ export function publishPlanningUpdate(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`发布 Planning Update 失败: ${message}`);
+  }
+}
+
+export function recordTaskAgentResult(
+  input: RecordTaskAgentResultInput,
+): Result<TaskArtifactRecord> {
+  const body = input.body.trim();
+  if (!body) return failure('Agent Result 内容不能为空');
+
+  try {
+    const artifact = insertArtifact({
+      taskId: input.taskId,
+      threadId: input.threadId,
+      type: ARTIFACT_TYPE.AGENT_RESULT,
+      role: ARTIFACT_ROLE.AGENT,
+      body,
+      metadata: {
+        agentId: input.agentId || 'agent',
+        provider: input.provider || 'unknown',
+        runId: input.runId,
+      },
+      createdAt: iso_timestamp(),
+    });
+    return success(artifact);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`记录 Agent Result 失败: ${message}`);
   }
 }
 

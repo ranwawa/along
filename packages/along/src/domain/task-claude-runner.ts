@@ -10,6 +10,7 @@ import {
   createTaskAgentRun,
   ensureTaskAgentBinding,
   finishTaskAgentRun,
+  recordTaskAgentResult,
   type TaskAgentRunRecord,
   updateTaskAgentProviderSession,
 } from './task-planning';
@@ -32,9 +33,16 @@ export interface RunTaskClaudeTurnOutput {
   run: TaskAgentRunRecord;
   providerSessionId?: string;
   usedResume: boolean;
+  assistantText: string;
+  outputArtifactIds: string[];
 }
 
 type MessageWithSession = SDKMessage & { session_id?: string };
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 function getSessionId(message: SDKMessage): string | undefined {
   const candidate = message as MessageWithSession;
@@ -63,6 +71,30 @@ function getResultError(message: SDKMessage): string | null {
   return typeof result.subtype === 'string'
     ? `Claude Agent 返回错误结果: ${result.subtype}`
     : 'Claude Agent 返回错误结果';
+}
+
+function collectTextBlocks(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+
+  return content.flatMap((block) => {
+    if (!isRecord(block)) return [];
+    return block.type === 'text' && typeof block.text === 'string'
+      ? [block.text]
+      : [];
+  });
+}
+
+function getAssistantMessageText(message: SDKMessage): string[] {
+  const record: unknown = message;
+  if (!isRecord(record) || record.type !== 'assistant') return [];
+  if (!isRecord(record.message)) return [];
+  return collectTextBlocks(record.message.content);
+}
+
+function getResultText(message: SDKMessage): string | undefined {
+  const record: unknown = message;
+  if (!isRecord(record) || record.type !== 'result') return undefined;
+  return typeof record.result === 'string' ? record.result : undefined;
 }
 
 function buildOptions(
@@ -109,6 +141,8 @@ export async function runTaskClaudeTurn(
   if (!runRes.success) return runRes;
 
   let latestSessionId = binding.providerSessionId;
+  const assistantTextParts: string[] = [];
+  let finalResultText: string | undefined;
 
   try {
     const conversation = query({
@@ -119,6 +153,10 @@ export async function runTaskClaudeTurn(
     for await (const message of conversation) {
       const sessionId = getSessionId(message);
       if (sessionId) latestSessionId = sessionId;
+
+      assistantTextParts.push(...getAssistantMessageText(message));
+      const resultText = getResultText(message);
+      if (resultText) finalResultText = resultText;
 
       const error = getResultError(message);
       if (error) {
@@ -143,10 +181,37 @@ export async function runTaskClaudeTurn(
       if (!updateRes.success) return updateRes;
     }
 
+    const assistantText = (finalResultText || assistantTextParts.join('\n\n'))
+      .trim()
+      .trim();
+    const outputArtifactIds: string[] = [];
+    if (assistantText) {
+      const artifactRes = recordTaskAgentResult({
+        taskId: input.taskId,
+        threadId: input.threadId,
+        agentId: input.agentId,
+        provider: PROVIDER,
+        runId: runRes.data.runId,
+        body: assistantText,
+      });
+      if (!artifactRes.success) {
+        const failedRun = finishTaskAgentRun({
+          runId: runRes.data.runId,
+          status: AGENT_RUN_STATUS.FAILED,
+          providerSessionIdAtEnd: latestSessionId,
+          error: artifactRes.error,
+        });
+        if (!failedRun.success) return failedRun;
+        return failure(artifactRes.error);
+      }
+      outputArtifactIds.push(artifactRes.data.artifactId);
+    }
+
     const finishedRun = finishTaskAgentRun({
       runId: runRes.data.runId,
       status: AGENT_RUN_STATUS.SUCCEEDED,
       providerSessionIdAtEnd: latestSessionId,
+      outputArtifactIds,
     });
     if (!finishedRun.success) return finishedRun;
 
@@ -154,6 +219,8 @@ export async function runTaskClaudeTurn(
       run: finishedRun.data,
       providerSessionId: latestSessionId,
       usedResume,
+      assistantText,
+      outputArtifactIds,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

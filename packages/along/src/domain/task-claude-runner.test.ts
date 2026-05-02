@@ -5,6 +5,7 @@ const planningMocks = vi.hoisted(() => ({
   ensureTaskAgentBinding: vi.fn(),
   createTaskAgentRun: vi.fn(),
   finishTaskAgentRun: vi.fn(),
+  recordTaskAgentResult: vi.fn(),
   updateTaskAgentProviderSession: vi.fn(),
 }));
 
@@ -21,6 +22,7 @@ vi.mock('./task-planning', () => ({
   ensureTaskAgentBinding: planningMocks.ensureTaskAgentBinding,
   createTaskAgentRun: planningMocks.createTaskAgentRun,
   finishTaskAgentRun: planningMocks.finishTaskAgentRun,
+  recordTaskAgentResult: planningMocks.recordTaskAgentResult,
   updateTaskAgentProviderSession: planningMocks.updateTaskAgentProviderSession,
 }));
 
@@ -29,7 +31,12 @@ import { runTaskClaudeTurn } from './task-claude-runner';
 function successfulConversation(sessionId: string) {
   return (async function* () {
     yield { type: 'system', session_id: sessionId };
-    yield { type: 'result', subtype: 'success' };
+    yield {
+      type: 'assistant',
+      session_id: sessionId,
+      message: { content: [{ type: 'text', text: '中间输出' }] },
+    };
+    yield { type: 'result', subtype: 'success', result: '最终计划 JSON' };
   })();
 }
 
@@ -80,9 +87,22 @@ describe('task-claude-runner', () => {
         providerSessionIdAtEnd: 'session-2',
         status: 'succeeded',
         inputArtifactIds: [],
-        outputArtifactIds: [],
+        outputArtifactIds: ['art-result'],
         startedAt: '2026-01-01T00:00:00.000Z',
         endedAt: '2026-01-01T00:00:01.000Z',
+      },
+    });
+    planningMocks.recordTaskAgentResult.mockReturnValue({
+      success: true,
+      data: {
+        artifactId: 'art-result',
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        type: 'agent_result',
+        role: 'agent',
+        body: '最终计划 JSON',
+        metadata: {},
+        createdAt: '2026-01-01T00:00:01.000Z',
       },
     });
     planningMocks.updateTaskAgentProviderSession.mockReturnValue({
@@ -105,6 +125,8 @@ describe('task-claude-runner', () => {
     if (!result.success) throw new Error(result.error);
     expect(result.data.usedResume).toBe(true);
     expect(result.data.providerSessionId).toBe('session-2');
+    expect(result.data.assistantText).toBe('最终计划 JSON');
+    expect(result.data.outputArtifactIds).toEqual(['art-result']);
     expect(queryMock).toHaveBeenCalledWith({
       prompt: '继续处理用户反馈',
       options: expect.objectContaining({
@@ -118,6 +140,22 @@ describe('task-claude-runner', () => {
       'planner',
       'claude',
       'session-2',
+    );
+    expect(planningMocks.recordTaskAgentResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'planner',
+        provider: 'claude',
+        body: '最终计划 JSON',
+      }),
+    );
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: 'run-1',
+        status: 'succeeded',
+        outputArtifactIds: ['art-result'],
+      }),
     );
   });
 

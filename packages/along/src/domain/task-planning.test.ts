@@ -104,6 +104,17 @@ const mockDbState = vi.hoisted(() => {
         return null;
       },
       all: (...args: Array<string | number | null>) => {
+        if (
+          normalized ===
+          'SELECT task_id FROM task_items ORDER BY updated_at DESC LIMIT ?'
+        ) {
+          return [...state.tasks]
+            .sort((a, b) =>
+              String(b.updated_at).localeCompare(String(a.updated_at)),
+            )
+            .slice(0, Number(args[0]))
+            .map((row) => ({ task_id: row.task_id }));
+        }
         if (normalized.includes('FROM task_artifacts WHERE thread_id = ?')) {
           return state.artifacts.filter((row) => row.thread_id === args[0]);
         }
@@ -548,10 +559,12 @@ import {
   createTaskAgentRun,
   ensureTaskAgentBinding,
   finishTaskAgentRun,
+  listTaskPlanningSnapshots,
   PLAN_STATUS,
   publishPlanningUpdate,
   publishTaskPlanRevision,
   readTaskPlanningSnapshot,
+  recordTaskAgentResult,
   submitTaskMessage,
   TASK_STATUS,
   THREAD_STATUS,
@@ -598,6 +611,36 @@ describe('task-planning', () => {
     expect(snapshot.data.artifacts.map((item) => item.type)).toEqual([
       'user_message',
       'plan_revision',
+    ]);
+  });
+
+  it('当首版计划前需要澄清时，期望记录 Planning Update 并保持可继续讨论', () => {
+    const created = createPlanningTask({
+      title: '实现 Task API',
+      body: '希望通过网页创建 planning task。',
+      source: 'test',
+    });
+    expect(created.success).toBe(true);
+    if (!created.success) throw new Error(created.error);
+
+    const update = publishPlanningUpdate({
+      taskId: created.data.task.taskId,
+      body: '需要先确认默认执行仓库。',
+      kind: 'clarification_request',
+    });
+    expect(update.success).toBe(true);
+    if (!update.success) throw new Error(update.error);
+
+    const snapshot = readTaskPlanningSnapshot(created.data.task.taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+    expect(snapshot.data.currentPlan).toBeNull();
+    expect(snapshot.data.openRound).toBeNull();
+    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.DISCUSSING);
+    expect(snapshot.data.artifacts.map((item) => item.type)).toEqual([
+      'user_message',
+      'planning_update',
     ]);
   });
 
@@ -742,5 +785,49 @@ describe('task-planning', () => {
     expect(finished.data.providerSessionIdAtStart).toBe('session-1');
     expect(finished.data.providerSessionIdAtEnd).toBe('session-2');
     expect(finished.data.outputArtifactIds).toEqual(['art-2']);
+  });
+
+  it('当记录 Agent 原始输出时，期望保存为 agent_result artifact', () => {
+    const { taskId } = createTaskWithPlan();
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+
+    const result = recordTaskAgentResult({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'claude',
+      runId: 'run-1',
+      body: '{"action":"plan_revision","body":"Plan"}',
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data.type).toBe('agent_result');
+    expect(result.data.metadata.runId).toBe('run-1');
+  });
+
+  it('当列出 Task Planning 快照时，期望返回最近任务', () => {
+    const first = createPlanningTask({
+      title: '第一个任务',
+      body: '先创建一个 planning task。',
+      source: 'test',
+    });
+    expect(first.success).toBe(true);
+    const second = createPlanningTask({
+      title: '第二个任务',
+      body: '再创建一个 planning task。',
+      source: 'test',
+    });
+    expect(second.success).toBe(true);
+
+    const list = listTaskPlanningSnapshots(10);
+    expect(list.success).toBe(true);
+    if (!list.success) throw new Error(list.error);
+    expect(list.data).toHaveLength(2);
+    expect(list.data.map((item) => item.task.title)).toEqual(
+      expect.arrayContaining(['第一个任务', '第二个任务']),
+    );
   });
 });

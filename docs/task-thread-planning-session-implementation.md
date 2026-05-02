@@ -277,6 +277,10 @@ Approve 后：
 - Task-native planning domain service。
 - Agent binding domain service。
 - Claude planning runner 支持读取和写回 `providerSessionId`。
+- Claude planning runner 记录原始 `agent_result` artifact。
+- Planning Agent 编排层负责把 Claude 输出解析为 `plan_revision` 或 `planning_update`。
+- Web API 支持创建 Task、读取 Task、追加用户消息、批准 Plan、手动触发 planner。
+- webhook-server 复用现有 agent 队列，并按 `taskId` 串行化 Task planner。
 - 单元测试覆盖核心 planning 规则和 session binding。
 
 本轮暂不落地：
@@ -286,3 +290,57 @@ Approve 后：
 - 多 Agent council。
 - 长期记忆。
 - 自动进入 implementation。
+
+## 7. 当前 Web API
+
+当前人工主入口先落在后台 API，后续再接 along-web UI。
+
+### 7.1 创建 Task 并触发 planner
+
+```http
+POST /api/tasks
+```
+
+请求体：
+
+```json
+{
+  "title": "可选标题",
+  "body": "用户问题或需求",
+  "owner": "可选 GitHub owner",
+  "repo": "可选 GitHub repo",
+  "cwd": "可选本地执行目录",
+  "autoRun": true
+}
+```
+
+如果提供 `owner/repo`，server 会用 workspace registry 解析本地仓库路径；如果提供 `cwd`，直接使用 `cwd`；否则使用 webhook-server 当前工作目录。
+
+### 7.2 继续讨论
+
+```http
+POST /api/tasks/:taskId/messages
+```
+
+请求体：
+
+```json
+{
+  "body": "用户补充、澄清或反馈",
+  "cwd": "可选本地执行目录",
+  "autoRun": true
+}
+```
+
+系统会先把用户消息写入 Along Thread Artifact，再通过队列触发同一个 Task planner。planner 会优先复用同一个 `threadId + agentId + provider` 的 provider session。
+
+### 7.3 读取与审批
+
+```http
+GET /api/tasks
+GET /api/tasks/:taskId
+POST /api/tasks/:taskId/approve
+POST /api/tasks/:taskId/planner
+```
+
+`approve` 只批准当前 active Plan，且要求没有未处理 feedback round。`planner` 是给 Web UI 或排障使用的手动重跑入口，不要求用户记 CLI。
