@@ -221,9 +221,7 @@ describe('task-delivery', () => {
     ).toEqual(
       expect.objectContaining({
         command: 'git',
-        cwd: expect.stringContaining(
-          '/ranwawa/kinkeeper/tasks/42/worktree',
-        ),
+        cwd: expect.stringContaining('/ranwawa/kinkeeper/tasks/42/worktree'),
       }),
     );
     expect(prBody).toContain('along-task: #42');

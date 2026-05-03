@@ -734,7 +734,9 @@ function getLatestFailedAgentStage(
         right.latestRun?.endedAt ||
         right.latestRun?.startedAt ||
         ''
-      ).localeCompare(left.latestRun?.endedAt || left.latestRun?.startedAt || ''),
+      ).localeCompare(
+        left.latestRun?.endedAt || left.latestRun?.startedAt || '',
+      ),
     )[0];
 }
 
@@ -857,13 +859,19 @@ function buildTaskFlowConclusion(input: {
     return { conclusion: '计划已确认，可以开始实现。', severity: 'normal' };
   }
   if (input.task.status === TASK_STATUS.IMPLEMENTED) {
-    return { conclusion: '实现已完成，可以提交并创建 PR。', severity: 'normal' };
+    return {
+      conclusion: '实现已完成，可以提交并创建 PR。',
+      severity: 'normal',
+    };
   }
   if (input.task.status === TASK_STATUS.DELIVERING) {
     return { conclusion: '交付流程正在处理。', severity: 'normal' };
   }
   if (!input.currentPlan) {
-    return { conclusion: '需求已接收，等待 Planner 输出计划。', severity: 'normal' };
+    return {
+      conclusion: '需求已接收，等待 Planner 输出计划。',
+      severity: 'normal',
+    };
   }
   return { conclusion: '任务正在计划流程中。', severity: 'normal' };
 }
@@ -975,7 +983,10 @@ function buildTaskFlowActions(input: {
       enabled: input.task.status === TASK_STATUS.PLANNING,
       disabledReason: '当前不处于计划阶段',
       stage: 'plan_discussion',
-      variant: failedStage?.stage === TASK_AGENT_STAGE.PLANNING ? 'danger' : 'secondary',
+      variant:
+        failedStage?.stage === TASK_AGENT_STAGE.PLANNING
+          ? 'danger'
+          : 'secondary',
     }),
     buildTaskFlowAction({
       id: 'start_implementation',
@@ -1055,7 +1066,10 @@ function getTaskFlowStageSummary(input: {
     input.stageId === 'plan_discussion'
       ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.PLANNING)
       : input.stageId === 'implementation'
-        ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.IMPLEMENTATION)
+        ? getStageByAgentStage(
+            input.agentStages,
+            TASK_AGENT_STAGE.IMPLEMENTATION,
+          )
         : input.stageId === 'delivery'
           ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.DELIVERY)
           : undefined;
@@ -1132,7 +1146,8 @@ function buildTaskFlowStageDetails(input: {
       TASK_AGENT_STAGE.IMPLEMENTATION,
     );
     if (stage?.latestRun) details.push(`最近运行：${stage.latestRun.runId}`);
-    if (input.task.worktreePath) details.push(`工作目录：${input.task.worktreePath}`);
+    if (input.task.worktreePath)
+      details.push(`工作目录：${input.task.worktreePath}`);
   }
   if (input.stageId === 'delivery') {
     if (input.task.branchName) details.push(`分支：${input.task.branchName}`);
@@ -1161,7 +1176,11 @@ function buildTaskFlowStages(input: {
 
   return TASK_FLOW_STAGE_ORDER.map((stageId, index) => {
     let state: TaskFlowStageState =
-      index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'pending';
+      index < currentIndex
+        ? 'completed'
+        : index === currentIndex
+          ? 'current'
+          : 'pending';
     let blocker: string | undefined;
 
     if (
@@ -1171,7 +1190,8 @@ function buildTaskFlowStages(input: {
         failedStage.stage === TASK_AGENT_STAGE.PLANNING) ||
         (stageId === 'implementation' &&
           failedStage.stage === TASK_AGENT_STAGE.IMPLEMENTATION) ||
-        (stageId === 'delivery' && failedStage.stage === TASK_AGENT_STAGE.DELIVERY))
+        (stageId === 'delivery' &&
+          failedStage.stage === TASK_AGENT_STAGE.DELIVERY))
     ) {
       state = 'blocked';
       blocker = failedStage.latestRun
@@ -1182,9 +1202,15 @@ function buildTaskFlowStages(input: {
         stageId === 'plan_discussion'
           ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.PLANNING)
           : stageId === 'implementation'
-            ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.IMPLEMENTATION)
+            ? getStageByAgentStage(
+                input.agentStages,
+                TASK_AGENT_STAGE.IMPLEMENTATION,
+              )
             : stageId === 'delivery'
-              ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.DELIVERY)
+              ? getStageByAgentStage(
+                  input.agentStages,
+                  TASK_AGENT_STAGE.DELIVERY,
+                )
               : undefined;
       if (
         stageId === input.currentStageId &&
@@ -1323,7 +1349,9 @@ function buildTaskFlowEvents(input: {
     });
   }
 
-  return events.sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+  return events.sort((left, right) =>
+    left.occurredAt.localeCompare(right.occurredAt),
+  );
 }
 
 function buildTaskFlowSnapshot(input: {
@@ -1959,11 +1987,9 @@ export function publishTaskPlanRevision(
         now,
         snapshot.thread.threadId,
       );
-      db.prepare('UPDATE task_items SET type = COALESCE(?, type), updated_at = ? WHERE task_id = ?').run(
-        input.type || null,
-        now,
-        snapshot.task.taskId,
-      );
+      db.prepare(
+        'UPDATE task_items SET type = COALESCE(?, type), updated_at = ? WHERE task_id = ?',
+      ).run(input.type || null, now, snapshot.task.taskId);
 
       plan = {
         planId,

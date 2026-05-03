@@ -88,7 +88,9 @@ function buildPrBody(input: {
     .join('\n');
 
   return [
-    input.seq != null ? `along-task: #${input.seq}` : `along-task: ${input.taskId}`,
+    input.seq != null
+      ? `along-task: #${input.seq}`
+      : `along-task: ${input.taskId}`,
     '',
     '## 修改内容',
     changedFileLines || '- 已按批准方案完成代码实现',
