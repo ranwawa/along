@@ -142,12 +142,65 @@ type UnknownRecord = Record<string, unknown>;
 
 let registry: WorkspaceRegistry;
 
+interface RepositoryOption {
+  owner: string;
+  repo: string;
+  fullName: string;
+  path: string;
+  isDefault: boolean;
+}
+
 function isRecord(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createJsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+}
+
+function listRepositoryOptions(defaultCwd: string): {
+  repositories: RepositoryOption[];
+  defaultRepository?: string;
+} {
+  const normalizedDefaultCwd = path.resolve(defaultCwd);
+  const repositories = [...registry.listAll()]
+    .flatMap(([fullName, localPath]): RepositoryOption[] => {
+      const [owner, repo] = fullName.split('/');
+      if (!owner || !repo) return [];
+      const normalizedLocalPath = path.resolve(localPath);
+      return [
+        {
+          owner,
+          repo,
+          fullName,
+          path: localPath,
+          isDefault:
+            normalizedLocalPath === normalizedDefaultCwd ||
+            normalizedDefaultCwd.startsWith(
+              `${normalizedLocalPath}${path.sep}`,
+            ),
+        },
+      ];
+    })
+    .sort((left, right) => {
+      if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1;
+      return left.fullName.localeCompare(right.fullName);
+    });
+
+  return {
+    repositories,
+    defaultRepository: repositories.find((repo) => repo.isDefault)?.fullName,
+  };
 }
 
 function parseIssueLabels(
@@ -1067,6 +1120,11 @@ async function main() {
           resolveRepoPath: (owner, repo) => registry.resolve(owner, repo),
           schedulePlanner: enqueueTaskPlanningRun,
         });
+      }
+
+      // ── API: /api/repositories ──
+      if (url.pathname === '/api/repositories' && req.method === 'GET') {
+        return createJsonResponse(listRepositoryOptions(process.cwd()));
       }
 
       // ── API: /api/sessions ──

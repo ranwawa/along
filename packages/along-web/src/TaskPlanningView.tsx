@@ -33,20 +33,29 @@ interface PlannerRunResponse {
   scheduled: boolean;
 }
 
+interface RepositoryOption {
+  owner: string;
+  repo: string;
+  fullName: string;
+  path: string;
+  isDefault: boolean;
+}
+
+interface RepositoryListResponse {
+  repositories: RepositoryOption[];
+  defaultRepository?: string;
+}
+
 interface DraftTaskInput {
   title: string;
   body: string;
-  owner: string;
-  repo: string;
-  cwd: string;
+  repository: string;
 }
 
 const emptyDraft: DraftTaskInput = {
   title: '',
   body: '',
-  owner: '',
-  repo: '',
-  cwd: '',
+  repository: '',
 };
 
 function mergeSnapshotIntoList(
@@ -184,6 +193,7 @@ function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
 
 export function TaskPlanningView() {
   const [tasks, setTasks] = useState<TaskPlanningSnapshot[]>([]);
+  const [repositories, setRepositories] = useState<RepositoryOption[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedSnapshot, setSelectedSnapshot] =
     useState<TaskPlanningSnapshot | null>(null);
@@ -191,7 +201,22 @@ export function TaskPlanningView() {
   const [messageBody, setMessageBody] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [repositoriesRefreshing, setRepositoriesRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const loadRepositories = useCallback(async () => {
+    const response = await fetch('/api/repositories');
+    const result = await readJsonResponse<RepositoryListResponse>(response);
+    setRepositories(result.repositories);
+    setDraft((previous) => {
+      if (previous.repository) return previous;
+      return {
+        ...previous,
+        repository:
+          result.defaultRepository || result.repositories[0]?.fullName || '',
+      };
+    });
+  }, []);
 
   const loadTasks = useCallback(async () => {
     const response = await fetch('/api/tasks?limit=100');
@@ -214,6 +239,12 @@ export function TaskPlanningView() {
       );
     });
   }, []);
+
+  useEffect(() => {
+    loadRepositories().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : String(err));
+    });
+  }, [loadRepositories]);
 
   useEffect(() => {
     let active = true;
@@ -271,6 +302,10 @@ export function TaskPlanningView() {
       : [];
   }, [selected]);
 
+  const selectedRepository = useMemo(() => {
+    return repositories.find((repo) => repo.fullName === draft.repository);
+  }, [draft.repository, repositories]);
+
   const canApprove = Boolean(
     selected?.currentPlan &&
       !selected.openRound &&
@@ -280,6 +315,22 @@ export function TaskPlanningView() {
 
   const updateDraft = (key: keyof DraftTaskInput, value: string) => {
     setDraft((previous) => ({ ...previous, [key]: value }));
+  };
+
+  const refreshRepositories = async () => {
+    if (repositoriesRefreshing) return;
+    setRepositoriesRefreshing(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/rescan', { method: 'POST' });
+      await readJsonResponse<unknown>(response);
+      setDraft((previous) => ({ ...previous, repository: '' }));
+      await loadRepositories();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRepositoriesRefreshing(false);
+    }
   };
 
   const createTask = async (event: FormEvent) => {
@@ -295,9 +346,10 @@ export function TaskPlanningView() {
         autoRun: true,
       };
       if (draft.title.trim()) payload.title = draft.title.trim();
-      if (draft.owner.trim()) payload.owner = draft.owner.trim();
-      if (draft.repo.trim()) payload.repo = draft.repo.trim();
-      if (draft.cwd.trim()) payload.cwd = draft.cwd.trim();
+      if (selectedRepository) {
+        payload.owner = selectedRepository.owner;
+        payload.repo = selectedRepository.repo;
+      }
 
       const response = await fetch('/api/tasks', {
         method: 'POST',
@@ -433,29 +485,42 @@ export function TaskPlanningView() {
             rows={5}
             className="bg-black/30 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60"
           />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <input
-              type="text"
-              value={draft.owner}
-              onChange={(event) => updateDraft('owner', event.target.value)}
-              placeholder="GitHub owner"
-              className="bg-black/30 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
-            />
-            <input
-              type="text"
-              value={draft.repo}
-              onChange={(event) => updateDraft('repo', event.target.value)}
-              placeholder="GitHub repo"
-              className="bg-black/30 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
-            />
+          <div className="flex gap-2">
+            <select
+              value={draft.repository}
+              onChange={(event) =>
+                updateDraft('repository', event.target.value)
+              }
+              className="min-w-0 flex-1 bg-black/30 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
+            >
+              {repositories.length === 0 ? (
+                <option value="">当前默认项目</option>
+              ) : (
+                repositories.map((repository) => (
+                  <option key={repository.fullName} value={repository.fullName}>
+                    {repository.fullName}
+                    {repository.isDefault ? ' · 默认' : ''}
+                  </option>
+                ))
+              )}
+            </select>
+            <button
+              type="button"
+              onClick={refreshRepositories}
+              disabled={repositoriesRefreshing}
+              className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {repositoriesRefreshing ? '刷新中' : '刷新'}
+            </button>
           </div>
-          <input
-            type="text"
-            value={draft.cwd}
-            onChange={(event) => updateDraft('cwd', event.target.value)}
-            placeholder="工作目录"
-            className="bg-black/30 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
-          />
+          {selectedRepository && (
+            <div
+              className="text-xs text-text-muted truncate"
+              title={selectedRepository.path}
+            >
+              {selectedRepository.path}
+            </div>
+          )}
           {error && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
               {error}
