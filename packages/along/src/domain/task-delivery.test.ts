@@ -3,17 +3,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Result } from '../core/result';
 
 const planningMocks = vi.hoisted(() => ({
+  createTaskAgentRun: vi.fn(),
+  finishTaskAgentRun: vi.fn(),
   readTaskPlanningSnapshot: vi.fn(),
   recordTaskAgentResult: vi.fn(),
   updateTaskDelivery: vi.fn(),
 }));
 
 vi.mock('./task-planning', () => ({
+  AGENT_RUN_STATUS: {
+    RUNNING: 'running',
+    SUCCEEDED: 'succeeded',
+    FAILED: 'failed',
+  },
   TASK_STATUS: {
     IMPLEMENTED: 'implemented',
     DELIVERING: 'delivering',
     DELIVERED: 'delivered',
   },
+  createTaskAgentRun: planningMocks.createTaskAgentRun,
+  finishTaskAgentRun: planningMocks.finishTaskAgentRun,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
   updateTaskDelivery: planningMocks.updateTaskDelivery,
@@ -92,6 +101,35 @@ describe('task-delivery', () => {
     planningMocks.updateTaskDelivery.mockReturnValue({
       success: true,
       data: undefined,
+    });
+    planningMocks.createTaskAgentRun.mockReturnValue({
+      success: true,
+      data: {
+        runId: 'run-delivery',
+        taskId: 'task_123456789abc',
+        threadId: 'thread-1',
+        agentId: 'delivery',
+        provider: 'system',
+        status: 'running',
+        inputArtifactIds: ['art-plan'],
+        outputArtifactIds: [],
+        startedAt: '2026-01-01T00:00:01.000Z',
+      },
+    });
+    planningMocks.finishTaskAgentRun.mockReturnValue({
+      success: true,
+      data: {
+        runId: 'run-delivery',
+        taskId: 'task_123456789abc',
+        threadId: 'thread-1',
+        agentId: 'delivery',
+        provider: 'system',
+        status: 'succeeded',
+        inputArtifactIds: ['art-plan'],
+        outputArtifactIds: [],
+        startedAt: '2026-01-01T00:00:01.000Z',
+        endedAt: '2026-01-01T00:00:02.000Z',
+      },
     });
     planningMocks.recordTaskAgentResult.mockReturnValue({
       success: true,

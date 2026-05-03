@@ -125,6 +125,18 @@ const mockDbState = vi.hoisted(() => {
             .filter((row) => row.thread_id === args[0])
             .sort((a, b) => Number(a.version) - Number(b.version));
         }
+        if (
+          normalized.includes('FROM task_agent_bindings WHERE thread_id = ?')
+        ) {
+          return state.bindings.filter((row) => row.thread_id === args[0]);
+        }
+        if (normalized.includes('FROM task_agent_runs WHERE thread_id = ?')) {
+          return state.runs
+            .filter((row) => row.thread_id === args[0])
+            .sort((a, b) =>
+              String(a.started_at).localeCompare(String(b.started_at)),
+            );
+        }
         return [];
       },
       run: (...args: Array<string | number | null>) => {

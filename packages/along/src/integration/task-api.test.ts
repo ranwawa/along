@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const planningMocks = vi.hoisted(() => ({
   approveCurrentTaskPlan: vi.fn(),
+  completeTaskAgentStageManually: vi.fn(),
   createPlanningTask: vi.fn(),
   listTaskPlanningSnapshots: vi.fn(),
   readTaskAgentBinding: vi.fn(),
@@ -10,7 +11,13 @@ const planningMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../domain/task-planning', () => ({
+  TASK_AGENT_STAGE: {
+    PLANNING: 'planning',
+    IMPLEMENTATION: 'implementation',
+    DELIVERY: 'delivery',
+  },
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
+  completeTaskAgentStageManually: planningMocks.completeTaskAgentStageManually,
   createPlanningTask: planningMocks.createPlanningTask,
   listTaskPlanningSnapshots: planningMocks.listTaskPlanningSnapshots,
   readTaskAgentBinding: planningMocks.readTaskAgentBinding,
@@ -99,6 +106,16 @@ describe('task-api', () => {
         artifactId: 'art-plan',
         body: '## Plan',
         createdAt: '2026-01-01T00:00:01.000Z',
+      },
+    });
+    planningMocks.completeTaskAgentStageManually.mockReturnValue({
+      success: true,
+      data: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          status: 'implemented',
+        },
       },
     });
   });
@@ -355,6 +372,31 @@ describe('task-api', () => {
     expect(response.status).toBe(200);
     expect(planningMocks.approveCurrentTaskPlan).toHaveBeenCalledWith('task-1');
     expect(scheduled).toEqual([]);
+  });
+
+  it('当人工标记实现阶段已处理时，期望返回更新后的 snapshot', async () => {
+    const response = await handleTaskApiRequest(
+      jsonRequest('/api/tasks/task-1/manual-complete', {
+        stage: 'implementation',
+        message: '已在 editor 中完成验证。',
+      }),
+      new URL('http://localhost/api/tasks/task-1/manual-complete'),
+      { defaultCwd: '/tmp/default' },
+    );
+    const payload = (await response.json()) as {
+      taskId: string;
+      snapshot: typeof snapshot;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.taskId).toBe('task-1');
+    expect(planningMocks.completeTaskAgentStageManually).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      stage: 'implementation',
+      message: '已在 editor 中完成验证。',
+      prUrl: undefined,
+      prNumber: undefined,
+    });
   });
 
   it('当读取不存在的 Task 时，期望返回 404', async () => {

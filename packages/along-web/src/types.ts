@@ -241,6 +241,45 @@ export interface TaskFeedbackRoundRecord {
   resolvedAt?: string;
 }
 
+export type TaskAgentRunStatus = 'running' | 'succeeded' | 'failed';
+
+export type TaskAgentStage = 'planning' | 'implementation' | 'delivery';
+
+export type TaskAgentStageStatus = 'idle' | TaskAgentRunStatus;
+
+export interface TaskAgentRunRecord {
+  runId: string;
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+  providerSessionIdAtStart?: string;
+  providerSessionIdAtEnd?: string;
+  status: TaskAgentRunStatus;
+  inputArtifactIds: string[];
+  outputArtifactIds: string[];
+  error?: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface TaskAgentManualResume {
+  available: boolean;
+  cwd?: string;
+  command?: string;
+  sessionId?: string;
+  reason?: string;
+}
+
+export interface TaskAgentStageRecord {
+  stage: TaskAgentStage;
+  agentId: string;
+  label: string;
+  status: TaskAgentStageStatus;
+  latestRun?: TaskAgentRunRecord;
+  manualResume?: TaskAgentManualResume;
+}
+
 export interface TaskPlanningSnapshot {
   task: TaskItemRecord;
   thread: TaskThreadRecord;
@@ -248,6 +287,8 @@ export interface TaskPlanningSnapshot {
   openRound: TaskFeedbackRoundRecord | null;
   artifacts: TaskArtifactRecord[];
   plans: TaskPlanRevisionRecord[];
+  agentRuns: TaskAgentRunRecord[];
+  agentStages: TaskAgentStageRecord[];
 }
 
 export interface EditorOption {

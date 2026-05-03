@@ -85,6 +85,25 @@ export const AGENT_RUN_STATUS = {
 export type AgentRunStatus =
   (typeof AGENT_RUN_STATUS)[keyof typeof AGENT_RUN_STATUS];
 
+export const TASK_AGENT_STAGE = {
+  PLANNING: 'planning',
+  IMPLEMENTATION: 'implementation',
+  DELIVERY: 'delivery',
+} as const;
+
+export type TaskAgentStage =
+  (typeof TASK_AGENT_STAGE)[keyof typeof TASK_AGENT_STAGE];
+
+export type TaskAgentStageStatus = 'idle' | AgentRunStatus;
+
+export interface TaskAgentManualResume {
+  available: boolean;
+  cwd?: string;
+  command?: string;
+  sessionId?: string;
+  reason?: string;
+}
+
 export interface TaskItemRecord {
   taskId: string;
   title: string;
@@ -179,6 +198,15 @@ export interface TaskAgentRunRecord {
   endedAt?: string;
 }
 
+export interface TaskAgentStageRecord {
+  stage: TaskAgentStage;
+  agentId: string;
+  label: string;
+  status: TaskAgentStageStatus;
+  latestRun?: TaskAgentRunRecord;
+  manualResume?: TaskAgentManualResume;
+}
+
 export interface TaskPlanningSnapshot {
   task: TaskItemRecord;
   thread: TaskThreadRecord;
@@ -186,6 +214,8 @@ export interface TaskPlanningSnapshot {
   openRound: TaskFeedbackRoundRecord | null;
   artifacts: TaskArtifactRecord[];
   plans: TaskPlanRevisionRecord[];
+  agentRuns: TaskAgentRunRecord[];
+  agentStages: TaskAgentStageRecord[];
 }
 
 export interface CreatePlanningTaskInput {
@@ -239,6 +269,14 @@ export interface FinishTaskAgentRunInput {
   providerSessionIdAtEnd?: string;
   outputArtifactIds?: string[];
   error?: string;
+}
+
+export interface CompleteTaskAgentStageManuallyInput {
+  taskId: string;
+  stage: TaskAgentStage;
+  message?: string;
+  prUrl?: string;
+  prNumber?: number;
 }
 
 export interface RecordTaskAgentResultInput {
@@ -496,6 +534,125 @@ function mapRun(row: TaskAgentRunRow): TaskAgentRunRecord {
   };
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+const TASK_AGENT_STAGE_DEFINITIONS: Array<{
+  stage: TaskAgentStage;
+  agentId: string;
+  label: string;
+}> = [
+  {
+    stage: TASK_AGENT_STAGE.PLANNING,
+    agentId: 'planner',
+    label: '计划阶段',
+  },
+  {
+    stage: TASK_AGENT_STAGE.IMPLEMENTATION,
+    agentId: 'implementer',
+    label: '实现阶段',
+  },
+  {
+    stage: TASK_AGENT_STAGE.DELIVERY,
+    agentId: 'delivery',
+    label: '交付阶段',
+  },
+];
+
+function buildTaskAgentStages(
+  runs: TaskAgentRunRecord[],
+  bindings: TaskAgentBindingRecord[],
+  task: TaskItemRecord,
+): TaskAgentStageRecord[] {
+  return TASK_AGENT_STAGE_DEFINITIONS.map((definition) => {
+    const latestRun = runs
+      .filter((run) => run.agentId === definition.agentId)
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+    const binding = bindings.find(
+      (item) =>
+        item.agentId === definition.agentId &&
+        (!latestRun || item.provider === latestRun.provider),
+    );
+    const fallbackBinding = bindings.find(
+      (item) => item.agentId === definition.agentId,
+    );
+    const provider = latestRun?.provider || binding?.provider;
+    const sessionId =
+      latestRun?.providerSessionIdAtEnd ||
+      binding?.providerSessionId ||
+      latestRun?.providerSessionIdAtStart;
+    const cwd =
+      binding?.cwd ||
+      fallbackBinding?.cwd ||
+      (definition.stage === TASK_AGENT_STAGE.IMPLEMENTATION
+        ? task.worktreePath || task.cwd
+        : task.cwd || task.worktreePath);
+
+    return {
+      ...definition,
+      status: latestRun?.status || 'idle',
+      latestRun,
+      manualResume: buildManualResume(provider, cwd, sessionId),
+    };
+  });
+}
+
+function buildManualResume(
+  provider?: string,
+  cwd?: string,
+  sessionId?: string,
+): TaskAgentManualResume {
+  if (!cwd) {
+    return {
+      available: false,
+      reason: '缺少可接管的工作目录',
+    };
+  }
+
+  const cdCommand = `cd ${shellQuote(cwd)}`;
+  if (provider === 'codex') {
+    return sessionId
+      ? {
+          available: true,
+          cwd,
+          sessionId,
+          command: `${cdCommand}\ncodex resume ${shellQuote(sessionId)}`,
+        }
+      : {
+          available: true,
+          cwd,
+          command: `${cdCommand}\ncodex`,
+          reason: '未记录 Codex 会话 ID，只能从工作目录手动接管',
+        };
+  }
+
+  if (provider === 'claude') {
+    return sessionId
+      ? {
+          available: true,
+          cwd,
+          sessionId,
+          command: `${cdCommand}\nclaude --resume ${shellQuote(sessionId)}`,
+        }
+      : {
+          available: true,
+          cwd,
+          command: `${cdCommand}\nclaude`,
+          reason: '未记录 Claude 会话 ID，只能从工作目录手动接管',
+        };
+  }
+
+  return {
+    available: true,
+    cwd,
+    command: cdCommand,
+    reason: provider
+      ? `${provider} 暂无自动恢复命令，请在工作目录中手动处理`
+      : '暂无可恢复的 editor 会话，请在工作目录中手动处理',
+  };
+}
+
 function getActiveThreadRow(taskId: string): Result<TaskThreadRow | null> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -695,14 +852,27 @@ export function readTaskPlanningSnapshot(
         'SELECT * FROM task_plan_revisions WHERE thread_id = ? ORDER BY version ASC',
       )
       .all(threadRow.thread_id) as TaskPlanRevisionRow[];
+    const bindingRows = db
+      .prepare('SELECT * FROM task_agent_bindings WHERE thread_id = ?')
+      .all(threadRow.thread_id) as TaskAgentBindingRow[];
+    const runRows = db
+      .prepare(
+        'SELECT * FROM task_agent_runs WHERE thread_id = ? ORDER BY started_at ASC',
+      )
+      .all(threadRow.thread_id) as TaskAgentRunRow[];
+    const task = mapTask(taskRow);
+    const agentBindings = bindingRows.map(mapBinding);
+    const agentRuns = runRows.map(mapRun);
 
     return success({
-      task: mapTask(taskRow),
+      task,
       thread: mapThread(threadRow),
       currentPlan: currentPlanRow ? mapPlan(currentPlanRow) : null,
       openRound: openRoundRow ? mapRound(openRoundRow) : null,
       artifacts: artifactRows.map(mapArtifact),
       plans: planRows.map(mapPlan),
+      agentRuns,
+      agentStages: buildTaskAgentStages(agentRuns, agentBindings, task),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1328,6 +1498,103 @@ export function updateTaskDelivery(
     const message = error instanceof Error ? error.message : String(error);
     return failure(`更新 Task Delivery 信息失败: ${message}`);
   }
+}
+
+function parseTaskPrNumber(prUrl: string): number | undefined {
+  const match = prUrl.match(/\/pull\/(\d+)/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function getTaskAgentStageDefinition(stage: TaskAgentStage) {
+  return (
+    TASK_AGENT_STAGE_DEFINITIONS.find((definition) => {
+      return definition.stage === stage;
+    }) || null
+  );
+}
+
+function failManualStageRun(runId: string, error: string): Result<never> {
+  const finishRes = finishTaskAgentRun({
+    runId,
+    status: AGENT_RUN_STATUS.FAILED,
+    error,
+  });
+  return finishRes.success ? failure(error) : failure(finishRes.error);
+}
+
+export function completeTaskAgentStageManually(
+  input: CompleteTaskAgentStageManuallyInput,
+): Result<TaskPlanningSnapshot> {
+  const snapshotRes = readTaskPlanningSnapshot(input.taskId);
+  if (!snapshotRes.success) return snapshotRes;
+  const snapshot = snapshotRes.data;
+  if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
+
+  const stageDefinition = getTaskAgentStageDefinition(input.stage);
+  if (!stageDefinition) return failure(`未知 Task Agent 阶段: ${input.stage}`);
+
+  const runRes = createTaskAgentRun({
+    taskId: input.taskId,
+    threadId: snapshot.thread.threadId,
+    agentId: stageDefinition.agentId,
+    provider: 'manual',
+    inputArtifactIds: snapshot.artifacts.map((artifact) => artifact.artifactId),
+  });
+  if (!runRes.success) return runRes;
+  const run = runRes.data;
+
+  let statusRes: Result<void> = success(undefined);
+  if (input.stage === TASK_AGENT_STAGE.IMPLEMENTATION) {
+    statusRes =
+      snapshot.task.status === TASK_STATUS.DELIVERING ||
+      snapshot.task.status === TASK_STATUS.DELIVERED
+        ? updateTaskStatus(input.taskId, snapshot.task.status)
+        : updateTaskStatus(input.taskId, TASK_STATUS.IMPLEMENTED);
+  } else if (input.stage === TASK_AGENT_STAGE.DELIVERY && input.prUrl) {
+    statusRes = updateTaskDelivery({
+      taskId: input.taskId,
+      status: TASK_STATUS.DELIVERED,
+      prUrl: input.prUrl,
+      prNumber: input.prNumber || parseTaskPrNumber(input.prUrl),
+    });
+  } else {
+    statusRes = updateTaskStatus(input.taskId, snapshot.task.status);
+  }
+  if (!statusRes.success) {
+    return failManualStageRun(run.runId, statusRes.error);
+  }
+
+  const body = [
+    `${stageDefinition.label}已由人工接管处理。`,
+    input.message ? `说明：${input.message.trim()}` : '',
+    input.prUrl ? `PR：${input.prUrl}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const artifactRes = recordTaskAgentResult({
+    taskId: input.taskId,
+    threadId: snapshot.thread.threadId,
+    agentId: stageDefinition.agentId,
+    provider: 'manual',
+    runId: run.runId,
+    body,
+  });
+  if (!artifactRes.success) {
+    return failManualStageRun(run.runId, artifactRes.error);
+  }
+
+  const finishRes = finishTaskAgentRun({
+    runId: run.runId,
+    status: AGENT_RUN_STATUS.SUCCEEDED,
+    outputArtifactIds: [artifactRes.data.artifactId],
+  });
+  if (!finishRes.success) return finishRes;
+
+  const refreshedSnapshotRes = readTaskPlanningSnapshot(input.taskId);
+  if (!refreshedSnapshotRes.success) return refreshedSnapshotRes;
+  return refreshedSnapshotRes.data
+    ? success(refreshedSnapshotRes.data)
+    : failure(`Task ${input.taskId} 人工处理后读取快照失败`);
 }
 
 export function readTaskAgentBinding(

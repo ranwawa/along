@@ -2,11 +2,14 @@ import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
   approveCurrentTaskPlan,
+  completeTaskAgentStageManually,
   createPlanningTask,
   listTaskPlanningSnapshots,
   readTaskAgentBinding,
   readTaskPlanningSnapshot,
   submitTaskMessage,
+  TASK_AGENT_STAGE,
+  type TaskAgentStage,
   type TaskPlanningSnapshot,
 } from '../domain/task-planning';
 
@@ -93,6 +96,30 @@ function readBooleanField(
 ): boolean | undefined {
   const value = payload[key];
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function readTaskAgentStageField(
+  payload: UnknownRecord,
+  key: string,
+): TaskAgentStage | undefined {
+  const value = readStringField(payload, key);
+  if (
+    value === TASK_AGENT_STAGE.PLANNING ||
+    value === TASK_AGENT_STAGE.IMPLEMENTATION ||
+    value === TASK_AGENT_STAGE.DELIVERY
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function readOptionalPositiveIntField(
+  payload: UnknownRecord,
+  key: string,
+): number | undefined {
+  const value = payload[key];
+  if (typeof value !== 'number') return undefined;
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
 }
 
 function readPositiveInt(value: string | null, fallback: number): number {
@@ -395,6 +422,32 @@ export async function handleTaskApiRequest(
     }
 
     return jsonResponse({ taskId, scheduled: true }, 202);
+  }
+
+  if (action === 'manual-complete' && req.method === 'POST') {
+    const bodyRes = await readJsonObject(req);
+    if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
+
+    const stage = readTaskAgentStageField(bodyRes.data, 'stage');
+    if (!stage)
+      return errorResponse(
+        'stage 必须是 planning/implementation/delivery',
+        400,
+      );
+
+    const completeRes = completeTaskAgentStageManually({
+      taskId,
+      stage,
+      message: readStringField(bodyRes.data, 'message'),
+      prUrl: readStringField(bodyRes.data, 'prUrl'),
+      prNumber: readOptionalPositiveIntField(bodyRes.data, 'prNumber'),
+    });
+    if (!completeRes.success) return errorResponse(completeRes.error, 409);
+
+    return jsonResponse({
+      taskId,
+      snapshot: completeRes.data,
+    });
   }
 
   return errorResponse('未找到 Task API', 404);

@@ -5,9 +5,13 @@ import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import { readGithubToken } from '../integration/github-client';
 import {
+  AGENT_RUN_STATUS,
+  createTaskAgentRun,
+  finishTaskAgentRun,
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
   TASK_STATUS,
+  type TaskAgentRunRecord,
   type TaskPlanningSnapshot,
   updateTaskDelivery,
 } from './task-planning';
@@ -114,11 +118,12 @@ function writeTempBodyFile(body: string): string {
   return filePath;
 }
 
-async function failDelivery(
+function failDeliveryRun(
+  run: TaskAgentRunRecord,
   taskId: string,
   threadId: string,
   message: string,
-): Promise<Result<never>> {
+): Result<never> {
   updateTaskDelivery({ taskId, status: TASK_STATUS.IMPLEMENTED });
   recordTaskAgentResult({
     taskId,
@@ -127,7 +132,12 @@ async function failDelivery(
     provider: 'system',
     body: `Delivery 失败：${message}`,
   });
-  return failure(message);
+  const runRes = finishTaskAgentRun({
+    runId: run.runId,
+    status: AGENT_RUN_STATUS.FAILED,
+    error: message,
+  });
+  return runRes.success ? failure(message) : failure(runRes.error);
 }
 
 export async function runTaskDelivery(
@@ -164,13 +174,33 @@ export async function runTaskDelivery(
   );
   if (!approvedPlan) return failure('当前 Task 缺少已批准方案，不能交付');
 
+  const runRes = createTaskAgentRun({
+    taskId: input.taskId,
+    threadId: snapshot.thread.threadId,
+    agentId: 'delivery',
+    provider: 'system',
+    inputArtifactIds: [
+      approvedPlan.artifactId,
+      ...snapshot.artifacts.map((artifact) => artifact.artifactId),
+    ],
+  });
+  if (!runRes.success) return runRes;
+  const run = runRes.data;
+
   const worktreeRes = await prepareTaskWorktree({
     snapshot,
     repoPath: input.cwd,
     commandRunner: runner,
     readDefaultBranch: input.readDefaultBranch,
   });
-  if (!worktreeRes.success) return worktreeRes;
+  if (!worktreeRes.success) {
+    return failDeliveryRun(
+      run,
+      input.taskId,
+      snapshot.thread.threadId,
+      worktreeRes.error,
+    );
+  }
   const { worktreePath, branchName, defaultBranch } = worktreeRes.data;
 
   const startedRes = updateTaskDelivery({
@@ -179,14 +209,22 @@ export async function runTaskDelivery(
     worktreePath,
     branchName,
   });
-  if (!startedRes.success) return startedRes;
+  if (!startedRes.success) {
+    return failDeliveryRun(
+      run,
+      input.taskId,
+      snapshot.thread.threadId,
+      startedRes.error,
+    );
+  }
 
   const statusRes = await runGit(runner, worktreePath, [
     'status',
     '--porcelain',
   ]);
   if (!statusRes.success) {
-    return failDelivery(
+    return failDeliveryRun(
+      run,
       input.taskId,
       snapshot.thread.threadId,
       `读取 git 状态失败: ${statusRes.error}`,
@@ -195,7 +233,8 @@ export async function runTaskDelivery(
 
   const changedFiles = parseChangedFiles(statusRes.data);
   if (changedFiles.length === 0 && snapshot.task.commitShas.length === 0) {
-    return failDelivery(
+    return failDeliveryRun(
+      run,
       input.taskId,
       snapshot.thread.threadId,
       '没有可提交变更',
@@ -209,11 +248,19 @@ export async function runTaskDelivery(
       status: TASK_STATUS.DELIVERING,
       branchName,
     });
-    if (!branchRes.success) return branchRes;
+    if (!branchRes.success) {
+      return failDeliveryRun(
+        run,
+        input.taskId,
+        snapshot.thread.threadId,
+        branchRes.error,
+      );
+    }
 
     const addRes = await runGit(runner, worktreePath, ['add', '-A']);
     if (!addRes.success) {
-      return failDelivery(
+      return failDeliveryRun(
+        run,
         input.taskId,
         snapshot.thread.threadId,
         `暂存变更失败: ${addRes.error}`,
@@ -230,7 +277,8 @@ export async function runTaskDelivery(
       commitMessage,
     ]);
     if (!commitRes.success) {
-      return failDelivery(
+      return failDeliveryRun(
+        run,
         input.taskId,
         snapshot.thread.threadId,
         `提交失败: ${commitRes.error}`,
@@ -242,7 +290,8 @@ export async function runTaskDelivery(
       'HEAD',
     ]);
     if (!committedShaRes.success) {
-      return failDelivery(
+      return failDeliveryRun(
+        run,
         input.taskId,
         snapshot.thread.threadId,
         `读取 commit sha 失败: ${committedShaRes.error}`,
@@ -255,7 +304,14 @@ export async function runTaskDelivery(
       branchName,
       commitShas,
     });
-    if (!commitMetaRes.success) return commitMetaRes;
+    if (!commitMetaRes.success) {
+      return failDeliveryRun(
+        run,
+        input.taskId,
+        snapshot.thread.threadId,
+        commitMetaRes.error,
+      );
+    }
   }
 
   const rebaseRes = await runGit(runner, worktreePath, [
@@ -263,7 +319,8 @@ export async function runTaskDelivery(
     `origin/${defaultBranch}`,
   ]);
   if (!rebaseRes.success) {
-    return failDelivery(
+    return failDeliveryRun(
+      run,
       input.taskId,
       snapshot.thread.threadId,
       `rebase 失败，请手动处理冲突: ${rebaseRes.error}`,
@@ -272,7 +329,8 @@ export async function runTaskDelivery(
 
   const finalShaRes = await runGit(runner, worktreePath, ['rev-parse', 'HEAD']);
   if (!finalShaRes.success) {
-    return failDelivery(
+    return failDeliveryRun(
+      run,
       input.taskId,
       snapshot.thread.threadId,
       `读取 rebase 后 commit sha 失败: ${finalShaRes.error}`,
@@ -288,7 +346,8 @@ export async function runTaskDelivery(
     branchName,
   ]);
   if (!pushRes.success) {
-    return failDelivery(
+    return failDeliveryRun(
+      run,
       input.taskId,
       snapshot.thread.threadId,
       `推送分支失败: ${pushRes.error}`,
@@ -297,7 +356,12 @@ export async function runTaskDelivery(
 
   const tokenRes = await readToken();
   if (!tokenRes.success) {
-    return failDelivery(input.taskId, snapshot.thread.threadId, tokenRes.error);
+    return failDeliveryRun(
+      run,
+      input.taskId,
+      snapshot.thread.threadId,
+      tokenRes.error,
+    );
   }
 
   const body = buildPrBody({
@@ -331,7 +395,8 @@ export async function runTaskDelivery(
       },
     );
     if (!ghRes.success) {
-      return failDelivery(
+      return failDeliveryRun(
+        run,
         input.taskId,
         snapshot.thread.threadId,
         `创建 PR 失败: ${ghRes.error}`,
@@ -348,7 +413,14 @@ export async function runTaskDelivery(
       prUrl,
       prNumber,
     });
-    if (!deliveryRes.success) return deliveryRes;
+    if (!deliveryRes.success) {
+      return failDeliveryRun(
+        run,
+        input.taskId,
+        snapshot.thread.threadId,
+        deliveryRes.error,
+      );
+    }
 
     recordTaskAgentResult({
       taskId: input.taskId,
@@ -363,6 +435,12 @@ export async function runTaskDelivery(
         `- PR：${prUrl}`,
       ].join('\n'),
     });
+
+    const finishedRunRes = finishTaskAgentRun({
+      runId: run.runId,
+      status: AGENT_RUN_STATUS.SUCCEEDED,
+    });
+    if (!finishedRunRes.success) return finishedRunRes;
 
     const refreshedSnapshotRes = readTaskPlanningSnapshot(input.taskId);
     if (!refreshedSnapshotRes.success) return refreshedSnapshotRes;

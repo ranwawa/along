@@ -1,6 +1,8 @@
 import type { FormEvent } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  TaskAgentStageRecord,
+  TaskAgentStageStatus,
   TaskArtifactRecord,
   TaskArtifactType,
   TaskPlanningSnapshot,
@@ -41,6 +43,11 @@ interface ImplementationRunResponse {
 interface DeliveryRunResponse {
   taskId: string;
   scheduled: boolean;
+}
+
+interface ManualCompleteResponse {
+  taskId: string;
+  snapshot: TaskPlanningSnapshot;
 }
 
 interface RepositoryOption {
@@ -107,6 +114,20 @@ function formatTime(value: string): string {
   }).format(date);
 }
 
+function formatDuration(startedAt: string, endedAt?: string): string {
+  const started = new Date(startedAt).getTime();
+  const ended = endedAt ? new Date(endedAt).getTime() : Date.now();
+  if (Number.isNaN(started) || Number.isNaN(ended) || ended < started) {
+    return '-';
+  }
+
+  const totalSeconds = Math.max(1, Math.round((ended - started) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
 function getThreadStatusLabel(status: TaskThreadStatus): string {
   switch (status) {
     case 'drafting':
@@ -139,6 +160,53 @@ function getTaskStatusLabel(status: string): string {
     default:
       return status;
   }
+}
+
+function getStageStatusLabel(status: TaskAgentStageStatus): string {
+  switch (status) {
+    case 'idle':
+      return '未运行';
+    case 'running':
+      return '运行中';
+    case 'succeeded':
+      return '已完成';
+    case 'failed':
+      return '失败';
+    default:
+      return status;
+  }
+}
+
+function getStageStatusClass(status: TaskAgentStageStatus): string {
+  switch (status) {
+    case 'running':
+      return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+    case 'succeeded':
+      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+    case 'failed':
+      return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+    default:
+      return 'bg-white/5 text-text-muted border-border-color';
+  }
+}
+
+function getLatestFailedStage(
+  snapshot: TaskPlanningSnapshot,
+): TaskAgentStageRecord | null {
+  const failedStages = (snapshot.agentStages || []).filter(
+    (stage) => stage.status === 'failed' && stage.latestRun,
+  );
+  return (
+    failedStages.sort((left, right) =>
+      (
+        right.latestRun?.endedAt ||
+        right.latestRun?.startedAt ||
+        ''
+      ).localeCompare(
+        left.latestRun?.endedAt || left.latestRun?.startedAt || '',
+      ),
+    )[0] || null
+  );
 }
 
 function getThreadStatusClass(status: TaskThreadStatus): string {
@@ -217,6 +285,151 @@ function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
         {artifact.body}
       </div>
     </div>
+  );
+}
+
+function AgentStageItem({
+  stage,
+  onCopyResume,
+  onManualComplete,
+}: {
+  stage: TaskAgentStageRecord;
+  onCopyResume: (stage: TaskAgentStageRecord) => void;
+  onManualComplete: (stage: TaskAgentStageRecord) => void;
+}) {
+  const run = stage.latestRun;
+  const manualResume = stage.manualResume;
+  const showManualActions = stage.status === 'failed';
+
+  return (
+    <div className="rounded-lg border border-border-color bg-black/25 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-text-secondary">
+            {stage.label}
+          </div>
+          <div className="text-xs text-text-muted mt-1">
+            {run
+              ? `${run.provider} / ${run.agentId} / ${formatDuration(
+                  run.startedAt,
+                  run.endedAt,
+                )}`
+              : stage.agentId}
+          </div>
+        </div>
+        <span
+          className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${getStageStatusClass(
+            stage.status,
+          )}`}
+        >
+          {getStageStatusLabel(stage.status)}
+        </span>
+      </div>
+
+      {run && (
+        <div className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 text-xs">
+          <span className="text-text-muted">开始</span>
+          <span>{formatTime(run.startedAt)}</span>
+          {run.endedAt && (
+            <>
+              <span className="text-text-muted">结束</span>
+              <span>{formatTime(run.endedAt)}</span>
+            </>
+          )}
+          <span className="text-text-muted">Run</span>
+          <span className="truncate" title={run.runId}>
+            {run.runId}
+          </span>
+          {(run.providerSessionIdAtEnd || run.providerSessionIdAtStart) && (
+            <>
+              <span className="text-text-muted">Session</span>
+              <span
+                className="truncate"
+                title={
+                  run.providerSessionIdAtEnd || run.providerSessionIdAtStart
+                }
+              >
+                {run.providerSessionIdAtEnd || run.providerSessionIdAtStart}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
+      {run?.error && (
+        <div className="mt-3 rounded-md border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-200 whitespace-pre-wrap break-words">
+          {run.error}
+        </div>
+      )}
+
+      {showManualActions && (
+        <div className="mt-3 flex flex-col gap-2">
+          {manualResume?.command ? (
+            <pre className="rounded-md border border-border-color bg-black/40 px-3 py-2 text-xs leading-5 text-text-secondary overflow-x-auto whitespace-pre-wrap break-words">
+              {manualResume.command}
+            </pre>
+          ) : (
+            <div className="rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-200">
+              {manualResume?.reason || '当前阶段没有可恢复命令'}
+            </div>
+          )}
+          {manualResume?.reason && manualResume.command && (
+            <div className="text-xs text-text-muted">{manualResume.reason}</div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onCopyResume(stage)}
+              disabled={!manualResume?.command}
+              className="px-2.5 py-1.5 rounded-md text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              复制接管命令
+            </button>
+            <button
+              type="button"
+              onClick={() => onManualComplete(stage)}
+              className="px-2.5 py-1.5 rounded-md text-xs font-semibold border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+            >
+              人工已处理
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentStagesPanel({
+  stages,
+  onCopyResume,
+  onManualComplete,
+}: {
+  stages: TaskAgentStageRecord[];
+  onCopyResume: (stage: TaskAgentStageRecord) => void;
+  onManualComplete: (stage: TaskAgentStageRecord) => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-text-secondary">
+          Agent 阶段
+        </h3>
+        <span className="text-xs text-text-muted">
+          {stages.filter((stage) => stage.status !== 'idle').length}/
+          {stages.length}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+        {stages.map((stage) => (
+          <AgentStageItem
+            key={stage.stage}
+            stage={stage}
+            onCopyResume={onCopyResume}
+            onManualComplete={onManualComplete}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -534,6 +747,57 @@ export function TaskPlanningView() {
     }
   };
 
+  const copyManualResumeCommand = async (stage: TaskAgentStageRecord) => {
+    const command = stage.manualResume?.command;
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const completeManualStage = async (stage: TaskAgentStageRecord) => {
+    if (!selected || busyAction) return;
+
+    const rawMessage = window.prompt(
+      `${stage.label}人工处理说明`,
+      '已人工接管并处理完成。',
+    );
+    if (rawMessage === null) return;
+    const message = rawMessage.trim() || undefined;
+    let prUrl: string | undefined;
+    if (stage.stage === 'delivery') {
+      prUrl =
+        window.prompt('PR URL（如已人工创建 PR，请填写）', '')?.trim() ||
+        undefined;
+    }
+
+    setBusyAction(`manual-${stage.stage}`);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/tasks/${selected.task.taskId}/manual-complete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stage: stage.stage,
+            message,
+            prUrl,
+          }),
+        },
+      );
+      const result = await readJsonResponse<ManualCompleteResponse>(response);
+      setSelectedSnapshot(result.snapshot);
+      setTasks((previous) => mergeSnapshotIntoList(previous, result.snapshot));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   return (
     <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[420px_minmax(0,1fr)] border-t border-border-color overflow-auto xl:overflow-hidden">
       <div className="min-h-[360px] xl:min-h-0 xl:h-full border-b xl:border-b-0 xl:border-r border-border-color flex flex-col bg-bg-glass">
@@ -618,34 +882,44 @@ export function TaskPlanningView() {
           ) : tasks.length === 0 ? (
             <div className="p-5 text-text-muted text-sm">暂无任务。</div>
           ) : (
-            tasks.map((snapshot) => (
-              <button
-                type="button"
-                key={snapshot.task.taskId}
-                onClick={() => {
-                  setSelectedTaskId(snapshot.task.taskId);
-                  setSelectedSnapshot(snapshot);
-                }}
-                className={`w-full text-left px-4 md:px-5 py-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
-                  selected?.task.taskId === snapshot.task.taskId
-                    ? 'bg-white/10'
-                    : 'bg-transparent'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <TaskStatusBadge snapshot={snapshot} />
-                  <span className="text-[11px] text-text-muted shrink-0">
-                    {formatTime(snapshot.task.updatedAt)}
-                  </span>
-                </div>
-                <div className="font-medium text-sm truncate">
-                  {snapshot.task.title}
-                </div>
-                <div className="text-xs text-text-muted truncate mt-1">
-                  {snapshot.task.body}
-                </div>
-              </button>
-            ))
+            tasks.map((snapshot) => {
+              const failedStage = getLatestFailedStage(snapshot);
+              return (
+                <button
+                  type="button"
+                  key={snapshot.task.taskId}
+                  onClick={() => {
+                    setSelectedTaskId(snapshot.task.taskId);
+                    setSelectedSnapshot(snapshot);
+                  }}
+                  className={`w-full text-left px-4 md:px-5 py-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
+                    selected?.task.taskId === snapshot.task.taskId
+                      ? 'bg-white/10'
+                      : 'bg-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <TaskStatusBadge snapshot={snapshot} />
+                      {failedStage && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border bg-rose-500/15 text-rose-300 border-rose-500/30">
+                          {failedStage.label}失败
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-text-muted shrink-0">
+                      {formatTime(snapshot.task.updatedAt)}
+                    </span>
+                  </div>
+                  <div className="font-medium text-sm truncate">
+                    {snapshot.task.title}
+                  </div>
+                  <div className="text-xs text-text-muted truncate mt-1">
+                    {failedStage?.latestRun?.error || snapshot.task.body}
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
@@ -728,6 +1002,12 @@ export function TaskPlanningView() {
                     )}
                   </div>
                 </section>
+
+                <AgentStagesPanel
+                  stages={selected.agentStages || []}
+                  onCopyResume={copyManualResumeCommand}
+                  onManualComplete={completeManualStage}
+                />
 
                 <section className="flex flex-col gap-3">
                   <h3 className="text-sm font-semibold text-text-secondary">
