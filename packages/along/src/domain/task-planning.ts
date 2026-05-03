@@ -701,7 +701,7 @@ const TASK_FLOW_STAGE_LABELS: Record<TaskFlowStageId, string> = {
   plan_confirmation: '计划确认',
   implementation: '实现执行',
   delivery: '结果交付',
-  completed: '任务完成',
+  completed: '已完成',
 };
 
 function isLongRunning(run: TaskAgentRunRecord): boolean {

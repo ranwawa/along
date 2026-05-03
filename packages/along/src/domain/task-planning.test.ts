@@ -738,6 +738,10 @@ describe('task-planning', () => {
     if (!completed.success) throw new Error(completed.error);
     expect(completed.data.task.status).toBe(TASK_STATUS.COMPLETED);
     expect(completed.data.flow.currentStageId).toBe('completed');
+    expect(
+      completed.data.flow.stages.find((stage) => stage.id === 'completed')
+        ?.label,
+    ).toBe('已完成');
     expect(completed.data.flow.conclusion).toBe('任务已完成，关键产物已归档。');
   });
 

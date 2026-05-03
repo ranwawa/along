@@ -11,6 +11,7 @@ import type {
   TaskFlowStage,
   TaskFlowStageState,
   TaskPlanningSnapshot,
+  TaskStatus,
   TaskThreadStatus,
 } from './types';
 
@@ -153,7 +154,7 @@ function getThreadStatusLabel(status: TaskThreadStatus): string {
   }
 }
 
-function getTaskStatusLabel(status: string): string {
+function getTaskStatusLabel(status: TaskStatus): string {
   switch (status) {
     case 'planning':
       return '规划中';
@@ -171,6 +172,27 @@ function getTaskStatusLabel(status: string): string {
       return '已完成';
     default:
       return status;
+  }
+}
+
+function getTaskStatusClass(status: TaskStatus): string {
+  switch (status) {
+    case 'planning':
+      return 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+    case 'planning_approved':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+    case 'implementing':
+      return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+    case 'implemented':
+      return 'bg-blue-500/15 text-blue-300 border-blue-500/30';
+    case 'delivering':
+      return 'bg-violet-500/15 text-violet-300 border-violet-500/30';
+    case 'delivered':
+      return 'bg-teal-500/15 text-teal-300 border-teal-500/30';
+    case 'completed':
+      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+    default:
+      return 'bg-white/10 text-text-secondary border-border-color';
   }
 }
 
@@ -221,21 +243,6 @@ function getLatestFailedStage(
   );
 }
 
-function getThreadStatusClass(status: TaskThreadStatus): string {
-  switch (status) {
-    case 'drafting':
-      return 'bg-sky-500/15 text-sky-300 border-sky-500/30';
-    case 'awaiting_approval':
-      return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
-    case 'discussing':
-      return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
-    case 'approved':
-      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
-    default:
-      return 'bg-white/10 text-text-secondary border-border-color';
-  }
-}
-
 function getArtifactLabel(type: TaskArtifactType): string {
   switch (type) {
     case 'user_message':
@@ -273,11 +280,11 @@ function getArtifactClass(type: TaskArtifactType): string {
 function TaskStatusBadge({ snapshot }: { snapshot: TaskPlanningSnapshot }) {
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${getThreadStatusClass(
-        snapshot.thread.status,
+      className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${getTaskStatusClass(
+        snapshot.task.status,
       )}`}
     >
-      {getThreadStatusLabel(snapshot.thread.status)}
+      {getTaskStatusLabel(snapshot.task.status)}
     </span>
   );
 }
@@ -1357,6 +1364,8 @@ export function TaskPlanningView() {
                     )}
                     <span className="text-text-muted">Thread</span>
                     <span className="truncate">{selected.thread.threadId}</span>
+                    <span className="text-text-muted">Plan Status</span>
+                    <span>{getThreadStatusLabel(selected.thread.status)}</span>
                     <span className="text-text-muted">Source</span>
                     <span>{selected.task.source}</span>
                     <span className="text-text-muted">Status</span>
