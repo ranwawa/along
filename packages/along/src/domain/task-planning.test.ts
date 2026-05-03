@@ -137,6 +137,16 @@ const mockDbState = vi.hoisted(() => {
               String(a.started_at).localeCompare(String(b.started_at)),
             );
         }
+        if (
+          normalized.includes('FROM task_agent_runs') &&
+          normalized.includes('WHERE status = ?')
+        ) {
+          return state.runs
+            .filter((row) => row.status === args[0])
+            .sort((a, b) =>
+              String(a.started_at).localeCompare(String(b.started_at)),
+            );
+        }
         return [];
       },
       run: (...args: Array<string | number | null>) => {
@@ -595,6 +605,7 @@ import {
   readTaskAgentBinding,
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
+  recoverInterruptedTaskAgentRuns,
   submitTaskMessage,
   TASK_STATUS,
   THREAD_STATUS,
@@ -908,6 +919,45 @@ describe('task-planning', () => {
     if (!result.success) throw new Error(result.error);
     expect(result.data.type).toBe('agent_result');
     expect(result.data.metadata.runId).toBe('run-1');
+  });
+
+  it('恢复中断的 implementation run 时，期望标记失败并退回可重试状态', () => {
+    const { taskId } = createTaskWithPlan();
+    const approved = approveCurrentTaskPlan(taskId);
+    expect(approved.success).toBe(true);
+
+    const implementing = updateTaskStatus(taskId, TASK_STATUS.IMPLEMENTING);
+    expect(implementing.success).toBe(true);
+
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+
+    const run = createTaskAgentRun({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'implementer',
+      provider: 'codex',
+    });
+    expect(run.success).toBe(true);
+    if (!run.success) throw new Error(run.error);
+
+    const recovered = recoverInterruptedTaskAgentRuns('server restarted');
+    expect(recovered.success).toBe(true);
+    if (!recovered.success) throw new Error(recovered.error);
+    expect(recovered.data.recoveredRuns).toHaveLength(1);
+    expect(recovered.data.recoveredRuns[0].status).toBe(
+      AGENT_RUN_STATUS.FAILED,
+    );
+    expect(recovered.data.resetTaskIds).toEqual([taskId]);
+
+    const refreshed = readTaskPlanningSnapshot(taskId);
+    expect(refreshed.success).toBe(true);
+    if (!refreshed.success || !refreshed.data)
+      throw new Error('missing refreshed snapshot');
+    expect(refreshed.data.task.status).toBe(TASK_STATUS.PLANNING_APPROVED);
+    expect(refreshed.data.agentRuns[0].error).toBe('server restarted');
   });
 
   it('当列出 Task Planning 快照时，期望返回最近任务', () => {

@@ -123,9 +123,13 @@ describe('task-codex-runner', () => {
         approvalPolicy: 'never',
       }),
     );
-    expect(thread.run).toHaveBeenCalledWith('生成计划', {
-      outputSchema: { type: 'object' },
-    });
+    expect(thread.run).toHaveBeenCalledWith(
+      '生成计划',
+      expect.objectContaining({
+        outputSchema: { type: 'object' },
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(result.data.providerSessionId).toBe('codex-thread-1');
     expect(result.data.structuredOutput).toEqual({
       action: 'plan_revision',
@@ -236,5 +240,59 @@ describe('task-codex-runner', () => {
       providerSessionIdAtEnd: 'codex-thread-1',
       error: '更新 provider session 失败',
     });
+  });
+
+  it('当 Codex turn 超时时，期望中止执行并标记 run 失败', async () => {
+    vi.useFakeTimers();
+    const previousTimeout = process.env.ALONG_TASK_AGENT_TIMEOUT_MS;
+    process.env.ALONG_TASK_AGENT_TIMEOUT_MS = '1';
+
+    try {
+      const thread = {
+        id: 'codex-thread-1',
+        run: vi.fn(
+          (
+            _prompt: string,
+            options?: { outputSchema?: unknown; signal?: AbortSignal },
+          ) =>
+            new Promise<never>((_resolve, reject) => {
+              options?.signal?.addEventListener('abort', () => {
+                reject(new Error('aborted'));
+              });
+            }),
+        ),
+      };
+      const client = {
+        startThread: vi.fn().mockReturnValue(thread),
+        resumeThread: vi.fn(),
+      };
+
+      const pending = runTaskCodexTurn({
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'implementer',
+        prompt: '实现',
+        cwd: '/tmp/project',
+        createClient: () => client,
+      });
+
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+
+      expect(result.success).toBe(false);
+      expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
+        runId: 'run-1',
+        status: 'failed',
+        providerSessionIdAtEnd: 'codex-thread-1',
+        error: 'Codex Agent 执行超时（超过 1 ms）',
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.ALONG_TASK_AGENT_TIMEOUT_MS;
+      } else {
+        process.env.ALONG_TASK_AGENT_TIMEOUT_MS = previousTimeout;
+      }
+      vi.useRealTimers();
+    }
   });
 });

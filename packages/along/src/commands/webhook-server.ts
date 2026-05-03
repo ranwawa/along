@@ -50,6 +50,7 @@ import {
 } from '../domain/session-state-machine';
 import { runTaskDelivery } from '../domain/task-delivery';
 import { runTaskImplementationAgent } from '../domain/task-implementation-agent';
+import { recoverInterruptedTaskAgentRuns } from '../domain/task-planning';
 import { runTaskPlanningAgent } from '../domain/task-planning-agent';
 import {
   handleConfigApiRequest,
@@ -1083,6 +1084,20 @@ async function main() {
 
   if (useDashboard) {
     initLogRouter();
+  }
+
+  const recoveredRunsRes = recoverInterruptedTaskAgentRuns(
+    'Webhook server 启动时发现上次 Agent run 未正常结束，已标记为失败。',
+  );
+  if (!recoveredRunsRes.success) {
+    logger.warn(`恢复中断的 Task Agent Run 失败: ${recoveredRunsRes.error}`);
+  } else if (recoveredRunsRes.data.recoveredRuns.length > 0) {
+    logger.warn(
+      `已恢复 ${recoveredRunsRes.data.recoveredRuns.length} 个中断的 Task Agent Run` +
+        (recoveredRunsRes.data.resetTaskIds.length > 0
+          ? `，重置 ${recoveredRunsRes.data.resetTaskIds.length} 个 Task 状态`
+          : ''),
+    );
   }
 
   const _server = Bun.serve({

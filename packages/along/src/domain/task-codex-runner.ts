@@ -31,7 +31,7 @@ export interface TaskCodexThread {
   readonly id: string | null;
   run(
     input: string,
-    options?: { outputSchema?: unknown },
+    options?: { outputSchema?: unknown; signal?: AbortSignal },
   ): Promise<TaskCodexTurn>;
 }
 
@@ -126,6 +126,17 @@ function createDefaultClient(): TaskCodexClient {
   return codexPath ? new Codex({ codexPathOverride: codexPath }) : new Codex();
 }
 
+function readCodexTurnTimeoutMs(): number {
+  const raw = Number(process.env.ALONG_TASK_AGENT_TIMEOUT_MS);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return 30 * 60 * 1000;
+}
+
+function formatDuration(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  return minutes >= 1 ? `${minutes} 分钟` : `${ms} ms`;
+}
+
 function failRun(
   runId: string,
   error: string,
@@ -182,7 +193,32 @@ export async function runTaskCodexTurn(
         )
       : client.startThread(buildThreadOptions(input));
 
-    const turn = await thread.run(prompt, { outputSchema });
+    const timeoutMs = readCodexTurnTimeoutMs();
+    const abortController = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      abortController.abort();
+    }, timeoutMs);
+
+    let turn: TaskCodexTurn;
+    try {
+      turn = await thread.run(prompt, {
+        outputSchema,
+        signal: abortController.signal,
+      });
+    } catch (error: unknown) {
+      if (timedOut) {
+        throw new Error(
+          `Codex Agent 执行超时（超过 ${formatDuration(timeoutMs)}）`,
+          { cause: error },
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+
     latestThreadId = thread.id || binding.providerSessionId;
     if (latestThreadId) {
       const updateRes = updateTaskAgentProviderSession(

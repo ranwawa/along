@@ -355,6 +355,11 @@ export interface FinishTaskAgentRunInput {
   error?: string;
 }
 
+export interface RecoverInterruptedTaskAgentRunsOutput {
+  recoveredRuns: TaskAgentRunRecord[];
+  resetTaskIds: string[];
+}
+
 export interface CompleteTaskAgentStageManuallyInput {
   taskId: string;
   stage: TaskAgentStage;
@@ -2656,5 +2661,77 @@ export function finishTaskAgentRun(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`结束 Agent Run 失败: ${message}`);
+  }
+}
+
+export function recoverInterruptedTaskAgentRuns(
+  reason = 'Agent 运行被中断：服务进程在 run 完成前退出或重启。',
+): Result<RecoverInterruptedTaskAgentRunsOutput> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const rows = dbRes.data
+      .prepare(
+        `
+          SELECT * FROM task_agent_runs
+          WHERE status = ?
+          ORDER BY started_at ASC
+        `,
+      )
+      .all(AGENT_RUN_STATUS.RUNNING) as TaskAgentRunRow[];
+
+    const recoveredRuns: TaskAgentRunRecord[] = [];
+    const resetTaskIds = new Set<string>();
+
+    for (const row of rows) {
+      const finishRes = finishTaskAgentRun({
+        runId: String(row.run_id),
+        status: AGENT_RUN_STATUS.FAILED,
+        providerSessionIdAtEnd:
+          typeof row.provider_session_id_at_end === 'string'
+            ? row.provider_session_id_at_end
+            : undefined,
+        error: reason,
+      });
+      if (!finishRes.success) return finishRes;
+      recoveredRuns.push(finishRes.data);
+
+      if (row.agent_id === 'implementer') {
+        const task = dbRes.data
+          .prepare('SELECT * FROM task_items WHERE task_id = ?')
+          .get(row.task_id) as TaskItemRow | null;
+        if (task?.status === TASK_STATUS.IMPLEMENTING) {
+          const resetRes = updateTaskStatus(
+            String(row.task_id),
+            TASK_STATUS.PLANNING_APPROVED,
+          );
+          if (!resetRes.success) return resetRes;
+          resetTaskIds.add(String(row.task_id));
+        }
+      }
+
+      if (row.agent_id === 'delivery') {
+        const task = dbRes.data
+          .prepare('SELECT * FROM task_items WHERE task_id = ?')
+          .get(row.task_id) as TaskItemRow | null;
+        if (task?.status === TASK_STATUS.DELIVERING) {
+          const resetRes = updateTaskStatus(
+            String(row.task_id),
+            TASK_STATUS.IMPLEMENTED,
+          );
+          if (!resetRes.success) return resetRes;
+          resetTaskIds.add(String(row.task_id));
+        }
+      }
+    }
+
+    return success({
+      recoveredRuns,
+      resetTaskIds: [...resetTaskIds],
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`恢复中断的 Agent Run 失败: ${message}`);
   }
 }
