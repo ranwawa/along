@@ -32,6 +32,15 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "complexity": {
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 30,
+            "skipBlankLines": true
+          }
+        }
+      },
       "correctness": {
         "noUndeclaredVariables": "error",
         "noUnsafeFinally": "error",
@@ -42,6 +51,15 @@
       },
       "security": {
         "noGlobalEval": "error"
+      },
+      "nursery": {
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": {
+            "maxLines": 300,
+            "skipBlankLines": true
+          }
+        }
       },
       "style": {
         "noNonNullAssertion": "error",
