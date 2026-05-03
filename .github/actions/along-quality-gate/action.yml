@@ -1,0 +1,27 @@
+name: Along Quality Gate
+description: Shared quality gate maintained by along
+
+inputs:
+  bun-version-file:
+    description: Bun version file path
+    required: false
+    default: .bun-version
+  install-command:
+    description: Dependency installation command
+    required: false
+    default: bun install --frozen-lockfile
+  quality-command:
+    description: Quality gate command
+    required: false
+    default: bun run quality:full
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: ${{ inputs.bun-version-file }}
+    - shell: bash
+      run: ${{ inputs.install-command }}
+    - shell: bash
+      run: ${{ inputs.quality-command }}

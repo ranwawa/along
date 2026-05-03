@@ -1,0 +1,72 @@
+{
+  "changedWorkspaceCheckTaskRef": "workspace:changed",
+  "fullSequence": [
+    "workspace:full",
+    "workspace:check",
+    "workspace:lint",
+    "workspace:test",
+    "along:test"
+  ],
+  "packageExecutionOrder": ["along", "along-web", "preset", "preset-assets"],
+  "tasks": {
+    "workspace:changed": {
+      "title": "检查变更文件格式",
+      "command": "bunx",
+      "args": ["biome", "check", "--write", "--no-errors-on-unmatched"],
+      "appendFiles": true
+    },
+    "workspace:full": {
+      "title": "检查全量代码格式",
+      "command": "bunx",
+      "args": ["biome", "check", "."]
+    },
+    "workspace:check": {
+      "title": "执行根项目 check",
+      "command": "bun",
+      "args": ["run", "check"]
+    },
+    "workspace:lint": {
+      "title": "执行根项目 lint",
+      "command": "bun",
+      "args": ["run", "lint"]
+    },
+    "workspace:test": {
+      "title": "执行根项目 test",
+      "command": "bun",
+      "args": ["run", "test"]
+    },
+    "along:test": {
+      "title": "执行 along test",
+      "command": "bun",
+      "args": ["run", "test"],
+      "cwd": "packages/along"
+    }
+  },
+  "packages": {
+    "along": {
+      "path": "packages/along",
+      "relatedInputPrefixes": ["packages/along"],
+      "fullTestsTaskRef": "along:test"
+    },
+    "along-web": {
+      "path": "packages/along-web",
+      "relatedInputPrefixes": ["packages/along-web"]
+    },
+    "preset": {
+      "path": "packages/preset",
+      "relatedInputPrefixes": ["packages/preset"]
+    },
+    "preset-assets": {
+      "path": "packages/preset-assets",
+      "relatedInputPrefixes": ["packages/preset-assets"]
+    }
+  },
+  "rootGateFiles": [
+    ".along/setting.json",
+    "biome.json",
+    "package.json",
+    "bun.lock"
+  ],
+  "rootGatePrefixes": [".along/preset/", ".along/git-hooks/", ".github/"],
+  "changedPrerequisiteSequence": []
+}
