@@ -1,7 +1,3 @@
-# 点开头目录
-.*/
-**/.*/
-
 # 编辑器
 .idea/
 .vscode/
@@ -11,6 +7,8 @@
 .codex/
 .opencode/
 .pi/
+AGENTS.md
+CLAUDE.md
 
 # Node
 node_modules/
@@ -38,6 +36,7 @@ dist/
 .parcel-cache/
 .turbo/
 .vite/
+tmp/
 
 # 日志
 *.log
