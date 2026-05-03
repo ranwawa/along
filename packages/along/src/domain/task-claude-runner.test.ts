@@ -36,7 +36,15 @@ function successfulConversation(sessionId: string) {
       session_id: sessionId,
       message: { content: [{ type: 'text', text: '中间输出' }] },
     };
-    yield { type: 'result', subtype: 'success', result: '最终计划 JSON' };
+    yield {
+      type: 'result',
+      subtype: 'success',
+      result: '最终计划 JSON',
+      structured_output: {
+        action: 'plan_revision',
+        body: '最终计划',
+      },
+    };
   })();
 }
 
@@ -126,6 +134,10 @@ describe('task-claude-runner', () => {
     expect(result.data.usedResume).toBe(true);
     expect(result.data.providerSessionId).toBe('session-2');
     expect(result.data.assistantText).toBe('最终计划 JSON');
+    expect(result.data.structuredOutput).toEqual({
+      action: 'plan_revision',
+      body: '最终计划',
+    });
     expect(result.data.outputArtifactIds).toEqual(['art-result']);
     expect(queryMock).toHaveBeenCalledWith({
       prompt: '继续处理用户反馈',

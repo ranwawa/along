@@ -7,6 +7,10 @@ import { failure, success } from '../core/result';
 export const TASK_STATUS = {
   PLANNING: 'planning',
   PLANNING_APPROVED: 'planning_approved',
+  IMPLEMENTING: 'implementing',
+  IMPLEMENTED: 'implemented',
+  DELIVERING: 'delivering',
+  DELIVERED: 'delivered',
 } as const;
 
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
@@ -88,6 +92,14 @@ export interface TaskItemRecord {
   source: string;
   status: TaskStatus;
   activeThreadId?: string;
+  repoOwner?: string;
+  repoName?: string;
+  cwd?: string;
+  worktreePath?: string;
+  branchName?: string;
+  commitShas: string[];
+  prUrl?: string;
+  prNumber?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -180,6 +192,9 @@ export interface CreatePlanningTaskInput {
   title: string;
   body: string;
   source?: string;
+  repoOwner?: string;
+  repoName?: string;
+  cwd?: string;
 }
 
 export interface SubmitTaskMessageInput {
@@ -235,15 +250,14 @@ export interface RecordTaskAgentResultInput {
   runId?: string;
 }
 
-interface TaskItemRow {
-  task_id: string;
-  title: string;
-  body: string;
-  source: string;
+export interface UpdateTaskDeliveryInput {
+  taskId: string;
   status: TaskStatus;
-  active_thread_id: string | null;
-  created_at: string;
-  updated_at: string;
+  worktreePath?: string;
+  branchName?: string;
+  commitShas?: string[];
+  prUrl?: string;
+  prNumber?: number;
 }
 
 interface TaskThreadRow {
@@ -267,6 +281,25 @@ interface TaskArtifactRow {
   body: string;
   metadata: string;
   created_at: string;
+}
+
+interface TaskItemRow {
+  task_id: string;
+  title: string;
+  body: string;
+  source: string;
+  status: TaskStatus;
+  active_thread_id: string | null;
+  repo_owner: string | null;
+  repo_name: string | null;
+  cwd: string | null;
+  worktree_path: string | null;
+  branch_name: string | null;
+  commit_shas: string | null;
+  pr_url: string | null;
+  pr_number: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface TaskPlanRevisionRow {
@@ -355,19 +388,6 @@ function parseMetadata(
   }
 }
 
-function mapTask(row: TaskItemRow): TaskItemRecord {
-  return {
-    taskId: row.task_id,
-    title: row.title,
-    body: row.body,
-    source: row.source,
-    status: row.status,
-    activeThreadId: row.active_thread_id || undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
 function mapThread(row: TaskThreadRow): TaskThreadRecord {
   return {
     threadId: row.thread_id,
@@ -406,6 +426,27 @@ function mapPlan(row: TaskPlanRevisionRow): TaskPlanRevisionRecord {
     artifactId: row.artifact_id,
     body: row.body,
     createdAt: row.created_at,
+  };
+}
+
+function mapTask(row: TaskItemRow): TaskItemRecord {
+  return {
+    taskId: row.task_id,
+    title: row.title,
+    body: row.body,
+    source: row.source,
+    status: row.status,
+    activeThreadId: row.active_thread_id || undefined,
+    repoOwner: row.repo_owner || undefined,
+    repoName: row.repo_name || undefined,
+    cwd: row.cwd || undefined,
+    worktreePath: row.worktree_path || undefined,
+    branchName: row.branch_name || undefined,
+    commitShas: parseStringArray(row.commit_shas),
+    prUrl: row.pr_url || undefined,
+    prNumber: row.pr_number || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -542,8 +583,9 @@ export function createPlanningTask(
       db.prepare(
         `
           INSERT INTO task_items (
-            task_id, title, body, source, status, active_thread_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            task_id, title, body, source, status, active_thread_id,
+            repo_owner, repo_name, cwd, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       ).run(
         taskId,
@@ -552,6 +594,9 @@ export function createPlanningTask(
         input.source || 'web',
         TASK_STATUS.PLANNING,
         threadId,
+        input.repoOwner || null,
+        input.repoName || null,
+        input.cwd || null,
         now,
         now,
       );
@@ -577,7 +622,12 @@ export function createPlanningTask(
         type: ARTIFACT_TYPE.USER_MESSAGE,
         role: ARTIFACT_ROLE.USER,
         body,
-        metadata: { kind: 'initial_request' },
+        metadata: {
+          kind: 'initial_request',
+          repoOwner: input.repoOwner,
+          repoName: input.repoName,
+          cwd: input.cwd,
+        },
         createdAt: now,
       });
     });
@@ -1171,12 +1221,16 @@ export function ensureTaskAgentBinding(
         now,
       );
     } else {
+      const shouldResetProviderSession = Boolean(
+        input.cwd && existing.cwd && input.cwd !== existing.cwd,
+      );
       db.prepare(
         `
           UPDATE task_agent_bindings
           SET cwd = COALESCE(?, cwd),
               model = COALESCE(?, model),
               personality_version = COALESCE(?, personality_version),
+              provider_session_id = CASE WHEN ? THEN NULL ELSE provider_session_id END,
               updated_at = ?
           WHERE thread_id = ? AND agent_id = ? AND provider = ?
         `,
@@ -1184,6 +1238,7 @@ export function ensureTaskAgentBinding(
         input.cwd || null,
         input.model || null,
         input.personalityVersion || null,
+        shouldResetProviderSession ? 1 : 0,
         now,
         input.threadId,
         input.agentId,
@@ -1210,6 +1265,92 @@ export function ensureTaskAgentBinding(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`确保 Agent Binding 失败: ${message}`);
+  }
+}
+
+export function updateTaskStatus(
+  taskId: string,
+  status: TaskStatus,
+): Result<void> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const result = dbRes.data
+      .prepare(
+        'UPDATE task_items SET status = ?, updated_at = ? WHERE task_id = ?',
+      )
+      .run(status, iso_timestamp(), taskId);
+    return result.changes > 0
+      ? success(undefined)
+      : failure(`Task 不存在: ${taskId}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`更新 Task 状态失败: ${message}`);
+  }
+}
+
+export function updateTaskDelivery(
+  input: UpdateTaskDeliveryInput,
+): Result<void> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const result = dbRes.data
+      .prepare(
+        `
+          UPDATE task_items
+          SET status = ?,
+              branch_name = COALESCE(?, branch_name),
+              worktree_path = COALESCE(?, worktree_path),
+              commit_shas = COALESCE(?, commit_shas),
+              pr_url = COALESCE(?, pr_url),
+              pr_number = COALESCE(?, pr_number),
+              updated_at = ?
+          WHERE task_id = ?
+        `,
+      )
+      .run(
+        input.status,
+        input.branchName || null,
+        input.worktreePath || null,
+        input.commitShas ? JSON.stringify(input.commitShas) : null,
+        input.prUrl || null,
+        input.prNumber || null,
+        iso_timestamp(),
+        input.taskId,
+      );
+    return result.changes > 0
+      ? success(undefined)
+      : failure(`Task 不存在: ${input.taskId}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`更新 Task Delivery 信息失败: ${message}`);
+  }
+}
+
+export function readTaskAgentBinding(
+  threadId: string,
+  agentId: string,
+  provider: string,
+): Result<TaskAgentBindingRecord | null> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const row = dbRes.data
+      .prepare(
+        `
+          SELECT * FROM task_agent_bindings
+          WHERE thread_id = ? AND agent_id = ? AND provider = ?
+        `,
+      )
+      .get(threadId, agentId, provider) as TaskAgentBindingRow | null;
+    return success(row ? mapBinding(row) : null);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`读取 Agent Binding 失败: ${message}`);
   }
 }
 

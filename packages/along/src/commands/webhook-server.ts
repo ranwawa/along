@@ -48,6 +48,8 @@ import {
   type SessionLifecycle,
   STEP,
 } from '../domain/session-state-machine';
+import { runTaskDelivery } from '../domain/task-delivery';
+import { runTaskImplementationAgent } from '../domain/task-implementation-agent';
 import { runTaskPlanningAgent } from '../domain/task-planning-agent';
 import {
   get_gh_client,
@@ -56,6 +58,8 @@ import {
 import {
   handleTaskApiRequest,
   isTaskApiPath,
+  type ScheduledTaskDeliveryRun,
+  type ScheduledTaskImplementationRun,
   type ScheduledTaskPlanningRun,
 } from '../integration/task-api';
 import {
@@ -426,6 +430,47 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
       logger.info(
         `[Task ${input.taskId}] planning 完成: ${result.data.action}`,
       );
+    });
+  });
+}
+
+function enqueueTaskImplementationRun(input: ScheduledTaskImplementationRun) {
+  enqueueAgent(`Task ${input.taskId} implementation`, async () => {
+    await withTaskPlanningLock(input.taskId, async () => {
+      logger.info(
+        `[Task ${input.taskId}] implementation 开始: ${input.reason}`,
+      );
+      const result = await runTaskImplementationAgent({
+        taskId: input.taskId,
+        agentId: input.agentId,
+        cwd: input.cwd,
+        model: input.model,
+        personalityVersion: input.personalityVersion,
+      });
+      if (!result.success) {
+        logger.error(
+          `[Task ${input.taskId}] implementation 失败: ${result.error}`,
+        );
+        return;
+      }
+      logger.info(`[Task ${input.taskId}] implementation 完成`);
+    });
+  });
+}
+
+function enqueueTaskDeliveryRun(input: ScheduledTaskDeliveryRun) {
+  enqueueAgent(`Task ${input.taskId} delivery`, async () => {
+    await withTaskPlanningLock(input.taskId, async () => {
+      logger.info(`[Task ${input.taskId}] delivery 开始: ${input.reason}`);
+      const result = await runTaskDelivery({
+        taskId: input.taskId,
+        cwd: input.cwd,
+      });
+      if (!result.success) {
+        logger.error(`[Task ${input.taskId}] delivery 失败: ${result.error}`);
+        return;
+      }
+      logger.info(`[Task ${input.taskId}] delivery 完成: ${result.data.prUrl}`);
     });
   });
 }
@@ -1119,6 +1164,8 @@ async function main() {
           defaultCwd: process.cwd(),
           resolveRepoPath: (owner, repo) => registry.resolve(owner, repo),
           schedulePlanner: enqueueTaskPlanningRun,
+          scheduleImplementation: enqueueTaskImplementationRun,
+          scheduleDelivery: enqueueTaskDeliveryRun,
         });
       }
 

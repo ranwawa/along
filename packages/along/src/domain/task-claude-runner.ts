@@ -34,6 +34,7 @@ export interface RunTaskClaudeTurnOutput {
   providerSessionId?: string;
   usedResume: boolean;
   assistantText: string;
+  structuredOutput?: unknown;
   outputArtifactIds: string[];
 }
 
@@ -97,6 +98,12 @@ function getResultText(message: SDKMessage): string | undefined {
   return typeof record.result === 'string' ? record.result : undefined;
 }
 
+function getResultStructuredOutput(message: SDKMessage): unknown {
+  const record: unknown = message;
+  if (!isRecord(record) || record.type !== 'result') return undefined;
+  return record.structured_output;
+}
+
 function buildOptions(
   input: RunTaskClaudeTurnInput,
   resumeSessionId?: string,
@@ -143,6 +150,7 @@ export async function runTaskClaudeTurn(
   let latestSessionId = binding.providerSessionId;
   const assistantTextParts: string[] = [];
   let finalResultText: string | undefined;
+  let structuredOutput: unknown;
 
   try {
     const conversation = query({
@@ -157,6 +165,10 @@ export async function runTaskClaudeTurn(
       assistantTextParts.push(...getAssistantMessageText(message));
       const resultText = getResultText(message);
       if (resultText) finalResultText = resultText;
+      const resultStructuredOutput = getResultStructuredOutput(message);
+      if (resultStructuredOutput !== undefined) {
+        structuredOutput = resultStructuredOutput;
+      }
 
       const error = getResultError(message);
       if (error) {
@@ -181,9 +193,13 @@ export async function runTaskClaudeTurn(
       if (!updateRes.success) return updateRes;
     }
 
-    const assistantText = (finalResultText || assistantTextParts.join('\n\n'))
-      .trim()
-      .trim();
+    const assistantText = (
+      finalResultText ||
+      assistantTextParts.join('\n\n') ||
+      (structuredOutput === undefined
+        ? ''
+        : JSON.stringify(structuredOutput, null, 2))
+    ).trim();
     const outputArtifactIds: string[] = [];
     if (assistantText) {
       const artifactRes = recordTaskAgentResult({
@@ -220,6 +236,7 @@ export async function runTaskClaudeTurn(
       providerSessionId: latestSessionId,
       usedResume,
       assistantText,
+      structuredOutput,
       outputArtifactIds,
     });
   } catch (error: unknown) {

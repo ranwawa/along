@@ -153,7 +153,13 @@ export interface ConversationMessage {
   [key: string]: unknown;
 }
 
-export type TaskStatus = 'planning' | 'planning_approved';
+export type TaskStatus =
+  | 'planning'
+  | 'planning_approved'
+  | 'implementing'
+  | 'implemented'
+  | 'delivering'
+  | 'delivered';
 
 export type TaskThreadStatus =
   | 'drafting'
@@ -175,6 +181,14 @@ export interface TaskItemRecord {
   source: string;
   status: TaskStatus;
   activeThreadId?: string;
+  repoOwner?: string;
+  repoName?: string;
+  cwd?: string;
+  worktreePath?: string;
+  branchName?: string;
+  commitShas: string[];
+  prUrl?: string;
+  prNumber?: number;
   createdAt: string;
   updatedAt: string;
 }

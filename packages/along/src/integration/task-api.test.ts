@@ -4,6 +4,7 @@ const planningMocks = vi.hoisted(() => ({
   approveCurrentTaskPlan: vi.fn(),
   createPlanningTask: vi.fn(),
   listTaskPlanningSnapshots: vi.fn(),
+  readTaskAgentBinding: vi.fn(),
   readTaskPlanningSnapshot: vi.fn(),
   submitTaskMessage: vi.fn(),
 }));
@@ -12,6 +13,7 @@ vi.mock('../domain/task-planning', () => ({
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
   createPlanningTask: planningMocks.createPlanningTask,
   listTaskPlanningSnapshots: planningMocks.listTaskPlanningSnapshots,
+  readTaskAgentBinding: planningMocks.readTaskAgentBinding,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   submitTaskMessage: planningMocks.submitTaskMessage,
 }));
@@ -65,6 +67,10 @@ describe('task-api', () => {
     planningMocks.readTaskPlanningSnapshot.mockReturnValue({
       success: true,
       data: snapshot,
+    });
+    planningMocks.readTaskAgentBinding.mockReturnValue({
+      success: true,
+      data: null,
     });
     planningMocks.submitTaskMessage.mockReturnValue({
       success: true,
@@ -130,6 +136,9 @@ describe('task-api', () => {
       title: '通过 Web API 创建 planning task。',
       body: '通过 Web API 创建 planning task。',
       source: 'web',
+      repoOwner: 'ranwawa',
+      repoName: 'along',
+      cwd: '/tmp/along',
     });
     expect(scheduled).toEqual([
       {
@@ -170,6 +179,159 @@ describe('task-api', () => {
         agentId: undefined,
         model: undefined,
         personalityVersion: undefined,
+      },
+    ]);
+  });
+
+  it('当手动重新规划且请求未带 cwd 时，期望复用 Task 保存的 cwd', async () => {
+    const scheduled: unknown[] = [];
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          cwd: '/tmp/kinkeeper',
+          repoOwner: 'ranwawa',
+          repoName: 'kinkeeper',
+        },
+      },
+    });
+
+    const response = await handleTaskApiRequest(
+      jsonRequest('/api/tasks/task-1/planner', {}),
+      new URL('http://localhost/api/tasks/task-1/planner'),
+      {
+        defaultCwd: '/tmp/default',
+        schedulePlanner: (input) => scheduled.push(input),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    expect(scheduled).toEqual([
+      {
+        taskId: 'task-1',
+        cwd: '/tmp/kinkeeper',
+        reason: 'manual',
+        agentId: undefined,
+        model: undefined,
+        personalityVersion: undefined,
+      },
+    ]);
+  });
+
+  it('当旧 Task 未保存 cwd 时，期望手动重新规划复用 Agent Binding cwd', async () => {
+    const scheduled: unknown[] = [];
+    planningMocks.readTaskAgentBinding.mockReturnValue({
+      success: true,
+      data: {
+        threadId: 'thread-1',
+        agentId: 'planner',
+        provider: 'claude',
+        cwd: '/tmp/binding-repo',
+        updatedAt: '2026-01-01T00:00:01.000Z',
+      },
+    });
+
+    const response = await handleTaskApiRequest(
+      jsonRequest('/api/tasks/task-1/planner', {}),
+      new URL('http://localhost/api/tasks/task-1/planner'),
+      {
+        defaultCwd: '/tmp/default',
+        schedulePlanner: (input) => scheduled.push(input),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    expect(scheduled).toEqual([
+      {
+        taskId: 'task-1',
+        cwd: '/tmp/binding-repo',
+        reason: 'manual',
+        agentId: undefined,
+        model: undefined,
+        personalityVersion: undefined,
+      },
+    ]);
+  });
+
+  it('当 Task 方案已批准时，期望可以调度 implementation', async () => {
+    const scheduled: unknown[] = [];
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          status: 'planning_approved',
+          cwd: '/tmp/project',
+        },
+        thread: {
+          ...snapshot.thread,
+          status: 'approved',
+          approvedPlanId: 'plan-1',
+        },
+      },
+    });
+
+    const response = await handleTaskApiRequest(
+      jsonRequest('/api/tasks/task-1/implementation', {}),
+      new URL('http://localhost/api/tasks/task-1/implementation'),
+      {
+        defaultCwd: '/tmp/default',
+        scheduleImplementation: (input) => scheduled.push(input),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    expect(scheduled).toEqual([
+      {
+        taskId: 'task-1',
+        cwd: '/tmp/project',
+        reason: 'manual',
+        agentId: undefined,
+        model: undefined,
+        personalityVersion: undefined,
+      },
+    ]);
+  });
+
+  it('当 Task 已实现时，期望可以调度 delivery', async () => {
+    const scheduled: unknown[] = [];
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          status: 'implemented',
+          cwd: '/tmp/project',
+          repoOwner: 'ranwawa',
+          repoName: 'along',
+        },
+        thread: {
+          ...snapshot.thread,
+          status: 'approved',
+          approvedPlanId: 'plan-1',
+        },
+      },
+    });
+
+    const response = await handleTaskApiRequest(
+      jsonRequest('/api/tasks/task-1/delivery', {}),
+      new URL('http://localhost/api/tasks/task-1/delivery'),
+      {
+        defaultCwd: '/tmp/default',
+        scheduleDelivery: (input) => scheduled.push(input),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    expect(scheduled).toEqual([
+      {
+        taskId: 'task-1',
+        cwd: '/tmp/project',
+        reason: 'manual',
       },
     ]);
   });

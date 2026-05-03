@@ -136,6 +136,9 @@ const mockDbState = vi.hoisted(() => {
             source,
             status,
             activeThreadId,
+            repoOwner,
+            repoName,
+            cwd,
             createdAt,
             updatedAt,
           ] = args;
@@ -146,6 +149,9 @@ const mockDbState = vi.hoisted(() => {
             source,
             status,
             active_thread_id: activeThreadId,
+            repo_owner: repoOwner,
+            repo_name: repoName,
+            cwd,
             created_at: createdAt,
             updated_at: updatedAt,
           });
@@ -451,6 +457,7 @@ const mockDbState = vi.hoisted(() => {
             cwd,
             model,
             personalityVersion,
+            shouldResetProviderSession,
             updatedAt,
             threadId,
             agentId,
@@ -467,6 +474,7 @@ const mockDbState = vi.hoisted(() => {
             row.model = model || row.model;
             row.personality_version =
               personalityVersion || row.personality_version;
+            if (shouldResetProviderSession) row.provider_session_id = null;
             row.updated_at = updatedAt;
           }
           return { changes: row ? 1 : 0 };
@@ -563,6 +571,7 @@ import {
   PLAN_STATUS,
   publishPlanningUpdate,
   publishTaskPlanRevision,
+  readTaskAgentBinding,
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
   submitTaskMessage,
@@ -753,6 +762,50 @@ describe('task-planning', () => {
     expect(nextBinding.success).toBe(true);
     if (!nextBinding.success) throw new Error(nextBinding.error);
     expect(nextBinding.data.providerSessionId).toBe('session-1');
+  });
+
+  it('当 Agent Binding 的 cwd 变化时，期望清空旧 provider session', () => {
+    const { taskId } = createTaskWithPlan();
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+
+    const binding = ensureTaskAgentBinding({
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'claude',
+      cwd: '/tmp/project-a',
+    });
+    expect(binding.success).toBe(true);
+
+    const update = updateTaskAgentProviderSession(
+      snapshot.data.thread.threadId,
+      'planner',
+      'claude',
+      'session-1',
+    );
+    expect(update.success).toBe(true);
+
+    const changed = ensureTaskAgentBinding({
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'claude',
+      cwd: '/tmp/project-b',
+    });
+    expect(changed.success).toBe(true);
+    if (!changed.success) throw new Error(changed.error);
+    expect(changed.data.providerSessionId).toBeUndefined();
+
+    const stored = readTaskAgentBinding(
+      snapshot.data.thread.threadId,
+      'planner',
+      'claude',
+    );
+    expect(stored.success).toBe(true);
+    if (!stored.success) throw new Error(stored.error);
+    expect(stored.data?.cwd).toBe('/tmp/project-b');
+    expect(stored.data?.providerSessionId).toBeUndefined();
   });
 
   it('当记录 Agent Run 时，期望能保存开始和结束的 provider session', () => {

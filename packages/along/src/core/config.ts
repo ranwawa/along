@@ -70,6 +70,13 @@ export const config = {
     return path.join(userAlongDir, owner, repo, String(issueNumber));
   },
 
+  /**
+   * 获取 task 级别的数据目录: ~/.along/{owner}/{repo}/tasks/{taskId}/
+   */
+  getTaskDir(owner: string, repo: string, taskId: string): string {
+    return path.join(userAlongDir, owner, repo, 'tasks', taskId);
+  },
+
   // 确保用户数据根目录存在
   ensureDataDirs() {
     ensureDir(this.USER_ALONG_DIR);

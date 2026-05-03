@@ -10,7 +10,7 @@
 - Claude Code 的 `session_id` 只作为执行器会话，用于同一个 Agent 在同一个 Thread 中优先 resume。
 - 即使 Claude Code 原生 session 丢失，系统也能用 Along 自己保存的 Artifact 重建上下文继续。
 
-本轮不实现完整多 Agent、长期记忆、Linear 集成、网页 UI 重构和 implementation 阶段。
+本轮不实现完整多 Agent、长期记忆和 Linear 集成。Task 在 Plan 批准后支持启动 implementation agent：按批准方案修改工作区代码并记录结果；实现完成后由 delivery 流程负责提交、推送并创建 PR。
 
 ## 2. 设计原则
 
@@ -67,6 +67,14 @@ Planning 的主流程不应要求存在 `issueNumber`。
 - `source`
 - `status`
 - `active_thread_id`
+- `repo_owner`
+- `repo_name`
+- `cwd`
+- `worktree_path`
+- `branch_name`
+- `commit_shas`
+- `pr_url`
+- `pr_number`
 - `created_at`
 - `updated_at`
 
@@ -280,12 +288,14 @@ Approve 后：
 - Claude planning runner 记录原始 `agent_result` artifact。
 - Planning Agent 编排层负责把 Claude 输出解析为 `plan_revision` 或 `planning_update`。
 - Web API 支持创建 Task、读取 Task、追加用户消息、批准 Plan、手动触发 planner。
+- Web API 支持批准后手动触发 implementation agent。
+- Implementation 开始前创建 Task 专属 Git worktree，并在该 worktree 内创建 Task 分支。
+- Delivery 流程在 Task worktree 内提交、rebase、推送并创建 PR。
 - webhook-server 复用现有 agent 队列，并按 `taskId` 串行化 Task planner。
 - 单元测试覆盖核心 planning 规则和 session binding。
 
 本轮暂不落地：
 
-- along-web UI。
 - Linear/GitHub adapter。
 - 多 Agent council。
 - 长期记忆。
@@ -314,7 +324,7 @@ POST /api/tasks
 }
 ```
 
-如果提供 `owner/repo`，server 会用 workspace registry 解析本地仓库路径；如果提供 `cwd`，直接使用 `cwd`；否则使用 webhook-server 当前工作目录。
+如果提供 `owner/repo`，server 会用 workspace registry 解析本地源仓库路径；如果提供 `cwd`，它只作为源仓库路径保存，不作为 implementation/delivery 的直接开发目录。Task 批准后会在 `~/.along/{owner}/{repo}/tasks/{taskId}/worktree` 下创建独立 worktree。
 
 ### 7.2 继续讨论
 
@@ -341,6 +351,8 @@ GET /api/tasks
 GET /api/tasks/:taskId
 POST /api/tasks/:taskId/approve
 POST /api/tasks/:taskId/planner
+POST /api/tasks/:taskId/implementation
+POST /api/tasks/:taskId/delivery
 ```
 
-`approve` 只批准当前 active Plan，且要求没有未处理 feedback round。`planner` 是给 Web UI 或排障使用的手动重跑入口，不要求用户记 CLI。
+`approve` 只批准当前 active Plan，且要求没有未处理 feedback round。`planner` 是给 Web UI 或排障使用的手动重跑入口，不要求用户记 CLI。`implementation` 会在 Task 已有批准方案后调度 implementation agent，并且只允许在 Task 专属 worktree 中修改代码。`delivery` 会在同一个 Task worktree 中提交、推送并创建 PR，PR body 使用 `along-task: <taskId>` 标记，不写 `fixes/closes/resolves #...`，避免触发 GitHub Issue session 生命周期逻辑。

@@ -33,6 +33,16 @@ interface PlannerRunResponse {
   scheduled: boolean;
 }
 
+interface ImplementationRunResponse {
+  taskId: string;
+  scheduled: boolean;
+}
+
+interface DeliveryRunResponse {
+  taskId: string;
+  scheduled: boolean;
+}
+
 interface RepositoryOption {
   owner: string;
   repo: string;
@@ -107,6 +117,25 @@ function getThreadStatusLabel(status: TaskThreadStatus): string {
       return '讨论中';
     case 'approved':
       return '已批准';
+    default:
+      return status;
+  }
+}
+
+function getTaskStatusLabel(status: string): string {
+  switch (status) {
+    case 'planning':
+      return '规划中';
+    case 'planning_approved':
+      return '方案已批准';
+    case 'implementing':
+      return '实现中';
+    case 'implemented':
+      return '已实现';
+    case 'delivering':
+      return '交付中';
+    case 'delivered':
+      return '已交付';
     default:
       return status;
   }
@@ -311,6 +340,11 @@ export function TaskPlanningView() {
       !selected.openRound &&
       selected.thread.status !== 'approved',
   );
+  const canImplement = Boolean(
+    selected?.thread.approvedPlanId &&
+      selected.task.status === 'planning_approved',
+  );
+  const canDeliver = selected?.task.status === 'implemented';
   const canReply = selected?.thread.status !== 'approved';
 
   const updateDraft = (key: keyof DraftTaskInput, value: string) => {
@@ -446,6 +480,52 @@ export function TaskPlanningView() {
         },
       );
       await readJsonResponse<PlannerRunResponse>(response);
+      await loadSelectedTask(selected.task.taskId);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const startImplementation = async () => {
+    if (!selected || !canImplement || busyAction) return;
+
+    setBusyAction('implementation');
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/tasks/${selected.task.taskId}/implementation`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      );
+      await readJsonResponse<ImplementationRunResponse>(response);
+      await loadSelectedTask(selected.task.taskId);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const startDelivery = async () => {
+    if (!selected || !canDeliver || busyAction) return;
+
+    setBusyAction('delivery');
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/tasks/${selected.task.taskId}/delivery`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      );
+      await readJsonResponse<DeliveryRunResponse>(response);
       await loadSelectedTask(selected.task.taskId);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -603,6 +683,22 @@ export function TaskPlanningView() {
                   >
                     {busyAction === 'approve' ? '处理中' : '批准方案'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={startImplementation}
+                    disabled={!canImplement || Boolean(busyAction)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-cyan-500/30 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {busyAction === 'implementation' ? '排队中' : '开始实现'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startDelivery}
+                    disabled={!canDeliver || Boolean(busyAction)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-violet-500/30 bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {busyAction === 'delivery' ? '排队中' : '提交并创建 PR'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -690,6 +786,40 @@ export function TaskPlanningView() {
                     <span className="truncate">{selected.thread.threadId}</span>
                     <span className="text-text-muted">Source</span>
                     <span>{selected.task.source}</span>
+                    <span className="text-text-muted">Status</span>
+                    <span>{getTaskStatusLabel(selected.task.status)}</span>
+                    {selected.task.branchName && (
+                      <>
+                        <span className="text-text-muted">Branch</span>
+                        <span className="truncate">
+                          {selected.task.branchName}
+                        </span>
+                      </>
+                    )}
+                    {selected.task.worktreePath && (
+                      <>
+                        <span className="text-text-muted">Worktree</span>
+                        <span
+                          className="truncate"
+                          title={selected.task.worktreePath}
+                        >
+                          {selected.task.worktreePath}
+                        </span>
+                      </>
+                    )}
+                    {selected.task.prUrl && (
+                      <>
+                        <span className="text-text-muted">PR</span>
+                        <a
+                          href={selected.task.prUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="truncate text-brand hover:text-brand-hover"
+                        >
+                          #{selected.task.prNumber || selected.task.prUrl}
+                        </a>
+                      </>
+                    )}
                     <span className="text-text-muted">Updated</span>
                     <span>{formatTime(selected.task.updatedAt)}</span>
                   </div>

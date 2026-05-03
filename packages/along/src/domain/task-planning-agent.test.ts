@@ -110,6 +110,10 @@ describe('task-planning-agent', () => {
         usedResume: false,
         assistantText:
           '{"action":"plan_revision","body":"## 方案\\n\\n先做 API。"}',
+        structuredOutput: {
+          action: 'plan_revision',
+          body: '## 方案\n\n先做 API。',
+        },
         outputArtifactIds: ['art-result'],
       },
     });
@@ -178,6 +182,10 @@ describe('task-planning-agent', () => {
         usedResume: false,
         assistantText:
           '{"action":"planning_update","body":"需要确认默认执行仓库。"}',
+        structuredOutput: {
+          action: 'planning_update',
+          body: '需要确认默认执行仓库。',
+        },
         outputArtifactIds: ['art-result'],
       },
     });
@@ -192,6 +200,46 @@ describe('task-planning-agent', () => {
       taskId: 'task-1',
       agentId: 'planner',
       body: '需要确认默认执行仓库。',
+    });
+  });
+
+  it('当 Agent 结构化输出包含中文双引号时，期望直接发布计划', async () => {
+    runnerMock.mockResolvedValueOnce({
+      success: true,
+      data: {
+        run: {
+          runId: 'run-1',
+          taskId: 'task-1',
+          threadId: 'thread-1',
+          agentId: 'planner',
+          provider: 'claude',
+          status: 'succeeded',
+          inputArtifactIds: ['art-user'],
+          outputArtifactIds: ['art-result'],
+          startedAt: '2026-01-01T00:00:00.000Z',
+          endedAt: '2026-01-01T00:00:01.000Z',
+        },
+        usedResume: false,
+        assistantText:
+          '{"action":"plan_revision","body":"按钮文案说的是"删除下方的演示数据"。"}',
+        structuredOutput: {
+          action: 'plan_revision',
+          body: '按钮文案说的是"删除下方的演示数据"。',
+        },
+        outputArtifactIds: ['art-result'],
+      },
+    });
+
+    const result = await runTaskPlanningAgent({
+      taskId: 'task-1',
+      cwd: '/tmp/project',
+    });
+
+    expect(result.success).toBe(true);
+    expect(planningMocks.publishTaskPlanRevision).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      agentId: 'planner',
+      body: '按钮文案说的是"删除下方的演示数据"。',
     });
   });
 });

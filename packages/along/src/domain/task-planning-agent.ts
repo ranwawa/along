@@ -14,6 +14,22 @@ const PLANNER_OUTPUT_SCHEMA = z.object({
   body: z.string().min(1),
 });
 
+const PLANNER_OUTPUT_FORMAT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['action', 'body'],
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['plan_revision', 'planning_update'],
+    },
+    body: {
+      type: 'string',
+      minLength: 1,
+    },
+  },
+};
+
 export type TaskPlannerAction = z.infer<typeof PLANNER_OUTPUT_SCHEMA>['action'];
 
 export interface RunTaskPlanningAgentInput {
@@ -164,11 +180,31 @@ export async function runTaskPlanningAgent(
     model: input.model,
     personalityVersion: input.personalityVersion,
     inputArtifactIds: snapshot.artifacts.map((artifact) => artifact.artifactId),
+    options: {
+      outputFormat: {
+        type: 'json_schema',
+        schema: PLANNER_OUTPUT_FORMAT_SCHEMA,
+      },
+    },
   });
   if (!result.success) return result;
 
-  const parsed = parseTaskPlannerOutput(result.data.assistantText);
-  if (!parsed.success) return parsed;
+  const parsed =
+    result.data.structuredOutput === undefined
+      ? parseTaskPlannerOutput(result.data.assistantText)
+      : (() => {
+          const structured = PLANNER_OUTPUT_SCHEMA.safeParse(
+            result.data.structuredOutput,
+          );
+          return structured.success
+            ? success(structured.data)
+            : failure(
+                `Planner 结构化输出格式不正确: ${structured.error.message}`,
+              );
+        })();
+  if (!parsed.success) {
+    return parsed;
+  }
 
   if (parsed.data.action === 'plan_revision') {
     const publishRes = publishTaskPlanRevision({

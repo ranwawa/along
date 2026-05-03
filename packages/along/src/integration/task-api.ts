@@ -4,8 +4,10 @@ import {
   approveCurrentTaskPlan,
   createPlanningTask,
   listTaskPlanningSnapshots,
+  readTaskAgentBinding,
   readTaskPlanningSnapshot,
   submitTaskMessage,
+  type TaskPlanningSnapshot,
 } from '../domain/task-planning';
 
 export interface ScheduledTaskPlanningRun {
@@ -17,9 +19,26 @@ export interface ScheduledTaskPlanningRun {
   personalityVersion?: string;
 }
 
+export interface ScheduledTaskImplementationRun {
+  taskId: string;
+  cwd: string;
+  reason: 'manual';
+  agentId?: string;
+  model?: string;
+  personalityVersion?: string;
+}
+
+export interface ScheduledTaskDeliveryRun {
+  taskId: string;
+  cwd: string;
+  reason: 'manual';
+}
+
 export interface TaskApiContext {
   defaultCwd: string;
   schedulePlanner?: (input: ScheduledTaskPlanningRun) => void;
+  scheduleImplementation?: (input: ScheduledTaskImplementationRun) => void;
+  scheduleDelivery?: (input: ScheduledTaskDeliveryRun) => void;
   resolveRepoPath?: (owner: string, repo: string) => string | undefined;
 }
 
@@ -92,6 +111,7 @@ function deriveTitle(body: string): string {
 function resolveTaskCwd(
   payload: UnknownRecord,
   context: TaskApiContext,
+  taskId?: string,
 ): Result<string> {
   const explicitCwd = readStringField(payload, 'cwd');
   if (explicitCwd) return success(explicitCwd);
@@ -102,6 +122,22 @@ function resolveTaskCwd(
     const repoPath = context.resolveRepoPath(owner, repo);
     if (!repoPath) return failure(`仓库 ${owner}/${repo} 未在本地工作区中注册`);
     return success(repoPath);
+  }
+
+  if (taskId) {
+    const snapshotRes = readTaskPlanningSnapshot(taskId);
+    if (!snapshotRes.success) return snapshotRes;
+    const snapshot = snapshotRes.data;
+    if (!snapshot) return failure(`Task 不存在: ${taskId}`);
+    if (snapshot.task.cwd) return success(snapshot.task.cwd);
+
+    const bindingRes = readTaskAgentBinding(
+      snapshot.thread.threadId,
+      readStringField(payload, 'agentId') || 'planner',
+      'claude',
+    );
+    if (!bindingRes.success) return bindingRes;
+    if (bindingRes.data?.cwd) return success(bindingRes.data.cwd);
   }
 
   return success(context.defaultCwd);
@@ -118,7 +154,7 @@ function schedulePlannerIfNeeded(
   const autoRun = readBooleanField(payload, 'autoRun');
   if (autoRun === false || !context.schedulePlanner) return success(false);
 
-  const cwdRes = resolveTaskCwd(payload, context);
+  const cwdRes = resolveTaskCwd(payload, context, input.taskId);
   if (!cwdRes.success) return cwdRes;
 
   context.schedulePlanner({
@@ -129,6 +165,55 @@ function schedulePlannerIfNeeded(
     personalityVersion: readStringField(payload, 'personalityVersion'),
   });
   return success(true);
+}
+
+function scheduleImplementationIfNeeded(
+  payload: UnknownRecord,
+  context: TaskApiContext,
+  input: Omit<
+    ScheduledTaskImplementationRun,
+    'cwd' | 'agentId' | 'model' | 'personalityVersion'
+  >,
+): Result<boolean> {
+  if (!context.scheduleImplementation) return success(false);
+
+  const cwdRes = resolveTaskCwd(payload, context, input.taskId);
+  if (!cwdRes.success) return cwdRes;
+
+  context.scheduleImplementation({
+    ...input,
+    cwd: cwdRes.data,
+    agentId: readStringField(payload, 'agentId'),
+    model: readStringField(payload, 'model'),
+    personalityVersion: readStringField(payload, 'personalityVersion'),
+  });
+  return success(true);
+}
+
+function scheduleDeliveryIfNeeded(
+  payload: UnknownRecord,
+  context: TaskApiContext,
+  input: ScheduledTaskDeliveryRun,
+): Result<boolean> {
+  if (!context.scheduleDelivery) return success(false);
+
+  const cwdRes = resolveTaskCwd(payload, context, input.taskId);
+  if (!cwdRes.success) return cwdRes;
+
+  context.scheduleDelivery({
+    ...input,
+    cwd: cwdRes.data,
+  });
+  return success(true);
+}
+
+function getTaskRepositoryFields(
+  payload: UnknownRecord,
+): Pick<TaskPlanningSnapshot['task'], 'repoOwner' | 'repoName'> {
+  return {
+    repoOwner: readStringField(payload, 'owner'),
+    repoName: readStringField(payload, 'repo'),
+  };
 }
 
 export function isTaskApiPath(pathname: string): boolean {
@@ -158,10 +243,16 @@ export async function handleTaskApiRequest(
     const taskBody = readStringField(bodyRes.data, 'body');
     if (!taskBody) return errorResponse('Task 内容不能为空', 400);
 
+    const cwdRes = resolveTaskCwd(bodyRes.data, context);
+    if (!cwdRes.success) return errorResponse(cwdRes.error, 400);
+    const repository = getTaskRepositoryFields(bodyRes.data);
     const createRes = createPlanningTask({
       title: readStringField(bodyRes.data, 'title') || deriveTitle(taskBody),
       body: taskBody,
       source: readStringField(bodyRes.data, 'source') || 'web',
+      repoOwner: repository.repoOwner,
+      repoName: repository.repoName,
+      cwd: cwdRes.data,
     });
     if (!createRes.success) return errorResponse(createRes.error, 400);
 
@@ -252,6 +343,52 @@ export async function handleTaskApiRequest(
     );
     if (!scheduledRes.success) return errorResponse(scheduledRes.error, 400);
     if (!scheduledRes.data) return errorResponse('Planner 调度器未启用', 503);
+
+    return jsonResponse({ taskId, scheduled: true }, 202);
+  }
+
+  if (action === 'implementation' && req.method === 'POST') {
+    const bodyRes = await readJsonObject(req);
+    if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
+
+    const snapshotRes = readTaskPlanningSnapshot(taskId);
+    if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
+    if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
+    if (!snapshotRes.data.thread.approvedPlanId) {
+      return errorResponse('当前 Task 没有已批准方案，不能开始实现', 409);
+    }
+
+    const scheduledRes = scheduleImplementationIfNeeded(bodyRes.data, context, {
+      taskId,
+      reason: 'manual',
+    });
+    if (!scheduledRes.success) return errorResponse(scheduledRes.error, 400);
+    if (!scheduledRes.data) {
+      return errorResponse('Implementation 调度器未启用', 503);
+    }
+
+    return jsonResponse({ taskId, scheduled: true }, 202);
+  }
+
+  if (action === 'delivery' && req.method === 'POST') {
+    const bodyRes = await readJsonObject(req);
+    if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
+
+    const snapshotRes = readTaskPlanningSnapshot(taskId);
+    if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
+    if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
+    if (snapshotRes.data.task.status !== 'implemented') {
+      return errorResponse('当前 Task 只有在已实现后才能交付', 409);
+    }
+
+    const scheduledRes = scheduleDeliveryIfNeeded(bodyRes.data, context, {
+      taskId,
+      reason: 'manual',
+    });
+    if (!scheduledRes.success) return errorResponse(scheduledRes.error, 400);
+    if (!scheduledRes.data) {
+      return errorResponse('Delivery 调度器未启用', 503);
+    }
 
     return jsonResponse({ taskId, scheduled: true }, 202);
   }

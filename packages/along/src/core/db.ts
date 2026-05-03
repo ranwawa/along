@@ -219,6 +219,14 @@ function initSchema(db: Database) {
       source TEXT NOT NULL,
       status TEXT NOT NULL,
       active_thread_id TEXT,
+      repo_owner TEXT,
+      repo_name TEXT,
+      cwd TEXT,
+      worktree_path TEXT,
+      branch_name TEXT,
+      commit_shas TEXT DEFAULT '[]',
+      pr_url TEXT,
+      pr_number INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -406,6 +414,17 @@ function initSchema(db: Database) {
   tryAddColumn(db, 'ALTER TABLE sessions ADD COLUMN phase_started_at TEXT');
   tryAddColumn(db, 'ALTER TABLE sessions ADD COLUMN step_started_at TEXT');
   tryAddColumn(db, 'ALTER TABLE sessions ADD COLUMN claude_session_id TEXT');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN repo_owner TEXT');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN repo_name TEXT');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN cwd TEXT');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN worktree_path TEXT');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN branch_name TEXT');
+  tryAddColumn(
+    db,
+    "ALTER TABLE task_items ADD COLUMN commit_shas TEXT DEFAULT '[]'",
+  );
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN pr_url TEXT');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN pr_number INTEGER');
 }
 
 function rowToSessionStatus(row: SessionRow): SessionStatus {
