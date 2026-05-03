@@ -30,7 +30,7 @@ const PLANNER_OUTPUT_SCHEMA = z.object({
 const PLANNER_OUTPUT_FORMAT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['action', 'body'],
+  required: ['action', 'body', 'type'],
   properties: {
     action: {
       type: 'string',
@@ -150,7 +150,7 @@ function buildPlannerPrompt(snapshot: TaskPlanningSnapshot): string {
     '5. action = "planning_update" 表示你是在回答问题、澄清约束或补充上下文，但还不是正式计划。',
     '6. 如果信息仍然不足以形成正式计划，优先输出 planning_update，明确指出还缺什么。',
     '7. 如果当前已经有 Plan 且存在 open feedback round，优先结合反馈决定是 answer_only 还是 revise_plan 的语义，但输出仍然只用上面的两个 action。',
-    '8. type 字段是可选的 conventional commit 类型（feat/fix/docs/style/refactor/perf/test/chore/ci），当 action 为 plan_revision 时建议提供。',
+    '8. type 字段必须提供 conventional commit 类型（feat/fix/docs/style/refactor/perf/test/chore/ci），planning_update 可使用 chore。',
     '',
     `当前状态: hasCurrentPlan=${hasCurrentPlan}, hasOpenRound=${hasOpenRound}`,
     '',

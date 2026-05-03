@@ -239,7 +239,7 @@ describe('task-planning-agent', () => {
           '{"action":"plan_revision","body":"按钮文案说的是"删除下方的演示数据"。"}',
         structuredOutput: {
           action: 'plan_revision',
-          body: '按钮文案说的是"删除下方的演示数据"。',
+          body: '按钮文案说的是“删除下方的演示数据”。',
         },
         outputArtifactIds: ['art-result'],
       },

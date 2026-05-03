@@ -180,4 +180,61 @@ describe('task-codex-runner', () => {
       expect.objectContaining({ workingDirectory: '/tmp/project' }),
     );
   });
+
+  it('当 Codex client 创建失败时，期望 run 被标记为失败', async () => {
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => {
+        throw new Error('Unable to locate Codex CLI binaries');
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
+      runId: 'run-1',
+      status: 'failed',
+      providerSessionIdAtEnd: undefined,
+      error: 'Unable to locate Codex CLI binaries',
+    });
+  });
+
+  it('当 provider session 更新失败时，期望 run 被标记为失败', async () => {
+    planningMocks.updateTaskAgentProviderSession.mockReturnValueOnce({
+      success: false,
+      error: '更新 provider session 失败',
+    });
+    const thread = {
+      id: 'codex-thread-1',
+      run: vi.fn().mockResolvedValue({
+        finalResponse: '完成',
+        items: [],
+        usage: null,
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(false);
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
+      runId: 'run-1',
+      status: 'failed',
+      providerSessionIdAtEnd: 'codex-thread-1',
+      error: '更新 provider session 失败',
+    });
+  });
 });

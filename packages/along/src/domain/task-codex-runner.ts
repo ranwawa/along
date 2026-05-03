@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { Codex, type ThreadOptions } from '@openai/codex-sdk';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
@@ -101,8 +102,42 @@ function buildThreadOptions(input: RunTaskCodexTurnInput): ThreadOptions {
   };
 }
 
+function findCodexExecutable(): string | undefined {
+  if (process.env.CODEX_PATH?.trim()) {
+    return process.env.CODEX_PATH.trim();
+  }
+
+  const command = process.platform === 'win32' ? 'where' : 'which';
+  const result = spawnSync(command, ['codex'], {
+    encoding: 'utf-8',
+    shell: false,
+  });
+  if (result.status !== 0) return undefined;
+
+  const firstMatch = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return firstMatch || undefined;
+}
+
 function createDefaultClient(): TaskCodexClient {
-  return new Codex();
+  const codexPath = findCodexExecutable();
+  return codexPath ? new Codex({ codexPathOverride: codexPath }) : new Codex();
+}
+
+function failRun(
+  runId: string,
+  error: string,
+  providerSessionIdAtEnd?: string,
+): Result<never> {
+  const failedRun = finishTaskAgentRun({
+    runId,
+    status: AGENT_RUN_STATUS.FAILED,
+    providerSessionIdAtEnd,
+    error,
+  });
+  return failedRun.success ? failure(error) : failure(failedRun.error);
 }
 
 export async function runTaskCodexTurn(
@@ -135,14 +170,20 @@ export async function runTaskCodexTurn(
   if (!runRes.success) return runRes;
 
   const outputSchema = getCodexOutputSchema(input);
-  const client = (input.createClient || createDefaultClient)();
-  const thread = binding.providerSessionId
-    ? client.resumeThread(binding.providerSessionId, buildThreadOptions(input))
-    : client.startThread(buildThreadOptions(input));
+  let thread: TaskCodexThread | undefined;
+  let latestThreadId = binding.providerSessionId;
 
   try {
+    const client = (input.createClient || createDefaultClient)();
+    thread = binding.providerSessionId
+      ? client.resumeThread(
+          binding.providerSessionId,
+          buildThreadOptions(input),
+        )
+      : client.startThread(buildThreadOptions(input));
+
     const turn = await thread.run(prompt, { outputSchema });
-    const latestThreadId = thread.id || binding.providerSessionId;
+    latestThreadId = thread.id || binding.providerSessionId;
     if (latestThreadId) {
       const updateRes = updateTaskAgentProviderSession(
         input.threadId,
@@ -150,7 +191,9 @@ export async function runTaskCodexTurn(
         PROVIDER,
         latestThreadId,
       );
-      if (!updateRes.success) return updateRes;
+      if (!updateRes.success) {
+        return failRun(runRes.data.runId, updateRes.error, latestThreadId);
+      }
     }
 
     const assistantText = getAssistantText(turn);
@@ -199,7 +242,7 @@ export async function runTaskCodexTurn(
     const failedRun = finishTaskAgentRun({
       runId: runRes.data.runId,
       status: AGENT_RUN_STATUS.FAILED,
-      providerSessionIdAtEnd: thread.id || binding.providerSessionId,
+      providerSessionIdAtEnd: thread?.id || latestThreadId,
       error: message,
     });
     if (!failedRun.success) return failedRun;
