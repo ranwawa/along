@@ -10,6 +10,11 @@
 AGENTS.md
 CLAUDE.md
 
+# Along 基础配置
+!.along/
+!.along/preset/
+!.along/preset/**
+
 # Node
 node_modules/
 

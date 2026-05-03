@@ -32,7 +32,6 @@
     "@biomejs/biome": "^2.4.13",
     "@ranwawa/along": "workspace:*",
     "@ranwawa/along-web": "workspace:*",
-    "@ranwawa/biome-config": "workspace:*",
     "@ranwawa/preset": "workspace:*",
     "@ranwawa/preset-assets": "workspace:*"
   }
