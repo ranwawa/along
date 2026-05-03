@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AgentRowsTable } from './settings/AgentRowsTable';
+import type { ConfigRow } from './settings/types';
 import type {
   EditorOption,
   GlobalConfigResponse,
   TaskAgentConfig,
 } from './types';
-
-interface ConfigRow {
-  key: string;
-  editor: string;
-  model: string;
-  personalityVersion: string;
-}
 
 interface ConfigApiError {
   error?: string;
@@ -207,89 +202,15 @@ export function SettingsView() {
           </div>
         )}
 
-        <section className="rounded-lg border border-border-color bg-black/25 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border-color flex items-center justify-between gap-3">
-            <div className="font-semibold text-sm text-text-secondary">
-              Task Agents
-            </div>
-            <button
-              type="button"
-              onClick={addRow}
-              disabled={loading || saving}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              新增
-            </button>
-          </div>
-
-          <div className="hidden md:grid grid-cols-[180px_180px_minmax(0,1fr)_180px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
-            <span>Agent</span>
-            <span>Editor</span>
-            <span>Model</span>
-            <span>Personality</span>
-            <span />
-          </div>
-
-          <div className="divide-y divide-white/5">
-            {sortedRows.map((row) => (
-              <div
-                key={row.key}
-                className="grid grid-cols-1 md:grid-cols-[180px_180px_minmax(0,1fr)_180px_84px] gap-3 p-4 items-center"
-              >
-                <input
-                  type="text"
-                  value={row.key}
-                  disabled={row.key === '*'}
-                  onChange={(event) =>
-                    updateRow(row.key, { key: event.target.value })
-                  }
-                  className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60 disabled:opacity-60"
-                />
-                <select
-                  value={row.editor}
-                  onChange={(event) =>
-                    updateRow(row.key, { editor: event.target.value })
-                  }
-                  className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
-                >
-                  {editors.map((editor) => (
-                    <option key={editor.id} value={editor.id}>
-                      {editor.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={row.model}
-                  onChange={(event) =>
-                    updateRow(row.key, { model: event.target.value })
-                  }
-                  placeholder="model"
-                  className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
-                />
-                <input
-                  type="text"
-                  value={row.personalityVersion}
-                  onChange={(event) =>
-                    updateRow(row.key, {
-                      personalityVersion: event.target.value,
-                    })
-                  }
-                  placeholder="version"
-                  className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeRow(row.key)}
-                  disabled={row.key === '*' || loading || saving}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  删除
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
+        <AgentRowsTable
+          rows={sortedRows}
+          editors={editors}
+          loading={loading}
+          saving={saving}
+          onAdd={addRow}
+          onUpdate={updateRow}
+          onRemove={removeRow}
+        />
       </div>
     </div>
   );
