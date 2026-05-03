@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { TaskPlanningView } from './TaskPlanningView';
 import type {
   ConversationFileInfo,
   ConversationMessage,
@@ -21,6 +22,7 @@ const statusFilters = [
 ] as const;
 
 function App() {
+  const [activeView, setActiveView] = useState<'tasks' | 'sessions'>('tasks');
   const [sessions, setSessions] = useState<DashboardSession[]>([]);
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] =
@@ -726,84 +728,241 @@ function App() {
     <div className="w-screen h-screen flex flex-col overflow-hidden">
       <header className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center px-4 py-4 md:px-6 md:py-5 border-b border-border-color shrink-0">
         <h1 className="font-semibold text-xl md:text-2xl tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
-          🚀 ALONG Dashboard
+          ALONG
         </h1>
-        <div className="flex flex-wrap gap-1.5 md:gap-2">
-          {statusFilters.map((filter) => (
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex rounded-lg border border-border-color bg-black/20 p-1">
             <button
               type="button"
-              key={filter}
-              className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer text-xs md:text-sm transition-all border ${
-                currentFilter === filter
-                  ? 'bg-white/10 text-white border-border-color'
-                  : 'bg-transparent border-transparent text-text-secondary hover:bg-white/5'
+              className={`px-3 py-1.5 rounded-md text-xs md:text-sm font-semibold transition-all ${
+                activeView === 'tasks'
+                  ? 'bg-white/10 text-white'
+                  : 'text-text-secondary hover:bg-white/5'
               }`}
-              onClick={() => setCurrentFilter(filter)}
+              onClick={() => setActiveView('tasks')}
             >
-              {filter === 'all' ? 'All' : getLifecycleLabel(filter)}
-              {filter !== 'all' && (
-                <span className="opacity-60 ml-1.5">
-                  {getFilterCount(filter)}
-                </span>
-              )}
+              Tasks
             </button>
-          ))}
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-md text-xs md:text-sm font-semibold transition-all ${
+                activeView === 'sessions'
+                  ? 'bg-white/10 text-white'
+                  : 'text-text-secondary hover:bg-white/5'
+              }`}
+              onClick={() => setActiveView('sessions')}
+            >
+              Sessions
+            </button>
+          </div>
+          {activeView === 'sessions' &&
+            statusFilters.map((filter) => (
+              <button
+                type="button"
+                key={filter}
+                className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer text-xs md:text-sm transition-all border ${
+                  currentFilter === filter
+                    ? 'bg-white/10 text-white border-border-color'
+                    : 'bg-transparent border-transparent text-text-secondary hover:bg-white/5'
+                }`}
+                onClick={() => setCurrentFilter(filter)}
+              >
+                {filter === 'all' ? 'All' : getLifecycleLabel(filter)}
+                {filter !== 'all' && (
+                  <span className="opacity-60 ml-1.5">
+                    {getFilterCount(filter)}
+                  </span>
+                )}
+              </button>
+            ))}
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 px-0 md:px-0">
-        <div className="h-full bg-bg-glass backdrop-blur-md border-x-0 md:border-x-0 border-y-0 md:border-y-0 border border-border-color rounded-none flex flex-col overflow-hidden min-h-[300px]">
-          <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold text-sm md:text-base flex justify-between items-center">
-            <span>Recent Tasks</span>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Filter by repo..."
-                value={repoFilter}
-                onChange={(e) => setRepoFilter(e.target.value)}
-                className="bg-white/5 border border-border-color rounded-lg px-3 py-1 text-xs md:text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-32 md:w-48 transition-all"
-              />
-              {repoFilter && (
-                <button
-                  type="button"
-                  onClick={() => setRepoFilter('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-white bg-transparent border-none cursor-pointer"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex-1 overflow-auto">
-            {/* Mobile card list */}
-            <div className="lg:hidden flex flex-col">
-              {filteredSessions.length === 0 ? (
-                <div className="text-center text-text-muted px-4 py-8">
-                  No tasks found.
+      {activeView === 'tasks' ? (
+        <TaskPlanningView />
+      ) : (
+        <>
+          <div className="flex-1 min-h-0 px-0 md:px-0">
+            <div className="h-full bg-bg-glass backdrop-blur-md border-x-0 md:border-x-0 border-y-0 md:border-y-0 border border-border-color rounded-none flex flex-col overflow-hidden min-h-[300px]">
+              <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold text-sm md:text-base flex justify-between items-center">
+                <span>Recent Tasks</span>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Filter by repo..."
+                    value={repoFilter}
+                    onChange={(e) => setRepoFilter(e.target.value)}
+                    className="bg-white/5 border border-border-color rounded-lg px-3 py-1 text-xs md:text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-32 md:w-48 transition-all"
+                  />
+                  {repoFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setRepoFilter('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-white bg-transparent border-none cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-              ) : null}
-              {filteredSessions.map((session) => (
-                <div
-                  key={`m-${session.owner}-${session.repo}-${session.issueNumber}`}
-                  className="flex items-center gap-3 px-4 py-3 border-b border-white/5"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSession(session)}
-                    className="flex flex-1 min-w-0 items-center gap-3 text-left cursor-pointer hover:bg-white/5 transition-colors rounded-lg"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-text-secondary text-sm">
-                          {session.owner}/{session.repo}
-                        </span>
-                        <span className="text-sm">
+              </div>
+              <div className="flex-1 overflow-auto">
+                {/* Mobile card list */}
+                <div className="lg:hidden flex flex-col">
+                  {filteredSessions.length === 0 ? (
+                    <div className="text-center text-text-muted px-4 py-8">
+                      No tasks found.
+                    </div>
+                  ) : null}
+                  {filteredSessions.map((session) => (
+                    <div
+                      key={`m-${session.owner}-${session.repo}-${session.issueNumber}`}
+                      className="flex items-center gap-3 px-4 py-3 border-b border-white/5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSession(session)}
+                        className="flex flex-1 min-w-0 items-center gap-3 text-left cursor-pointer hover:bg-white/5 transition-colors rounded-lg"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-text-secondary text-sm">
+                              {session.owner}/{session.repo}
+                            </span>
+                            <span className="text-sm">
+                              <a
+                                href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-inherit hover:underline"
+                              >
+                                #{session.issueNumber}
+                              </a>
+                              {session.context?.prNumber &&
+                                session.context?.prUrl && (
+                                  <a
+                                    href={session.context.prUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="ml-1 text-inherit hover:underline"
+                                  >
+                                    PR #{session.context.prNumber}
+                                  </a>
+                                )}
+                              {session.hasWorktree && (
+                                <span
+                                  className="ml-1 opacity-70"
+                                  title="Worktree exists"
+                                >
+                                  📁
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          {session.title && (
+                            <div className="text-sm truncate mb-1">
+                              {session.title}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}
+                            >
+                              {getLifecycleLabel(session.lifecycle)}
+                            </span>
+                            <span className="text-text-muted text-xs truncate">
+                              {getPhaseLabel(session.phase)} /{' '}
+                              {getStepLabel(session.step)}
+                            </span>
+                            {getProgressLabel(session) && (
+                              <span className="text-text-muted text-xs truncate">
+                                {getProgressLabel(session)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                      <div className="flex gap-1.5 shrink-0">
+                        {isFailedStatus(session.lifecycle) && (
+                          <button
+                            type="button"
+                            className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
+                              restartingIssues.has(getIssueKey(session))
+                                ? 'bg-blue-500/20 text-status-running animate-spin'
+                                : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running'
+                            }`}
+                            title="重启此任务"
+                            onClick={(e) => restartSession(session, e)}
+                            disabled={restartingIssues.has(
+                              getIssueKey(session),
+                            )}
+                          >
+                            🔄
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
+                            deletingIssues.has(getIssueKey(session))
+                              ? 'bg-red-500/20 text-red-400 cursor-wait'
+                              : 'bg-white/5 text-text-secondary hover:bg-red-500/20 hover:text-red-300'
+                          }`}
+                          title="彻底删除此任务的本地数据"
+                          onClick={(e) => deleteSessionAssets(session, e)}
+                          disabled={deletingIssues.has(getIssueKey(session))}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <table className="hidden lg:table w-full border-collapse text-left">
+                  <thead>
+                    <tr>
+                      <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">
+                        Issue
+                      </th>
+                      <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">
+                        Title
+                      </th>
+                      <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">
+                        Status
+                      </th>
+                      <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10 w-16">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSessions.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="text-center text-text-muted px-6 py-4"
+                        >
+                          No tasks found.
+                        </td>
+                      </tr>
+                    ) : null}
+                    {filteredSessions.map((session) => (
+                      <tr
+                        key={`${session.owner}-${session.repo}-${session.issueNumber}`}
+                        onClick={() => setSelectedSession(session)}
+                        className="transition-colors cursor-pointer hover:bg-white/5"
+                      >
+                        <td className="px-6 py-4 border-b border-white/5 text-sm">
+                          <span className="text-text-secondary">
+                            {session.owner}/{session.repo}
+                          </span>
                           <a
                             href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="text-inherit hover:underline"
+                            className="ml-2 text-inherit hover:underline"
                           >
                             #{session.issueNumber}
                           </a>
@@ -814,494 +973,384 @@ function App() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="ml-1 text-inherit hover:underline"
+                                className="ml-2 text-inherit hover:underline"
                               >
                                 PR #{session.context.prNumber}
                               </a>
                             )}
                           {session.hasWorktree && (
                             <span
-                              className="ml-1 opacity-70"
+                              className="ml-2 opacity-70"
                               title="Worktree exists"
                             >
                               📁
                             </span>
                           )}
-                        </span>
-                      </div>
-                      {session.title && (
-                        <div className="text-sm truncate mb-1">
-                          {session.title}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}
+                        </td>
+                        <td
+                          className="px-6 py-4 border-b border-white/5 text-sm max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis"
+                          title={session.title || ''}
                         >
-                          {getLifecycleLabel(session.lifecycle)}
-                        </span>
-                        <span className="text-text-muted text-xs truncate">
-                          {getPhaseLabel(session.phase)} /{' '}
-                          {getStepLabel(session.step)}
-                        </span>
-                        {getProgressLabel(session) && (
-                          <span className="text-text-muted text-xs truncate">
-                            {getProgressLabel(session)}
+                          {session.title || '-'}
+                        </td>
+                        <td className="px-6 py-4 border-b border-white/5 text-sm">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}
+                          >
+                            {getLifecycleLabel(session.lifecycle)}
                           </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                  <div className="flex gap-1.5 shrink-0">
-                    {isFailedStatus(session.lifecycle) && (
-                      <button
-                        type="button"
-                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
-                          restartingIssues.has(getIssueKey(session))
-                            ? 'bg-blue-500/20 text-status-running animate-spin'
-                            : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running'
-                        }`}
-                        title="重启此任务"
-                        onClick={(e) => restartSession(session, e)}
-                        disabled={restartingIssues.has(getIssueKey(session))}
-                      >
-                        🔄
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-transparent transition-all cursor-pointer ${
-                        deletingIssues.has(getIssueKey(session))
-                          ? 'bg-red-500/20 text-red-400 cursor-wait'
-                          : 'bg-white/5 text-text-secondary hover:bg-red-500/20 hover:text-red-300'
-                      }`}
-                      title="彻底删除此任务的本地数据"
-                      onClick={(e) => deleteSessionAssets(session, e)}
-                      disabled={deletingIssues.has(getIssueKey(session))}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-              ))}
+                          <span className="ml-2 text-text-muted text-xs">
+                            {getPhaseLabel(session.phase)} /{' '}
+                            {getStepLabel(session.step)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 border-b border-white/5 text-sm flex gap-2">
+                          {isFailedStatus(session.lifecycle) && (
+                            <button
+                              type="button"
+                              className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
+                                restartingIssues.has(getIssueKey(session))
+                                  ? 'bg-blue-500/20 text-status-running animate-spin'
+                                  : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running hover:border-blue-500/30'
+                              }`}
+                              title="重启此任务"
+                              onClick={(e) => restartSession(session, e)}
+                              disabled={restartingIssues.has(
+                                getIssueKey(session),
+                              )}
+                            >
+                              🔄
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
+                              deletingIssues.has(getIssueKey(session))
+                                ? 'bg-red-500/20 text-red-400 cursor-wait'
+                                : 'bg-white/5 text-text-secondary hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/30'
+                            }`}
+                            title="彻底删除此任务的本地数据"
+                            onClick={(e) => deleteSessionAssets(session, e)}
+                            disabled={deletingIssues.has(getIssueKey(session))}
+                          >
+                            🗑️
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            {/* Desktop table */}
-            <table className="hidden lg:table w-full border-collapse text-left">
-              <thead>
-                <tr>
-                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">
-                    Issue
-                  </th>
-                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">
-                    Title
-                  </th>
-                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10">
-                    Status
-                  </th>
-                  <th className="sticky top-0 bg-bg-secondary px-6 py-4 text-sm font-medium text-text-secondary border-b border-border-color z-10 w-16">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSessions.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="text-center text-text-muted px-6 py-4"
-                    >
-                      No tasks found.
-                    </td>
-                  </tr>
-                ) : null}
-                {filteredSessions.map((session) => (
-                  <tr
-                    key={`${session.owner}-${session.repo}-${session.issueNumber}`}
-                    onClick={() => setSelectedSession(session)}
-                    className="transition-colors cursor-pointer hover:bg-white/5"
-                  >
-                    <td className="px-6 py-4 border-b border-white/5 text-sm">
-                      <span className="text-text-secondary">
-                        {session.owner}/{session.repo}
-                      </span>
-                      <a
-                        href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="ml-2 text-inherit hover:underline"
-                      >
-                        #{session.issueNumber}
-                      </a>
-                      {session.context?.prNumber && session.context?.prUrl && (
-                        <a
-                          href={session.context.prUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="ml-2 text-inherit hover:underline"
-                        >
-                          PR #{session.context.prNumber}
-                        </a>
-                      )}
-                      {session.hasWorktree && (
-                        <span
-                          className="ml-2 opacity-70"
-                          title="Worktree exists"
-                        >
-                          📁
-                        </span>
-                      )}
-                    </td>
-                    <td
-                      className="px-6 py-4 border-b border-white/5 text-sm max-w-[300px] whitespace-nowrap overflow-hidden text-ellipsis"
-                      title={session.title || ''}
-                    >
-                      {session.title || '-'}
-                    </td>
-                    <td className="px-6 py-4 border-b border-white/5 text-sm">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(session.lifecycle)}`}
-                      >
-                        {getLifecycleLabel(session.lifecycle)}
-                      </span>
-                      <span className="ml-2 text-text-muted text-xs">
-                        {getPhaseLabel(session.phase)} /{' '}
-                        {getStepLabel(session.step)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 border-b border-white/5 text-sm flex gap-2">
-                      {isFailedStatus(session.lifecycle) && (
-                        <button
-                          type="button"
-                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
-                            restartingIssues.has(getIssueKey(session))
-                              ? 'bg-blue-500/20 text-status-running animate-spin'
-                              : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running hover:border-blue-500/30'
-                          }`}
-                          title="重启此任务"
-                          onClick={(e) => restartSession(session, e)}
-                          disabled={restartingIssues.has(getIssueKey(session))}
-                        >
-                          🔄
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border border-transparent transition-all cursor-pointer ${
-                          deletingIssues.has(getIssueKey(session))
-                            ? 'bg-red-500/20 text-red-400 cursor-wait'
-                            : 'bg-white/5 text-text-secondary hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/30'
-                        }`}
-                        title="彻底删除此任务的本地数据"
-                        onClick={(e) => deleteSessionAssets(session, e)}
-                        disabled={deletingIssues.has(getIssueKey(session))}
-                      >
-                        🗑️
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
-        </div>
-      </div>
 
-      {selectedSession && (
-        <div className="fixed inset-0 z-50 animate-[fadeIn_0.2s_ease]">
-          <button
-            type="button"
-            aria-label="Close session details"
-            className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-            onClick={() => setSelectedSession(null)}
-          />
-          <div className="absolute inset-y-0 right-0 bg-bg-secondary border-l border-border-color w-full md:w-[88vw] xl:w-[82vw] max-w-[1280px] flex flex-col shadow-2xl animate-[slideInRight_0.28s_cubic-bezier(0.16,1,0.3,1)]">
-            <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center shrink-0">
-              <h2 className="text-base md:text-xl font-bold truncate mr-2">
-                {selectedSession.owner}/{selectedSession.repo}{' '}
-                <a
-                  href={`https://github.com/${selectedSession.owner}/${selectedSession.repo}/issues/${selectedSession.issueNumber}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-inherit hover:underline"
-                >
-                  #{selectedSession.issueNumber}
-                </a>
-                {selectedSession.hasWorktree && (
-                  <span className="ml-2 opacity-70" title="Worktree exists">
-                    📁
-                  </span>
-                )}
-              </h2>
+          {selectedSession && (
+            <div className="fixed inset-0 z-50 animate-[fadeIn_0.2s_ease]">
               <button
                 type="button"
-                className="bg-transparent border-none text-text-secondary cursor-pointer p-2 rounded-lg transition-colors hover:bg-white/10 hover:text-white shrink-0"
+                aria-label="Close session details"
+                className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
                 onClick={() => setSelectedSession(null)}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 p-4 md:p-6">
-              <div className="h-full min-h-0 flex flex-col gap-4 md:gap-6 lg:grid lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)] lg:gap-6">
-                <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 md:gap-6 pr-0 lg:pr-3">
-                  {selectedDiagnostic &&
-                    isFailedStatus(selectedSession.lifecycle) && (
-                      <div className="flex flex-col gap-3">
-                        <div className="text-text-secondary font-medium text-xs md:text-sm">
-                          Failure Summary
-                        </div>
-                        <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 flex flex-col gap-3">
-                          <div>
-                            <div className="text-sm md:text-base font-semibold text-white">
-                              {selectedDiagnostic.summary}
+              />
+              <div className="absolute inset-y-0 right-0 bg-bg-secondary border-l border-border-color w-full md:w-[88vw] xl:w-[82vw] max-w-[1280px] flex flex-col shadow-2xl animate-[slideInRight_0.28s_cubic-bezier(0.16,1,0.3,1)]">
+                <div className="p-4 md:p-6 border-b border-border-color flex justify-between items-center shrink-0">
+                  <h2 className="text-base md:text-xl font-bold truncate mr-2">
+                    {selectedSession.owner}/{selectedSession.repo}{' '}
+                    <a
+                      href={`https://github.com/${selectedSession.owner}/${selectedSession.repo}/issues/${selectedSession.issueNumber}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-inherit hover:underline"
+                    >
+                      #{selectedSession.issueNumber}
+                    </a>
+                    {selectedSession.hasWorktree && (
+                      <span className="ml-2 opacity-70" title="Worktree exists">
+                        📁
+                      </span>
+                    )}
+                  </h2>
+                  <button
+                    type="button"
+                    className="bg-transparent border-none text-text-secondary cursor-pointer p-2 rounded-lg transition-colors hover:bg-white/10 hover:text-white shrink-0"
+                    onClick={() => setSelectedSession(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 p-4 md:p-6">
+                  <div className="h-full min-h-0 flex flex-col gap-4 md:gap-6 lg:grid lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)] lg:gap-6">
+                    <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 md:gap-6 pr-0 lg:pr-3">
+                      {selectedDiagnostic &&
+                        isFailedStatus(selectedSession.lifecycle) && (
+                          <div className="flex flex-col gap-3">
+                            <div className="text-text-secondary font-medium text-xs md:text-sm">
+                              Failure Summary
                             </div>
-                            <div className="text-xs text-text-muted mt-1">
-                              {selectedDiagnostic.category}
-                              {selectedDiagnostic.phase
-                                ? ` · ${selectedDiagnostic.phase}`
-                                : ''}
-                              {typeof selectedDiagnostic.exitCode === 'number'
-                                ? ` · exit ${selectedDiagnostic.exitCode}`
-                                : ''}
+                            <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 flex flex-col gap-3">
+                              <div>
+                                <div className="text-sm md:text-base font-semibold text-white">
+                                  {selectedDiagnostic.summary}
+                                </div>
+                                <div className="text-xs text-text-muted mt-1">
+                                  {selectedDiagnostic.category}
+                                  {selectedDiagnostic.phase
+                                    ? ` · ${selectedDiagnostic.phase}`
+                                    : ''}
+                                  {typeof selectedDiagnostic.exitCode ===
+                                  'number'
+                                    ? ` · exit ${selectedDiagnostic.exitCode}`
+                                    : ''}
+                                </div>
+                              </div>
+                              {selectedDiagnostic.command && (
+                                <div className="font-mono text-xs md:text-[13px] text-gray-300 whitespace-pre-wrap break-all">
+                                  {selectedDiagnostic.command}
+                                </div>
+                              )}
+                              {selectedDiagnostic.hints.length > 0 && (
+                                <div className="flex flex-col gap-1">
+                                  {selectedDiagnostic.hints.map(
+                                    (hint, index) => (
+                                      <div
+                                        key={hint}
+                                        className="text-xs md:text-sm text-gray-300"
+                                      >
+                                        {index + 1}. {hint}
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
-                          {selectedDiagnostic.command && (
-                            <div className="font-mono text-xs md:text-[13px] text-gray-300 whitespace-pre-wrap break-all">
-                              {selectedDiagnostic.command}
-                            </div>
-                          )}
-                          {selectedDiagnostic.hints.length > 0 && (
-                            <div className="flex flex-col gap-1">
-                              {selectedDiagnostic.hints.map((hint, index) => (
-                                <div
-                                  key={hint}
-                                  className="text-xs md:text-sm text-gray-300"
-                                >
-                                  {index + 1}. {hint}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                  <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">
-                      Title
-                    </span>
-                    <span className="text-sm md:text-base">
-                      {selectedSession.title}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">
-                      Status
-                    </span>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.lifecycle)}`}
-                      >
-                        {getLifecycleLabel(selectedSession.lifecycle)}
-                      </span>
-                      {isFailedStatus(selectedSession.lifecycle) && (
-                        <button
-                          type="button"
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                            restartingIssues.has(getIssueKey(selectedSession))
-                              ? 'bg-blue-500/20 text-status-running border-blue-500/30 cursor-wait'
-                              : 'bg-blue-500/10 text-status-running border-blue-500/30 hover:bg-blue-500/25'
-                          }`}
-                          onClick={() => restartSession(selectedSession)}
-                          disabled={restartingIssues.has(
-                            getIssueKey(selectedSession),
-                          )}
-                        >
-                          🔄{' '}
-                          {restartingIssues.has(getIssueKey(selectedSession))
-                            ? '重启中...'
-                            : '重启'}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                          deletingIssues.has(getIssueKey(selectedSession))
-                            ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
-                            : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
-                        }`}
-                        onClick={() => deleteSessionAssets(selectedSession)}
-                        disabled={deletingIssues.has(
-                          getIssueKey(selectedSession),
                         )}
-                      >
-                        🗑️{' '}
-                        {deletingIssues.has(getIssueKey(selectedSession))
-                          ? '删除中...'
-                          : '彻底删除'}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">
-                      Runtime
-                    </span>
-                    <span className="text-sm md:text-base">
-                      {selectedSession.runtime}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">
-                      Current Step
-                    </span>
-                    <span className="text-sm md:text-base">
-                      {getStepLabel(selectedSession.step)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">
-                      Phase
-                    </span>
-                    <span className="text-sm md:text-base">
-                      {getPhaseLabel(selectedSession.phase)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">
-                      Message
-                    </span>
-                    <span className="text-sm md:text-base">
-                      {selectedSession.message || 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                    <span className="text-text-secondary font-medium text-xs md:text-sm">
-                      Branch
-                    </span>
-                    <span className="text-sm md:text-base">
-                      {getBranchName(selectedSession)}
-                    </span>
-                  </div>
 
-                  {selectedSession.context?.prNumber &&
-                    selectedSession.context?.prUrl && (
                       <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
                         <span className="text-text-secondary font-medium text-xs md:text-sm">
-                          Pull Request
+                          Title
                         </span>
-                        <a
-                          href={selectedSession.context.prUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm md:text-base text-inherit hover:underline"
-                        >
-                          PR #{selectedSession.context.prNumber}
-                        </a>
+                        <span className="text-sm md:text-base">
+                          {selectedSession.title}
+                        </span>
                       </div>
-                    )}
-
-                  {selectedSession.hasWorktree && (
-                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
-                      <span className="text-text-secondary font-medium text-xs md:text-sm">
-                        Worktree
-                      </span>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-sm md:text-base opacity-70">
-                          📁 存在
+                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">
+                          Status
                         </span>
-                        <button
-                          type="button"
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                            cleaningIssues.has(getIssueKey(selectedSession))
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
-                              : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
-                          }`}
-                          onClick={(e) => cleanupWorktree(selectedSession, e)}
-                          disabled={cleaningIssues.has(
-                            getIssueKey(selectedSession),
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize border ${getStatusColor(selectedSession.lifecycle)}`}
+                          >
+                            {getLifecycleLabel(selectedSession.lifecycle)}
+                          </span>
+                          {isFailedStatus(selectedSession.lifecycle) && (
+                            <button
+                              type="button"
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                restartingIssues.has(
+                                  getIssueKey(selectedSession),
+                                )
+                                  ? 'bg-blue-500/20 text-status-running border-blue-500/30 cursor-wait'
+                                  : 'bg-blue-500/10 text-status-running border-blue-500/30 hover:bg-blue-500/25'
+                              }`}
+                              onClick={() => restartSession(selectedSession)}
+                              disabled={restartingIssues.has(
+                                getIssueKey(selectedSession),
+                              )}
+                            >
+                              🔄{' '}
+                              {restartingIssues.has(
+                                getIssueKey(selectedSession),
+                              )
+                                ? '重启中...'
+                                : '重启'}
+                            </button>
                           )}
-                        >
-                          🗑️{' '}
-                          {cleaningIssues.has(getIssueKey(selectedSession))
-                            ? '清理中...'
-                            : '删除 Worktree'}
-                        </button>
+                          <button
+                            type="button"
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              deletingIssues.has(getIssueKey(selectedSession))
+                                ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
+                                : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
+                            }`}
+                            onClick={() => deleteSessionAssets(selectedSession)}
+                            disabled={deletingIssues.has(
+                              getIssueKey(selectedSession),
+                            )}
+                          >
+                            🗑️{' '}
+                            {deletingIssues.has(getIssueKey(selectedSession))
+                              ? '删除中...'
+                              : '彻底删除'}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">
+                          Runtime
+                        </span>
+                        <span className="text-sm md:text-base">
+                          {selectedSession.runtime}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">
+                          Current Step
+                        </span>
+                        <span className="text-sm md:text-base">
+                          {getStepLabel(selectedSession.step)}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">
+                          Phase
+                        </span>
+                        <span className="text-sm md:text-base">
+                          {getPhaseLabel(selectedSession.phase)}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">
+                          Message
+                        </span>
+                        <span className="text-sm md:text-base">
+                          {selectedSession.message || 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                        <span className="text-text-secondary font-medium text-xs md:text-sm">
+                          Branch
+                        </span>
+                        <span className="text-sm md:text-base">
+                          {getBranchName(selectedSession)}
+                        </span>
+                      </div>
 
-                  {selectedSession.error?.message && (
-                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
-                      <span className="text-text-secondary font-medium text-xs md:text-sm">
-                        Error
-                      </span>
-                      <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-status-error overflow-x-auto">
-                        {selectedSession.error.message}
-                      </div>
-                    </div>
-                  )}
+                      {selectedSession.context?.prNumber &&
+                        selectedSession.context?.prUrl && (
+                          <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                            <span className="text-text-secondary font-medium text-xs md:text-sm">
+                              Pull Request
+                            </span>
+                            <a
+                              href={selectedSession.context.prUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm md:text-base text-inherit hover:underline"
+                            >
+                              PR #{selectedSession.context.prNumber}
+                            </a>
+                          </div>
+                        )}
 
-                  {selectedSession.error?.details && (
-                    <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
-                      <span className="text-text-secondary font-medium text-xs md:text-sm">
-                        Crash Log
-                      </span>
-                      <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-white overflow-x-auto">
-                        {selectedSession.error.details}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                      {selectedSession.hasWorktree && (
+                        <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-baseline md:gap-4">
+                          <span className="text-text-secondary font-medium text-xs md:text-sm">
+                            Worktree
+                          </span>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-sm md:text-base opacity-70">
+                              📁 存在
+                            </span>
+                            <button
+                              type="button"
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                cleaningIssues.has(getIssueKey(selectedSession))
+                                  ? 'bg-red-500/20 text-red-400 border-red-500/30 cursor-wait'
+                                  : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25'
+                              }`}
+                              onClick={(e) =>
+                                cleanupWorktree(selectedSession, e)
+                              }
+                              disabled={cleaningIssues.has(
+                                getIssueKey(selectedSession),
+                              )}
+                            >
+                              🗑️{' '}
+                              {cleaningIssues.has(getIssueKey(selectedSession))
+                                ? '清理中...'
+                                : '删除 Worktree'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
-                <div className="min-h-[320px] lg:min-h-0 lg:h-full flex flex-col gap-3 border-t border-white/5 pt-4 lg:pt-0 lg:border-t-0 lg:border-l lg:border-white/5 lg:pl-6">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div>
-                      <div className="text-text-secondary font-medium text-xs md:text-sm">
-                        Session Logs
+                      {selectedSession.error?.message && (
+                        <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
+                          <span className="text-text-secondary font-medium text-xs md:text-sm">
+                            Error
+                          </span>
+                          <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-status-error overflow-x-auto">
+                            {selectedSession.error.message}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedSession.error?.details && (
+                        <div className="flex flex-col gap-1 md:grid md:grid-cols-[140px_1fr] md:items-start md:gap-4">
+                          <span className="text-text-secondary font-medium text-xs md:text-sm">
+                            Crash Log
+                          </span>
+                          <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] whitespace-pre-wrap text-white overflow-x-auto">
+                            {selectedSession.error.details}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-h-[320px] lg:min-h-0 lg:h-full flex flex-col gap-3 border-t border-white/5 pt-4 lg:pt-0 lg:border-t-0 lg:border-l lg:border-white/5 lg:pl-6">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                          <div className="text-text-secondary font-medium text-xs md:text-sm">
+                            Session Logs
+                          </div>
+                          <div className="text-text-muted text-xs mt-1">
+                            Timeline 保持默认打开，便于直接排障。
+                          </div>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          {(
+                            [
+                              'timeline',
+                              'lifecycle',
+                              'conversation',
+                              'diagnostic',
+                            ] as const
+                          ).map((tab) => (
+                            <button
+                              type="button"
+                              key={tab}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                selectedLogTab === tab
+                                  ? 'bg-white/10 text-white border-border-color'
+                                  : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
+                              }`}
+                              onClick={() => setSelectedLogTab(tab)}
+                            >
+                              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="text-text-muted text-xs mt-1">
-                        Timeline 保持默认打开，便于直接排障。
+                      <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] text-gray-300 overflow-auto flex-1 min-h-0 flex flex-col gap-1.5">
+                        {selectedLogTab === 'conversation' ? (
+                          renderConversationTab()
+                        ) : selectedLogsLoading ? (
+                          <div className="p-4 text-text-muted">
+                            Loading logs...
+                          </div>
+                        ) : (
+                          renderUnifiedLogEntries(filteredLogs)
+                        )}
                       </div>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
-                      {(
-                        [
-                          'timeline',
-                          'lifecycle',
-                          'conversation',
-                          'diagnostic',
-                        ] as const
-                      ).map((tab) => (
-                        <button
-                          type="button"
-                          key={tab}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                            selectedLogTab === tab
-                              ? 'bg-white/10 text-white border-border-color'
-                              : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
-                          }`}
-                          onClick={() => setSelectedLogTab(tab)}
-                        >
-                          {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="bg-black border border-border-color rounded-lg p-3 md:p-4 font-mono text-xs md:text-[13px] text-gray-300 overflow-auto flex-1 min-h-0 flex flex-col gap-1.5">
-                    {selectedLogTab === 'conversation' ? (
-                      renderConversationTab()
-                    ) : selectedLogsLoading ? (
-                      <div className="p-4 text-text-muted">Loading logs...</div>
-                    ) : (
-                      renderUnifiedLogEntries(filteredLogs)
-                    )}
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );

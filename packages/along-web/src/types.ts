@@ -152,3 +152,86 @@ export interface ConversationMessage {
   tool_input?: string;
   [key: string]: unknown;
 }
+
+export type TaskStatus = 'planning' | 'planning_approved';
+
+export type TaskThreadStatus =
+  | 'drafting'
+  | 'awaiting_approval'
+  | 'discussing'
+  | 'approved';
+
+export type TaskArtifactType =
+  | 'user_message'
+  | 'plan_revision'
+  | 'planning_update'
+  | 'approval'
+  | 'agent_result';
+
+export interface TaskItemRecord {
+  taskId: string;
+  title: string;
+  body: string;
+  source: string;
+  status: TaskStatus;
+  activeThreadId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskThreadRecord {
+  threadId: string;
+  taskId: string;
+  purpose: 'planning';
+  status: TaskThreadStatus;
+  currentPlanId?: string;
+  openRoundId?: string;
+  approvedPlanId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskArtifactRecord {
+  artifactId: string;
+  taskId: string;
+  threadId: string;
+  type: TaskArtifactType;
+  role: 'user' | 'agent' | 'system';
+  body: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface TaskPlanRevisionRecord {
+  planId: string;
+  taskId: string;
+  threadId: string;
+  version: number;
+  basedOnPlanId?: string;
+  status: 'active' | 'superseded' | 'approved';
+  artifactId: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface TaskFeedbackRoundRecord {
+  roundId: string;
+  taskId: string;
+  threadId: string;
+  basedOnPlanId: string;
+  feedbackArtifactIds: string[];
+  status: 'open' | 'processing' | 'stale_partial' | 'resolved' | 'closed';
+  resolution?: 'answer_only' | 'revise_plan';
+  producedPlanId?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface TaskPlanningSnapshot {
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  artifacts: TaskArtifactRecord[];
+  plans: TaskPlanRevisionRecord[];
+}
