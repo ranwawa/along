@@ -36,6 +36,7 @@ dist/
 .parcel-cache/
 .turbo/
 .vite/
+tmp/
 
 # 日志
 *.log
