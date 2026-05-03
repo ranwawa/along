@@ -5,10 +5,12 @@ import type { Result } from '../core/result';
 
 const planningMocks = vi.hoisted(() => ({
   updateTaskDelivery: vi.fn(),
+  updateTaskRepository: vi.fn(),
 }));
 
 vi.mock('./task-planning', () => ({
   updateTaskDelivery: planningMocks.updateTaskDelivery,
+  updateTaskRepository: planningMocks.updateTaskRepository,
 }));
 
 vi.mock('./worktree-init', () => ({
@@ -67,6 +69,10 @@ describe('task-worktree', () => {
       success: true,
       data: undefined,
     });
+    planningMocks.updateTaskRepository.mockReturnValue({
+      success: true,
+      data: undefined,
+    });
   });
 
   it('为 Task 创建独立 worktree，并把 branch/worktree 写回 Task', async () => {
@@ -120,6 +126,50 @@ describe('task-worktree', () => {
       status: 'planning_approved',
       branchName: result.data.branchName,
       worktreePath,
+    });
+  });
+
+  it('当旧 Task 缺少 owner/repo 时，期望从 git origin 推断并写回 Task', async () => {
+    const worktreePath = path.join(
+      os.tmpdir(),
+      `along-task-worktree-infer-${Date.now()}`,
+      'worktree',
+    );
+    const runner: TaskWorktreeCommandRunner = async (
+      command,
+      args,
+      options,
+    ) => {
+      if (command === 'git' && args.join(' ') === 'remote get-url origin') {
+        expect(options.cwd).toBe('/repo/kinkeeper');
+        return ok('git@github.com:ranwawa/kinkeeper.git');
+      }
+      if (command === 'git' && args[0] === 'rev-parse') return err('not found');
+      return ok('');
+    };
+
+    const result = await prepareTaskWorktree({
+      snapshot: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          repoOwner: undefined,
+          repoName: undefined,
+          seq: undefined,
+          worktreePath,
+        },
+      },
+      repoPath: '/repo/kinkeeper',
+      commandRunner: runner,
+      readDefaultBranch: async () => ok('main'),
+    });
+
+    expect(result.success).toBe(true);
+    expect(planningMocks.updateTaskRepository).toHaveBeenCalledWith({
+      taskId: 'task_123456789abc',
+      repoOwner: 'ranwawa',
+      repoName: 'kinkeeper',
+      cwd: '/repo/kinkeeper',
     });
   });
 });

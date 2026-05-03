@@ -17,6 +17,7 @@ import {
 } from './task-planning';
 import {
   defaultTaskWorktreeCommandRunner,
+  ensureTaskRepository,
   prepareTaskWorktree,
   type TaskWorktreeCommandOptions,
   type TaskWorktreeCommandRunner,
@@ -166,9 +167,19 @@ export async function runTaskDelivery(
     return failure(`当前 Task 状态不能交付: ${snapshot.task.status}`);
   }
 
-  if (!snapshot.task.repoOwner || !snapshot.task.repoName) {
-    return failure('当前 Task 缺少仓库 owner/repo，不能创建 PR');
+  const repositoryRes = await ensureTaskRepository(snapshot, input.cwd, runner);
+  if (!repositoryRes.success) {
+    return failure(`${repositoryRes.error}，不能创建 PR`);
   }
+  const { repoOwner, repoName } = repositoryRes.data;
+  const taskSnapshot = {
+    ...snapshot,
+    task: {
+      ...snapshot.task,
+      repoOwner,
+      repoName,
+    },
+  };
 
   const approvedPlan = snapshot.plans.find(
     (plan) => plan.planId === snapshot.thread.approvedPlanId,
@@ -189,7 +200,7 @@ export async function runTaskDelivery(
   const run = runRes.data;
 
   const worktreeRes = await prepareTaskWorktree({
-    snapshot,
+    snapshot: taskSnapshot,
     repoPath: input.cwd,
     commandRunner: runner,
     readDefaultBranch: input.readDefaultBranch,
@@ -381,7 +392,7 @@ export async function runTaskDelivery(
         'pr',
         'create',
         '--repo',
-        `${snapshot.task.repoOwner}/${snapshot.task.repoName}`,
+        `${repoOwner}/${repoName}`,
         '--head',
         branchName,
         '--base',

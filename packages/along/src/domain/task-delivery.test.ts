@@ -8,6 +8,7 @@ const planningMocks = vi.hoisted(() => ({
   readTaskPlanningSnapshot: vi.fn(),
   recordTaskAgentResult: vi.fn(),
   updateTaskDelivery: vi.fn(),
+  updateTaskRepository: vi.fn(),
 }));
 
 vi.mock('./task-planning', () => ({
@@ -26,6 +27,7 @@ vi.mock('./task-planning', () => ({
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
   updateTaskDelivery: planningMocks.updateTaskDelivery,
+  updateTaskRepository: planningMocks.updateTaskRepository,
 }));
 
 vi.mock('../integration/github-client', () => ({
@@ -101,6 +103,10 @@ describe('task-delivery', () => {
       data: snapshot,
     });
     planningMocks.updateTaskDelivery.mockReturnValue({
+      success: true,
+      data: undefined,
+    });
+    planningMocks.updateTaskRepository.mockReturnValue({
       success: true,
       data: undefined,
     });
@@ -243,5 +249,59 @@ describe('task-delivery', () => {
       taskId: 'task_123456789abc',
       status: 'implemented',
     });
+  });
+
+  it('当旧 Task 缺少 owner/repo 时，期望从 git origin 推断后创建 PR', async () => {
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          repoOwner: undefined,
+          repoName: undefined,
+          seq: undefined,
+        },
+      },
+    });
+
+    const ghCalls: string[][] = [];
+    const runner: TaskDeliveryCommandRunner = async (command, args) => {
+      if (command === 'git' && args.join(' ') === 'remote get-url origin') {
+        return ok('https://github.com/ranwawa/kinkeeper.git');
+      }
+      if (command === 'git' && args[0] === 'status') {
+        return ok(' M packages/client/src/pages/home/list.tsx');
+      }
+      if (command === 'git' && args[0] === 'rev-parse') {
+        if (args.includes('--verify')) return err('not found');
+        return ok('abc123');
+      }
+      if (command === 'gh') {
+        ghCalls.push(args);
+        return ok('https://github.com/ranwawa/kinkeeper/pull/43');
+      }
+      return ok('');
+    };
+
+    const result = await runTaskDelivery({
+      taskId: 'task_123456789abc',
+      cwd: '/tmp/kinkeeper',
+      commandRunner: runner,
+      readToken: async () => ok('token'),
+      readDefaultBranch: async () => ok('main'),
+    });
+
+    expect(result.success).toBe(true);
+    expect(planningMocks.updateTaskRepository).toHaveBeenCalledWith({
+      taskId: 'task_123456789abc',
+      repoOwner: 'ranwawa',
+      repoName: 'kinkeeper',
+      cwd: '/tmp/kinkeeper',
+    });
+    expect(ghCalls[0]).toContain('--repo');
+    expect(ghCalls[0][ghCalls[0].indexOf('--repo') + 1]).toBe(
+      'ranwawa/kinkeeper',
+    );
   });
 });

@@ -382,6 +382,13 @@ export interface UpdateTaskDeliveryInput {
   prNumber?: number;
 }
 
+export interface UpdateTaskRepositoryInput {
+  taskId: string;
+  repoOwner: string;
+  repoName: string;
+  cwd?: string;
+}
+
 interface TaskThreadRow {
   thread_id: string;
   task_id: string;
@@ -2354,6 +2361,40 @@ export function updateTaskDelivery(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`更新 Task Delivery 信息失败: ${message}`);
+  }
+}
+
+export function updateTaskRepository(
+  input: UpdateTaskRepositoryInput,
+): Result<void> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const result = dbRes.data
+      .prepare(
+        `
+          UPDATE task_items
+          SET repo_owner = ?,
+              repo_name = ?,
+              cwd = COALESCE(?, cwd),
+              updated_at = ?
+          WHERE task_id = ?
+        `,
+      )
+      .run(
+        input.repoOwner,
+        input.repoName,
+        input.cwd || null,
+        iso_timestamp(),
+        input.taskId,
+      );
+    return result.changes > 0
+      ? success(undefined)
+      : failure(`Task 不存在: ${input.taskId}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`更新 Task 仓库信息失败: ${message}`);
   }
 }
 

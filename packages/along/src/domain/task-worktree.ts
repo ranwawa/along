@@ -4,7 +4,11 @@ import path from 'node:path';
 import { config } from '../core/config';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
-import { type TaskPlanningSnapshot, updateTaskDelivery } from './task-planning';
+import {
+  type TaskPlanningSnapshot,
+  updateTaskDelivery,
+  updateTaskRepository,
+} from './task-planning';
 import { getDefaultBranch } from './worktree-init';
 
 export interface TaskWorktreeCommandOptions {
@@ -29,6 +33,12 @@ export interface PrepareTaskWorktreeOutput {
   worktreePath: string;
   branchName: string;
   defaultBranch: string;
+}
+
+export interface TaskRepositoryInfo {
+  repoOwner: string;
+  repoName: string;
+  inferred: boolean;
 }
 
 function getErrorOutput(result: ReturnType<typeof spawnSync>): string {
@@ -74,6 +84,57 @@ async function runGit(
   return runner('git', args, { cwd });
 }
 
+function parseGitHubRemoteUrl(
+  remote: string,
+): { repoOwner: string; repoName: string } | null {
+  const trimmed = remote.trim();
+  const match = trimmed.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+  if (!match) return null;
+  return { repoOwner: match[1], repoName: match[2].trim() };
+}
+
+export async function ensureTaskRepository(
+  snapshot: TaskPlanningSnapshot,
+  repoPath: string,
+  runner: TaskWorktreeCommandRunner,
+): Promise<Result<TaskRepositoryInfo>> {
+  if (snapshot.task.repoOwner && snapshot.task.repoName) {
+    return success({
+      repoOwner: snapshot.task.repoOwner,
+      repoName: snapshot.task.repoName,
+      inferred: false,
+    });
+  }
+
+  const remoteRes = await runGit(runner, repoPath, [
+    'remote',
+    'get-url',
+    'origin',
+  ]);
+  if (!remoteRes.success) {
+    return failure(
+      `当前 Task 缺少仓库 owner/repo，且无法读取 git origin: ${remoteRes.error}`,
+    );
+  }
+
+  const parsed = parseGitHubRemoteUrl(remoteRes.data);
+  if (!parsed) {
+    return failure(
+      `当前 Task 缺少仓库 owner/repo，且无法解析 git origin: ${remoteRes.data.trim()}`,
+    );
+  }
+
+  const updateRes = updateTaskRepository({
+    taskId: snapshot.task.taskId,
+    repoOwner: parsed.repoOwner,
+    repoName: parsed.repoName,
+    cwd: repoPath,
+  });
+  if (!updateRes.success) return updateRes;
+
+  return success({ ...parsed, inferred: true });
+}
+
 async function branchExists(
   runner: TaskWorktreeCommandRunner,
   repoPath: string,
@@ -98,7 +159,8 @@ export async function generateTaskBranchName(
 ): Promise<string> {
   const prefix = type || 'feat';
   const slug = slugifyTitle(title);
-  const suffix = seq != null ? `-${seq}` : `-${taskId.replace(/^task_/, '').slice(0, 8)}`;
+  const suffix =
+    seq != null ? `-${seq}` : `-${taskId.replace(/^task_/, '').slice(0, 8)}`;
   const base = `${prefix}/${slug}${suffix}`;
   if (!(await branchExists(runner, repoPath, base))) return base;
 
@@ -129,26 +191,24 @@ export async function prepareTaskWorktree(
   const runner = input.commandRunner || defaultTaskWorktreeCommandRunner;
   const readDefaultBranch = input.readDefaultBranch || getDefaultBranch;
 
-  if (!snapshot.task.repoOwner || !snapshot.task.repoName) {
-    return failure('当前 Task 缺少仓库 owner/repo，不能创建独立 worktree');
+  const repositoryRes = await ensureTaskRepository(
+    snapshot,
+    input.repoPath,
+    runner,
+  );
+  if (!repositoryRes.success) {
+    return failure(`${repositoryRes.error}，不能创建独立 worktree`);
   }
+  const { repoOwner, repoName } = repositoryRes.data;
 
   const defaultBranchRes = await readDefaultBranch(input.repoPath);
   if (!defaultBranchRes.success) return defaultBranchRes;
   const defaultBranch = defaultBranchRes.data;
 
   const taskDir =
-    snapshot.task.seq != null && snapshot.task.repoOwner && snapshot.task.repoName
-      ? config.getTaskDirBySeq(
-          snapshot.task.repoOwner,
-          snapshot.task.repoName,
-          snapshot.task.seq,
-        )
-      : config.getTaskDir(
-          snapshot.task.repoOwner,
-          snapshot.task.repoName,
-          snapshot.task.taskId,
-        );
+    snapshot.task.seq != null
+      ? config.getTaskDirBySeq(repoOwner, repoName, snapshot.task.seq)
+      : config.getTaskDir(repoOwner, repoName, snapshot.task.taskId);
   const worktreePath =
     snapshot.task.worktreePath || path.join(taskDir, 'worktree');
   const branchName =

@@ -182,6 +182,45 @@ describe('task-api', () => {
     ]);
   });
 
+  it('当创建 Task 未带 owner/repo 时，期望从默认 cwd 反查仓库并落库', async () => {
+    const scheduled: unknown[] = [];
+    const response = await handleTaskApiRequest(
+      jsonRequest('/api/tasks', {
+        body: '通过默认仓库创建 planning task。',
+      }),
+      new URL('http://localhost/api/tasks'),
+      {
+        defaultCwd: '/tmp/along/packages/along',
+        resolveRepositoryForPath: (cwd) => {
+          expect(cwd).toBe('/tmp/along/packages/along');
+          return { repoOwner: 'ranwawa', repoName: 'along' };
+        },
+        schedulePlanner: (input) => scheduled.push(input),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    expect(planningMocks.createPlanningTask).toHaveBeenCalledWith({
+      title: '通过默认仓库创建 planning task。',
+      body: '通过默认仓库创建 planning task。',
+      source: 'web',
+      repoOwner: 'ranwawa',
+      repoName: 'along',
+      cwd: '/tmp/along/packages/along',
+    });
+    expect(scheduled).toEqual([
+      {
+        taskId: 'task-1',
+        cwd: '/tmp/along/packages/along',
+        reason: 'task_created',
+        agentId: undefined,
+        editor: undefined,
+        model: undefined,
+        personalityVersion: undefined,
+      },
+    ]);
+  });
+
   it('当追加用户消息时，期望记录消息并调度同一个 Task planner', async () => {
     const scheduled: unknown[] = [];
     const response = await handleTaskApiRequest(

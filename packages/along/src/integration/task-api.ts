@@ -46,6 +46,9 @@ export interface TaskApiContext {
   scheduleImplementation?: (input: ScheduledTaskImplementationRun) => void;
   scheduleDelivery?: (input: ScheduledTaskDeliveryRun) => void;
   resolveRepoPath?: (owner: string, repo: string) => string | undefined;
+  resolveRepositoryForPath?: (
+    cwd: string,
+  ) => Pick<TaskPlanningSnapshot['task'], 'repoOwner' | 'repoName'> | undefined;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -241,11 +244,14 @@ function scheduleDeliveryIfNeeded(
 
 function getTaskRepositoryFields(
   payload: UnknownRecord,
+  context: TaskApiContext,
+  cwd: string,
 ): Pick<TaskPlanningSnapshot['task'], 'repoOwner' | 'repoName'> {
-  return {
-    repoOwner: readStringField(payload, 'owner'),
-    repoName: readStringField(payload, 'repo'),
-  };
+  const repoOwner = readStringField(payload, 'owner');
+  const repoName = readStringField(payload, 'repo');
+  if (repoOwner && repoName) return { repoOwner, repoName };
+
+  return context.resolveRepositoryForPath?.(cwd) || {};
 }
 
 export function isTaskApiPath(pathname: string): boolean {
@@ -277,7 +283,11 @@ export async function handleTaskApiRequest(
 
     const cwdRes = resolveTaskCwd(bodyRes.data, context);
     if (!cwdRes.success) return errorResponse(cwdRes.error, 400);
-    const repository = getTaskRepositoryFields(bodyRes.data);
+    const repository = getTaskRepositoryFields(
+      bodyRes.data,
+      context,
+      cwdRes.data,
+    );
     const createRes = createPlanningTask({
       title: readStringField(bodyRes.data, 'title') || deriveTitle(taskBody),
       body: taskBody,

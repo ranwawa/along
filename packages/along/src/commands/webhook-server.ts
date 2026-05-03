@@ -211,6 +211,28 @@ function listRepositoryOptions(defaultCwd: string): {
   };
 }
 
+function resolveRepositoryForPath(
+  cwd: string,
+): { repoOwner: string; repoName: string } | undefined {
+  const normalizedCwd = path.resolve(cwd);
+  const matches = [...registry.listAll()]
+    .flatMap(([fullName, localPath]) => {
+      const [owner, repo] = fullName.split('/');
+      if (!owner || !repo) return [];
+      const normalizedLocalPath = path.resolve(localPath);
+      const containsCwd =
+        normalizedLocalPath === normalizedCwd ||
+        normalizedCwd.startsWith(`${normalizedLocalPath}${path.sep}`);
+      return containsCwd
+        ? [{ owner, repo, pathLength: normalizedLocalPath.length }]
+        : [];
+    })
+    .sort((left, right) => right.pathLength - left.pathLength);
+
+  const match = matches[0];
+  return match ? { repoOwner: match.owner, repoName: match.repo } : undefined;
+}
+
 function parseIssueLabels(
   labels: GitHubIssuePayload['labels'] | undefined,
 ): string[] {
@@ -1169,6 +1191,7 @@ async function main() {
         return handleTaskApiRequest(req, url, {
           defaultCwd: process.cwd(),
           resolveRepoPath: (owner, repo) => registry.resolve(owner, repo),
+          resolveRepositoryForPath,
           schedulePlanner: enqueueTaskPlanningRun,
           scheduleImplementation: enqueueTaskImplementationRun,
           scheduleDelivery: enqueueTaskDeliveryRun,
