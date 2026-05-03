@@ -227,6 +227,8 @@ function initSchema(db: Database) {
       commit_shas TEXT DEFAULT '[]',
       pr_url TEXT,
       pr_number INTEGER,
+      seq INTEGER,
+      type TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -425,6 +427,13 @@ function initSchema(db: Database) {
   );
   tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN pr_url TEXT');
   tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN pr_number INTEGER');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN seq INTEGER');
+  tryAddColumn(db, 'ALTER TABLE task_items ADD COLUMN type TEXT');
+  try {
+    db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_task_items_repo_seq ON task_items(repo_owner, repo_name, seq)',
+    );
+  } catch {}
 }
 
 function rowToSessionStatus(row: SessionRow): SessionStatus {

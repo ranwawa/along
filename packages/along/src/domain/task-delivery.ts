@@ -76,6 +76,7 @@ async function runGit(
 
 function buildPrBody(input: {
   taskId: string;
+  seq?: number;
   planBody: string;
   changedFiles: string[];
   branchName: string;
@@ -86,7 +87,7 @@ function buildPrBody(input: {
     .join('\n');
 
   return [
-    `along-task: ${input.taskId}`,
+    input.seq != null ? `along-task: #${input.seq}` : `along-task: ${input.taskId}`,
     '',
     '## 修改内容',
     changedFileLines || '- 已按批准方案完成代码实现',
@@ -366,6 +367,7 @@ export async function runTaskDelivery(
 
   const body = buildPrBody({
     taskId: input.taskId,
+    seq: snapshot.task.seq,
     planBody: approvedPlan.body,
     changedFiles,
     branchName,
@@ -385,7 +387,9 @@ export async function runTaskDelivery(
         '--base',
         defaultBranch,
         '--title',
-        `Task: ${normalizeTitle(snapshot.task.title, 90)}`,
+        snapshot.task.seq != null
+          ? `Task #${snapshot.task.seq}: ${normalizeTitle(snapshot.task.title, 80)}`
+          : `Task: ${normalizeTitle(snapshot.task.title, 90)}`,
         '--body-file',
         bodyFile,
       ],

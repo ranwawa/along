@@ -189,6 +189,8 @@ export interface TaskItemRecord {
   commitShas: string[];
   prUrl?: string;
   prNumber?: number;
+  seq?: number;
+  type?: string;
   createdAt: string;
   updatedAt: string;
 }

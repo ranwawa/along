@@ -912,6 +912,11 @@ export function TaskPlanningView() {
                     </span>
                   </div>
                   <div className="font-medium text-sm truncate">
+                    {snapshot.task.seq != null && (
+                      <span className="text-text-muted mr-1">
+                        #{snapshot.task.seq}
+                      </span>
+                    )}
                     {snapshot.task.title}
                   </div>
                   <div className="text-xs text-text-muted truncate mt-1">
@@ -932,11 +937,19 @@ export function TaskPlanningView() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <TaskStatusBadge snapshot={selected} />
+                    {selected.task.type && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                        {selected.task.type}
+                      </span>
+                    )}
                     <span className="text-xs text-text-muted">
                       v{selected.currentPlan?.version || 0}
                     </span>
                   </div>
                   <h2 className="text-lg md:text-xl font-semibold truncate">
+                    {selected.task.seq != null && (
+                      <span className="text-text-muted mr-1">#{selected.task.seq}</span>
+                    )}
                     {selected.task.title}
                   </h2>
                 </div>
@@ -1062,6 +1075,18 @@ export function TaskPlanningView() {
                   <div className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-2 text-sm">
                     <span className="text-text-muted">ID</span>
                     <span className="truncate">{selected.task.taskId}</span>
+                    {selected.task.seq != null && (
+                      <>
+                        <span className="text-text-muted">Seq</span>
+                        <span>#{selected.task.seq}</span>
+                      </>
+                    )}
+                    {selected.task.type && (
+                      <>
+                        <span className="text-text-muted">Type</span>
+                        <span>{selected.task.type}</span>
+                      </>
+                    )}
                     <span className="text-text-muted">Thread</span>
                     <span className="truncate">{selected.thread.threadId}</span>
                     <span className="text-text-muted">Source</span>

@@ -119,6 +119,8 @@ export interface TaskItemRecord {
   commitShas: string[];
   prUrl?: string;
   prNumber?: number;
+  seq?: number;
+  type?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -236,6 +238,7 @@ export interface PublishTaskPlanInput {
   taskId: string;
   body: string;
   agentId?: string;
+  type?: string;
 }
 
 export interface PublishPlanningUpdateInput {
@@ -336,6 +339,8 @@ interface TaskItemRow {
   commit_shas: string | null;
   pr_url: string | null;
   pr_number: number | null;
+  seq: number | null;
+  type: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -483,6 +488,8 @@ function mapTask(row: TaskItemRow): TaskItemRecord {
     commitShas: parseStringArray(row.commit_shas),
     prUrl: row.pr_url || undefined,
     prNumber: row.pr_number || undefined,
+    seq: row.seq || undefined,
+    type: row.type || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -737,12 +744,24 @@ export function createPlanningTask(
     const now = iso_timestamp();
 
     const txn = db.transaction(() => {
+      let seq: number | null = null;
+      if (input.repoOwner && input.repoName) {
+        const maxRow = db
+          .prepare(
+            'SELECT MAX(seq) AS max_seq FROM task_items WHERE repo_owner = ? AND repo_name = ?',
+          )
+          .get(input.repoOwner, input.repoName) as
+          | { max_seq: number | null }
+          | undefined;
+        seq = (maxRow?.max_seq ?? 0) + 1;
+      }
+
       db.prepare(
         `
           INSERT INTO task_items (
             task_id, title, body, source, status, active_thread_id,
-            repo_owner, repo_name, cwd, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            repo_owner, repo_name, cwd, seq, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       ).run(
         taskId,
@@ -754,6 +773,7 @@ export function createPlanningTask(
         input.repoOwner || null,
         input.repoName || null,
         input.cwd || null,
+        seq,
         now,
         now,
       );
@@ -1146,7 +1166,8 @@ export function publishTaskPlanRevision(
         now,
         snapshot.thread.threadId,
       );
-      db.prepare('UPDATE task_items SET updated_at = ? WHERE task_id = ?').run(
+      db.prepare('UPDATE task_items SET type = COALESCE(?, type), updated_at = ? WHERE task_id = ?').run(
+        input.type || null,
         now,
         snapshot.task.taskId,
       );

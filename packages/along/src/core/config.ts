@@ -77,6 +77,13 @@ export const config = {
     return path.join(userAlongDir, owner, repo, 'tasks', taskId);
   },
 
+  /**
+   * 获取基于 seq 的 task 数据目录: ~/.along/{owner}/{repo}/tasks/{seq}/
+   */
+  getTaskDirBySeq(owner: string, repo: string, seq: number): string {
+    return path.join(userAlongDir, owner, repo, 'tasks', String(seq));
+  },
+
   // 确保用户数据根目录存在
   ensureDataDirs() {
     ensureDir(this.USER_ALONG_DIR);
