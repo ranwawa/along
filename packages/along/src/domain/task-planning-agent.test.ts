@@ -13,8 +13,8 @@ vi.mock('./task-planning', () => ({
   publishPlanningUpdate: planningMocks.publishPlanningUpdate,
 }));
 
-vi.mock('./task-claude-runner', () => ({
-  runTaskClaudeTurn: runnerMock,
+vi.mock('./task-agent-runtime', () => ({
+  runTaskAgentTurn: runnerMock,
 }));
 
 import {

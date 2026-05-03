@@ -11,19 +11,30 @@ export interface AgentRoleConfig {
   githubToken: string;
 }
 
-interface AlongGlobalConfig {
+export interface TaskAgentConfig {
+  editor?: string;
+  model?: string;
+  personalityVersion?: string;
+}
+
+export interface AlongGlobalConfig {
   agents?: Record<string, AgentRoleConfig>;
   defaultAgent?: string;
   webhookSecret?: string;
   workspaces?: string[];
+  taskAgents?: Record<string, TaskAgentConfig>;
 }
 
 let cachedConfig: AlongGlobalConfig | null = null;
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * 读取全局配置文件 ~/.along/config.json
  */
-function readGlobalConfig(): Result<AlongGlobalConfig | null> {
+export function readGlobalConfig(): Result<AlongGlobalConfig | null> {
   if (cachedConfig) return success(cachedConfig);
 
   const configFile = config.CONFIG_FILE;
@@ -32,9 +43,26 @@ function readGlobalConfig(): Result<AlongGlobalConfig | null> {
   try {
     cachedConfig = JSON.parse(fs.readFileSync(configFile, 'utf-8'));
     return success(cachedConfig);
-  } catch (e: any) {
-    return failure(`读取全局配置文件失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`读取全局配置文件失败: ${getErrorMessage(error)}`);
   }
+}
+
+export function writeGlobalConfig(
+  input: AlongGlobalConfig,
+): Result<AlongGlobalConfig> {
+  try {
+    config.ensureDataDirs();
+    fs.writeFileSync(config.CONFIG_FILE, `${JSON.stringify(input, null, 2)}\n`);
+    cachedConfig = input;
+    return success(input);
+  } catch (error: unknown) {
+    return failure(`写入全局配置文件失败: ${getErrorMessage(error)}`);
+  }
+}
+
+export function clearGlobalConfigCache() {
+  cachedConfig = null;
 }
 
 /**
@@ -104,4 +132,12 @@ export function getWorkspaces(): string[] | null {
     if (ws && Array.isArray(ws) && ws.length > 0) return ws;
   }
   return null;
+}
+
+export function getTaskAgentConfig(agentId: string): TaskAgentConfig | null {
+  const res = readGlobalConfig();
+  if (!res.success) return null;
+  const taskAgents = res.data?.taskAgents;
+  if (!taskAgents) return null;
+  return taskAgents[agentId] || taskAgents['*'] || null;
 }

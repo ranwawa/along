@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SettingsView } from './SettingsView';
 import { TaskPlanningView } from './TaskPlanningView';
 import type {
   ConversationFileInfo,
@@ -22,7 +23,9 @@ const statusFilters = [
 ] as const;
 
 function App() {
-  const [activeView, setActiveView] = useState<'tasks' | 'sessions'>('tasks');
+  const [activeView, setActiveView] = useState<
+    'tasks' | 'sessions' | 'settings'
+  >('tasks');
   const [sessions, setSessions] = useState<DashboardSession[]>([]);
   const [currentFilter, setCurrentFilter] = useState<string>('all');
   const [selectedSession, setSelectedSession] =
@@ -754,6 +757,17 @@ function App() {
             >
               Sessions
             </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-md text-xs md:text-sm font-semibold transition-all ${
+                activeView === 'settings'
+                  ? 'bg-white/10 text-white'
+                  : 'text-text-secondary hover:bg-white/5'
+              }`}
+              onClick={() => setActiveView('settings')}
+            >
+              Settings
+            </button>
           </div>
           {activeView === 'sessions' &&
             statusFilters.map((filter) => (
@@ -780,6 +794,8 @@ function App() {
 
       {activeView === 'tasks' ? (
         <TaskPlanningView />
+      ) : activeView === 'settings' ? (
+        <SettingsView />
       ) : (
         <>
           <div className="flex-1 min-h-0 px-0 md:px-0">

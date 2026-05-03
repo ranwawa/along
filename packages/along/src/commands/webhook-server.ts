@@ -52,6 +52,10 @@ import { runTaskDelivery } from '../domain/task-delivery';
 import { runTaskImplementationAgent } from '../domain/task-implementation-agent';
 import { runTaskPlanningAgent } from '../domain/task-planning-agent';
 import {
+  handleConfigApiRequest,
+  isConfigApiPath,
+} from '../integration/config-api';
+import {
   get_gh_client,
   syncLifecycleLabel,
 } from '../integration/github-client';
@@ -420,6 +424,7 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
         taskId: input.taskId,
         agentId: input.agentId,
         cwd: input.cwd,
+        editor: input.editor,
         model: input.model,
         personalityVersion: input.personalityVersion,
       });
@@ -444,6 +449,7 @@ function enqueueTaskImplementationRun(input: ScheduledTaskImplementationRun) {
         taskId: input.taskId,
         agentId: input.agentId,
         cwd: input.cwd,
+        editor: input.editor,
         model: input.model,
         personalityVersion: input.personalityVersion,
       });
@@ -1167,6 +1173,11 @@ async function main() {
           scheduleImplementation: enqueueTaskImplementationRun,
           scheduleDelivery: enqueueTaskDeliveryRun,
         });
+      }
+
+      // ── API: /api/config ──
+      if (isConfigApiPath(url.pathname)) {
+        return handleConfigApiRequest(req);
       }
 
       // ── API: /api/repositories ──

@@ -15,6 +15,7 @@ export interface ScheduledTaskPlanningRun {
   cwd: string;
   reason: 'task_created' | 'user_message' | 'manual';
   agentId?: string;
+  editor?: string;
   model?: string;
   personalityVersion?: string;
 }
@@ -24,6 +25,7 @@ export interface ScheduledTaskImplementationRun {
   cwd: string;
   reason: 'manual';
   agentId?: string;
+  editor?: string;
   model?: string;
   personalityVersion?: string;
 }
@@ -161,6 +163,7 @@ function schedulePlannerIfNeeded(
     ...input,
     cwd: cwdRes.data,
     agentId: readStringField(payload, 'agentId'),
+    editor: readStringField(payload, 'editor'),
     model: readStringField(payload, 'model'),
     personalityVersion: readStringField(payload, 'personalityVersion'),
   });
@@ -184,6 +187,7 @@ function scheduleImplementationIfNeeded(
     ...input,
     cwd: cwdRes.data,
     agentId: readStringField(payload, 'agentId'),
+    editor: readStringField(payload, 'editor'),
     model: readStringField(payload, 'model'),
     personalityVersion: readStringField(payload, 'personalityVersion'),
   });

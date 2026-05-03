@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
-import { runTaskClaudeTurn } from './task-claude-runner';
+import { runTaskAgentTurn } from './task-agent-runtime';
 import {
   publishPlanningUpdate,
   publishTaskPlanRevision,
@@ -36,6 +36,7 @@ export interface RunTaskPlanningAgentInput {
   taskId: string;
   agentId?: string;
   cwd: string;
+  editor?: string;
   model?: string;
   personalityVersion?: string;
 }
@@ -171,12 +172,14 @@ export async function runTaskPlanningAgent(
   if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
 
   const prompt = buildPlannerPrompt(snapshot);
-  const result = await runTaskClaudeTurn({
+  const agentId = input.agentId || 'planner';
+  const result = await runTaskAgentTurn({
     taskId: input.taskId,
     threadId: snapshot.thread.threadId,
-    agentId: input.agentId || 'planner',
+    agentId,
     prompt,
     cwd: input.cwd,
+    editor: input.editor,
     model: input.model,
     personalityVersion: input.personalityVersion,
     inputArtifactIds: snapshot.artifacts.map((artifact) => artifact.artifactId),
@@ -209,14 +212,14 @@ export async function runTaskPlanningAgent(
   if (parsed.data.action === 'plan_revision') {
     const publishRes = publishTaskPlanRevision({
       taskId: input.taskId,
-      agentId: input.agentId || 'planner',
+      agentId,
       body: parsed.data.body,
     });
     if (!publishRes.success) return publishRes;
   } else {
     const updateRes = publishPlanningUpdate({
       taskId: input.taskId,
-      agentId: input.agentId || 'planner',
+      agentId,
       body: parsed.data.body,
     });
     if (!updateRes.success) return updateRes;

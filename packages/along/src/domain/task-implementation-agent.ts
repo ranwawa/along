@@ -1,6 +1,6 @@
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
-import { runTaskClaudeTurn } from './task-claude-runner';
+import { runTaskAgentTurn } from './task-agent-runtime';
 import {
   PLAN_STATUS,
   readTaskPlanningSnapshot,
@@ -18,6 +18,7 @@ export interface RunTaskImplementationAgentInput {
   taskId: string;
   agentId?: string;
   cwd: string;
+  editor?: string;
   model?: string;
   personalityVersion?: string;
   commandRunner?: TaskWorktreeCommandRunner;
@@ -122,16 +123,18 @@ export async function runTaskImplementationAgent(
   const startedRes = updateTaskStatus(input.taskId, TASK_STATUS.IMPLEMENTING);
   if (!startedRes.success) return startedRes;
 
-  const result = await runTaskClaudeTurn({
+  const agentId = input.agentId || 'implementer';
+  const result = await runTaskAgentTurn({
     taskId: input.taskId,
     threadId: snapshot.thread.threadId,
-    agentId: input.agentId || 'implementer',
+    agentId,
     prompt: buildImplementationPrompt(
       snapshot,
       approvedPlan,
       worktreeRes.data.worktreePath,
     ),
     cwd: worktreeRes.data.worktreePath,
+    editor: input.editor,
     model: input.model,
     personalityVersion: input.personalityVersion,
     inputArtifactIds: [

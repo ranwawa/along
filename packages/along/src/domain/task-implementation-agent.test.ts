@@ -20,8 +20,8 @@ vi.mock('./task-planning', () => ({
   updateTaskStatus: planningMocks.updateTaskStatus,
 }));
 
-vi.mock('./task-claude-runner', () => ({
-  runTaskClaudeTurn: runnerMock,
+vi.mock('./task-agent-runtime', () => ({
+  runTaskAgentTurn: runnerMock,
 }));
 
 vi.mock('./task-worktree', () => ({
