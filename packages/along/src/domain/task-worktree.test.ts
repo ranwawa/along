@@ -40,6 +40,8 @@ const snapshot = {
     repoName: 'kinkeeper',
     cwd: '/repo/kinkeeper',
     commitShas: [],
+    seq: 42,
+    type: 'fix',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
@@ -100,7 +102,7 @@ describe('task-worktree', () => {
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
     expect(result.data.worktreePath).toBe(worktreePath);
-    expect(result.data.branchName).toMatch(/^along-task\/12345678-/);
+    expect(result.data.branchName).toMatch(/^fix\/.*-42/);
     expect(calls).toContainEqual({
       command: 'git',
       cwd: '/repo/kinkeeper',

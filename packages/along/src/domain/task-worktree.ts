@@ -93,9 +93,13 @@ export async function generateTaskBranchName(
   repoPath: string,
   taskId: string,
   title: string,
+  seq?: number,
+  type?: string,
 ): Promise<string> {
-  const shortId = taskId.replace(/^task_/, '').slice(0, 8);
-  const base = `along-task/${shortId}-${slugifyTitle(title)}`;
+  const prefix = type || 'feat';
+  const slug = slugifyTitle(title);
+  const suffix = seq != null ? `-${seq}` : `-${taskId.replace(/^task_/, '').slice(0, 8)}`;
+  const base = `${prefix}/${slug}${suffix}`;
   if (!(await branchExists(runner, repoPath, base))) return base;
 
   for (let index = 2; index <= 20; index += 1) {
@@ -133,11 +137,18 @@ export async function prepareTaskWorktree(
   if (!defaultBranchRes.success) return defaultBranchRes;
   const defaultBranch = defaultBranchRes.data;
 
-  const taskDir = config.getTaskDir(
-    snapshot.task.repoOwner,
-    snapshot.task.repoName,
-    snapshot.task.taskId,
-  );
+  const taskDir =
+    snapshot.task.seq != null && snapshot.task.repoOwner && snapshot.task.repoName
+      ? config.getTaskDirBySeq(
+          snapshot.task.repoOwner,
+          snapshot.task.repoName,
+          snapshot.task.seq,
+        )
+      : config.getTaskDir(
+          snapshot.task.repoOwner,
+          snapshot.task.repoName,
+          snapshot.task.taskId,
+        );
   const worktreePath =
     snapshot.task.worktreePath || path.join(taskDir, 'worktree');
   const branchName =
@@ -147,6 +158,8 @@ export async function prepareTaskWorktree(
       input.repoPath,
       snapshot.task.taskId,
       snapshot.task.title,
+      snapshot.task.seq,
+      snapshot.task.type,
     ));
 
   fs.mkdirSync(path.dirname(worktreePath), { recursive: true });

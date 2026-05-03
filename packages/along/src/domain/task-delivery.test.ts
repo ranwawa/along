@@ -53,6 +53,8 @@ const snapshot = {
     repoName: 'kinkeeper',
     cwd: '/tmp/kinkeeper',
     commitShas: [],
+    seq: 42,
+    type: 'fix',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
@@ -184,23 +186,23 @@ describe('task-delivery', () => {
     expect(planningMocks.updateTaskDelivery).toHaveBeenNthCalledWith(1, {
       taskId: 'task_123456789abc',
       status: 'implemented',
-      branchName: expect.stringMatching(/^along-task\/12345678-/),
+      branchName: expect.stringMatching(/^fix\/.*-42/),
       worktreePath: expect.stringContaining(
-        '/ranwawa/kinkeeper/tasks/task_123456789abc/worktree',
+        '/ranwawa/kinkeeper/tasks/42/worktree',
       ),
     });
     expect(planningMocks.updateTaskDelivery).toHaveBeenNthCalledWith(2, {
       taskId: 'task_123456789abc',
       status: 'delivering',
-      branchName: expect.stringMatching(/^along-task\/12345678-/),
+      branchName: expect.stringMatching(/^fix\/.*-42/),
       worktreePath: expect.stringContaining(
-        '/ranwawa/kinkeeper/tasks/task_123456789abc/worktree',
+        '/ranwawa/kinkeeper/tasks/42/worktree',
       ),
     });
     expect(planningMocks.updateTaskDelivery).toHaveBeenLastCalledWith({
       taskId: 'task_123456789abc',
       status: 'delivered',
-      branchName: expect.stringMatching(/^along-task\/12345678-/),
+      branchName: expect.stringMatching(/^fix\/.*-42/),
       commitShas: ['abc123'],
       prUrl: 'https://github.com/ranwawa/kinkeeper/pull/42',
       prNumber: 42,
@@ -214,11 +216,11 @@ describe('task-delivery', () => {
       expect.objectContaining({
         command: 'git',
         cwd: expect.stringContaining(
-          '/ranwawa/kinkeeper/tasks/task_123456789abc/worktree',
+          '/ranwawa/kinkeeper/tasks/42/worktree',
         ),
       }),
     );
-    expect(prBody).toContain('along-task: task_123456789abc');
+    expect(prBody).toContain('along-task: #42');
     expect(prBody).not.toMatch(/(?:fixes|closes|resolves)\s+#\d+/i);
   });
 

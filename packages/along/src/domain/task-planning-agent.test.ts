@@ -132,6 +132,20 @@ describe('task-planning-agent', () => {
     });
   });
 
+  it('当 Planner 输出包含 type 字段时，期望解析出 type', () => {
+    const parsed = parseTaskPlannerOutput(
+      '{"action":"plan_revision","body":"## 方案","type":"feat"}',
+    );
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error(parsed.error);
+    expect(parsed.data).toEqual({
+      action: 'plan_revision',
+      body: '## 方案',
+      type: 'feat',
+    });
+  });
+
   it('当 Planner 输出缺少 JSON 时，期望返回失败', () => {
     const parsed = parseTaskPlannerOutput('这里是一段普通文本');
 
@@ -160,6 +174,7 @@ describe('task-planning-agent', () => {
       taskId: 'task-1',
       agentId: 'planner',
       body: '## 方案\n\n先做 API。',
+      type: undefined,
     });
   });
 
@@ -239,7 +254,8 @@ describe('task-planning-agent', () => {
     expect(planningMocks.publishTaskPlanRevision).toHaveBeenCalledWith({
       taskId: 'task-1',
       agentId: 'planner',
-      body: '按钮文案说的是"删除下方的演示数据"。',
+      body: '按钮文案说的是“删除下方的演示数据”。',
+      type: undefined,
     });
   });
 });

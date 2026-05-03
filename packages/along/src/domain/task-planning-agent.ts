@@ -12,6 +12,19 @@ import {
 const PLANNER_OUTPUT_SCHEMA = z.object({
   action: z.enum(['plan_revision', 'planning_update']),
   body: z.string().min(1),
+  type: z
+    .enum([
+      'feat',
+      'fix',
+      'docs',
+      'style',
+      'refactor',
+      'perf',
+      'test',
+      'chore',
+      'ci',
+    ])
+    .optional(),
 });
 
 const PLANNER_OUTPUT_FORMAT_SCHEMA = {
@@ -26,6 +39,20 @@ const PLANNER_OUTPUT_FORMAT_SCHEMA = {
     body: {
       type: 'string',
       minLength: 1,
+    },
+    type: {
+      type: 'string',
+      enum: [
+        'feat',
+        'fix',
+        'docs',
+        'style',
+        'refactor',
+        'perf',
+        'test',
+        'chore',
+        'ci',
+      ],
     },
   },
 };
@@ -117,12 +144,13 @@ function buildPlannerPrompt(snapshot: TaskPlanningSnapshot): string {
     '',
     '要求：',
     '1. 只输出 JSON，不要输出 Markdown、代码块、解释或前后缀文本。',
-    '2. JSON 结构必须是：{"action":"plan_revision"|"planning_update","body":"..."}',
+    '2. JSON 结构必须是：{"action":"plan_revision"|"planning_update","body":"...","type":"feat"|"fix"|...}',
     '3. body 必须是中文，且是最终要落库的正文。',
     '4. action = "plan_revision" 表示你已经给出了正式计划或计划修订。',
     '5. action = "planning_update" 表示你是在回答问题、澄清约束或补充上下文，但还不是正式计划。',
     '6. 如果信息仍然不足以形成正式计划，优先输出 planning_update，明确指出还缺什么。',
     '7. 如果当前已经有 Plan 且存在 open feedback round，优先结合反馈决定是 answer_only 还是 revise_plan 的语义，但输出仍然只用上面的两个 action。',
+    '8. type 字段是可选的 conventional commit 类型（feat/fix/docs/style/refactor/perf/test/chore/ci），当 action 为 plan_revision 时建议提供。',
     '',
     `当前状态: hasCurrentPlan=${hasCurrentPlan}, hasOpenRound=${hasOpenRound}`,
     '',
@@ -214,6 +242,7 @@ export async function runTaskPlanningAgent(
       taskId: input.taskId,
       agentId,
       body: parsed.data.body,
+      type: parsed.data.type,
     });
     if (!publishRes.success) return publishRes;
   } else {
