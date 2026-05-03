@@ -5,6 +5,11 @@ import type {
   TaskAgentStageStatus,
   TaskArtifactRecord,
   TaskArtifactType,
+  TaskFlowAction,
+  TaskFlowActionId,
+  TaskFlowSnapshot,
+  TaskFlowStage,
+  TaskFlowStageState,
   TaskPlanningSnapshot,
   TaskThreadStatus,
 } from './types';
@@ -46,6 +51,11 @@ interface DeliveryRunResponse {
 }
 
 interface ManualCompleteResponse {
+  taskId: string;
+  snapshot: TaskPlanningSnapshot;
+}
+
+interface CompleteTaskResponse {
   taskId: string;
   snapshot: TaskPlanningSnapshot;
 }
@@ -157,6 +167,8 @@ function getTaskStatusLabel(status: string): string {
       return '交付中';
     case 'delivered':
       return '已交付';
+    case 'completed':
+      return '已完成';
     default:
       return status;
   }
@@ -288,15 +300,7 @@ function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
   );
 }
 
-function AgentStageItem({
-  stage,
-  onCopyResume,
-  onManualComplete,
-}: {
-  stage: TaskAgentStageRecord;
-  onCopyResume: (stage: TaskAgentStageRecord) => void;
-  onManualComplete: (stage: TaskAgentStageRecord) => void;
-}) {
+function AgentStageItem({ stage }: { stage: TaskAgentStageRecord }) {
   const run = stage.latestRun;
   const manualResume = stage.manualResume;
   const showManualActions = stage.status === 'failed';
@@ -377,21 +381,9 @@ function AgentStageItem({
             <div className="text-xs text-text-muted">{manualResume.reason}</div>
           )}
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onCopyResume(stage)}
-              disabled={!manualResume?.command}
-              className="px-2.5 py-1.5 rounded-md text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              复制接管命令
-            </button>
-            <button
-              type="button"
-              onClick={() => onManualComplete(stage)}
-              className="px-2.5 py-1.5 rounded-md text-xs font-semibold border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
-            >
-              人工已处理
-            </button>
+            <div className="text-xs text-text-muted">
+              接管和人工标记请使用当前节奏中的可执行操作。
+            </div>
           </div>
         </div>
       )}
@@ -399,15 +391,7 @@ function AgentStageItem({
   );
 }
 
-function AgentStagesPanel({
-  stages,
-  onCopyResume,
-  onManualComplete,
-}: {
-  stages: TaskAgentStageRecord[];
-  onCopyResume: (stage: TaskAgentStageRecord) => void;
-  onManualComplete: (stage: TaskAgentStageRecord) => void;
-}) {
+function AgentStagesPanel({ stages }: { stages: TaskAgentStageRecord[] }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
@@ -421,14 +405,283 @@ function AgentStagesPanel({
       </div>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
         {stages.map((stage) => (
-          <AgentStageItem
-            key={stage.stage}
-            stage={stage}
-            onCopyResume={onCopyResume}
-            onManualComplete={onManualComplete}
-          />
+          <AgentStageItem key={stage.stage} stage={stage} />
         ))}
       </div>
+    </section>
+  );
+}
+
+function getFlowStageStateClass(state: TaskFlowStageState): string {
+  switch (state) {
+    case 'completed':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+    case 'current':
+      return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-100';
+    case 'blocked':
+      return 'border-rose-500/40 bg-rose-500/10 text-rose-100';
+    case 'attention':
+      return 'border-amber-500/40 bg-amber-500/10 text-amber-100';
+    default:
+      return 'border-border-color bg-black/20 text-text-muted';
+  }
+}
+
+function getFlowStageDotClass(state: TaskFlowStageState): string {
+  switch (state) {
+    case 'completed':
+      return 'bg-emerald-400';
+    case 'current':
+      return 'bg-cyan-400';
+    case 'blocked':
+      return 'bg-rose-400';
+    case 'attention':
+      return 'bg-amber-400';
+    default:
+      return 'bg-text-muted';
+  }
+}
+
+function getFlowSeverityClass(severity: TaskFlowSnapshot['severity']): string {
+  switch (severity) {
+    case 'success':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100';
+    case 'warning':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-100';
+    case 'blocked':
+      return 'border-rose-500/30 bg-rose-500/10 text-rose-100';
+    default:
+      return 'border-cyan-500/25 bg-cyan-500/10 text-cyan-100';
+  }
+}
+
+function getFlowActionClass(action: TaskFlowAction): string {
+  if (action.variant === 'danger') {
+    return 'border-rose-500/30 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25';
+  }
+  if (action.variant === 'primary') {
+    return 'border-brand bg-brand text-white hover:bg-brand-hover';
+  }
+  return 'border-border-color text-text-secondary hover:bg-white/5';
+}
+
+function FlowStageItem({ stage }: { stage: TaskFlowStage }) {
+  return (
+    <div
+      className={`min-w-[160px] flex-1 rounded-lg border p-3 ${getFlowStageStateClass(
+        stage.state,
+      )}`}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={`h-2.5 w-2.5 rounded-full shrink-0 ${getFlowStageDotClass(
+            stage.state,
+          )}`}
+        />
+        <span className="text-sm font-semibold">{stage.label}</span>
+      </div>
+      <div className="mt-2 text-xs leading-5 text-text-secondary">
+        {stage.summary}
+      </div>
+      {stage.blocker && (
+        <div className="mt-2 text-xs leading-5 text-rose-200">
+          {stage.blocker}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FlowActionButton({
+  action,
+  busy,
+  onClick,
+}: {
+  action: TaskFlowAction;
+  busy: boolean;
+  onClick: (action: TaskFlowAction) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(action)}
+      disabled={!action.enabled || busy}
+      title={!action.enabled ? action.disabledReason : action.description}
+      className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getFlowActionClass(
+        action,
+      )}`}
+    >
+      {busy ? '处理中' : action.label}
+    </button>
+  );
+}
+
+function TaskFlowPanel({
+  flow,
+  messageBody,
+  busyAction,
+  onMessageChange,
+  onSubmitMessage,
+  onAction,
+}: {
+  flow: TaskFlowSnapshot;
+  messageBody: string;
+  busyAction: string | null;
+  onMessageChange: (value: string) => void;
+  onSubmitMessage: () => void;
+  onAction: (action: TaskFlowAction) => void;
+}) {
+  const submitFeedbackAction = flow.actions.find(
+    (action) => action.id === 'submit_feedback',
+  );
+  const requestRevisionAction = flow.actions.find(
+    (action) => action.id === 'request_revision',
+  );
+  const requestChangesAction = flow.actions.find(
+    (action) => action.id === 'request_changes',
+  );
+  const messageActions = requestChangesAction?.enabled
+    ? [requestChangesAction]
+    : [submitFeedbackAction, requestRevisionAction].filter(
+        (action): action is TaskFlowAction => Boolean(action),
+      );
+  const commandActions = flow.actions.filter(
+    (action) =>
+      !['submit_feedback', 'request_revision', 'request_changes'].includes(
+        action.id,
+      ),
+  );
+  const canSubmitMessage = messageActions.some((action) => action.enabled);
+
+  return (
+    <section className="rounded-lg border border-border-color bg-black/25 p-4 md:p-5 flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
+        <div
+          className={`rounded-lg border px-4 py-3 ${getFlowSeverityClass(
+            flow.severity,
+          )}`}
+        >
+          <div className="text-xs text-text-muted mb-1">当前节奏</div>
+          <div className="text-base font-semibold">{flow.conclusion}</div>
+        </div>
+        {flow.blockers.length > 0 && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs leading-5 text-amber-100">
+            {flow.blockers.map((blocker) => (
+              <div key={blocker}>{blocker}</div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {flow.stages.map((stage) => (
+          <FlowStageItem key={stage.id} stage={stage} />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)] gap-4">
+        <div className="flex flex-col gap-3">
+          <div className="text-sm font-semibold text-text-secondary">
+            可执行操作
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {commandActions.map((action) => (
+              <FlowActionButton
+                key={action.id}
+                action={action}
+                busy={Boolean(busyAction)}
+                onClick={onAction}
+              />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {flow.actions
+              .filter((action) => !action.enabled && action.disabledReason)
+              .map((action) => (
+                <div
+                  key={action.id}
+                  className="rounded-md border border-border-color bg-black/20 px-3 py-2 text-xs leading-5 text-text-muted"
+                >
+                  <span className="text-text-secondary">{action.label}</span>
+                  ：{action.disabledReason}
+                </div>
+              ))}
+          </div>
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmitMessage();
+          }}
+          className="flex flex-col gap-3"
+        >
+          <div className="text-sm font-semibold text-text-secondary">
+            讨论与修改
+          </div>
+          <textarea
+            value={messageBody}
+            onChange={(event) => onMessageChange(event.target.value)}
+            placeholder="补充反馈、继续提问或说明交付后的修改要求"
+            rows={5}
+            disabled={!canSubmitMessage}
+            className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
+          />
+          <div className="flex flex-wrap gap-2">
+            {messageActions.map((action) => (
+              <button
+                key={action.id}
+                type="submit"
+                disabled={
+                  !action.enabled ||
+                  !messageBody.trim() ||
+                  Boolean(busyAction)
+                }
+                title={
+                  !action.enabled
+                    ? action.disabledReason
+                    : !messageBody.trim()
+                      ? '先输入内容'
+                      : action.description
+                }
+                className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getFlowActionClass(
+                  action,
+                )}`}
+              >
+                {busyAction === 'message' ? '发送中' : action.label}
+              </button>
+            ))}
+          </div>
+        </form>
+      </div>
+
+      <details className="rounded-lg border border-border-color bg-black/20">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-text-secondary">
+          历史流转
+        </summary>
+        <div className="px-4 pb-4 flex flex-col gap-2">
+          {flow.events.length === 0 ? (
+            <div className="text-sm text-text-muted">暂无历史事件。</div>
+          ) : (
+            flow.events.map((event) => (
+              <div
+                key={event.eventId}
+                className="grid grid-cols-[86px_1fr] gap-3 rounded-md border border-white/5 bg-black/20 px-3 py-2 text-xs"
+              >
+                <span className="text-text-muted">
+                  {formatTime(event.occurredAt)}
+                </span>
+                <span className="min-w-0">
+                  <span className="text-text-secondary">{event.title}</span>
+                  {event.summary && (
+                    <span className="text-text-muted"> · {event.summary}</span>
+                  )}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </details>
     </section>
   );
 }
@@ -548,17 +801,20 @@ export function TaskPlanningView() {
     return repositories.find((repo) => repo.fullName === draft.repository);
   }, [draft.repository, repositories]);
 
+  const getSelectedFlowAction = useCallback(
+    (id: TaskFlowActionId): TaskFlowAction | undefined => {
+      return selected?.flow.actions.find((action) => action.id === id);
+    },
+    [selected],
+  );
+
   const canApprove = Boolean(
-    selected?.currentPlan &&
-      !selected.openRound &&
-      selected.thread.status !== 'approved',
+    getSelectedFlowAction('approve_plan')?.enabled,
   );
   const canImplement = Boolean(
-    selected?.thread.approvedPlanId &&
-      selected.task.status === 'planning_approved',
+    getSelectedFlowAction('start_implementation')?.enabled,
   );
-  const canDeliver = selected?.task.status === 'implemented';
-  const canReply = selected?.thread.status !== 'approved';
+  const canDeliver = Boolean(getSelectedFlowAction('start_delivery')?.enabled);
 
   const updateDraft = (key: keyof DraftTaskInput, value: string) => {
     setDraft((previous) => ({ ...previous, [key]: value }));
@@ -615,11 +871,8 @@ export function TaskPlanningView() {
     }
   };
 
-  const submitMessage = async (event: FormEvent) => {
-    event.preventDefault();
+  const sendTaskMessage = async (body: string) => {
     if (!selected || busyAction) return;
-    const body = messageBody.trim();
-    if (!body) return;
 
     setBusyAction('message');
     setError(null);
@@ -647,6 +900,12 @@ export function TaskPlanningView() {
     } finally {
       setBusyAction(null);
     }
+  };
+
+  const submitMessageFromFlow = async () => {
+    const body = messageBody.trim();
+    if (!body) return;
+    await sendTaskMessage(body);
   };
 
   const approvePlan = async () => {
@@ -747,6 +1006,30 @@ export function TaskPlanningView() {
     }
   };
 
+  const completeTask = async () => {
+    if (!selected || busyAction) return;
+
+    setBusyAction('accept_delivery');
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/tasks/${selected.task.taskId}/complete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      );
+      const result = await readJsonResponse<CompleteTaskResponse>(response);
+      setSelectedSnapshot(result.snapshot);
+      setTasks((previous) => mergeSnapshotIntoList(previous, result.snapshot));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const copyManualResumeCommand = async (stage: TaskAgentStageRecord) => {
     const command = stage.manualResume?.command;
     if (!command) return;
@@ -795,6 +1078,42 @@ export function TaskPlanningView() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyAction(null);
+    }
+  };
+
+  const handleFlowAction = (action: TaskFlowAction) => {
+    if (!selected || !action.enabled || busyAction) return;
+    const failedStage = getLatestFailedStage(selected);
+
+    switch (action.id) {
+      case 'approve_plan':
+        void approvePlan();
+        break;
+      case 'rerun_planner':
+        void rerunPlanner();
+        break;
+      case 'start_implementation':
+        void startImplementation();
+        break;
+      case 'copy_resume_command':
+        if (failedStage) void copyManualResumeCommand(failedStage);
+        break;
+      case 'manual_complete':
+        if (failedStage) void completeManualStage(failedStage);
+        break;
+      case 'start_delivery':
+        void startDelivery();
+        break;
+      case 'accept_delivery':
+        void completeTask();
+        break;
+      case 'submit_feedback':
+      case 'request_revision':
+      case 'request_changes':
+        void submitMessageFromFlow();
+        break;
+      default:
+        break;
     }
   };
 
@@ -953,45 +1272,24 @@ export function TaskPlanningView() {
                     {selected.task.title}
                   </h2>
                 </div>
-                <div className="flex gap-2 shrink-0 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    onClick={rerunPlanner}
-                    disabled={Boolean(busyAction)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {busyAction === 'planner' ? '排队中' : '重新规划'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={approvePlan}
-                    disabled={!canApprove || Boolean(busyAction)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {busyAction === 'approve' ? '处理中' : '批准方案'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startImplementation}
-                    disabled={!canImplement || Boolean(busyAction)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-cyan-500/30 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {busyAction === 'implementation' ? '排队中' : '开始实现'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startDelivery}
-                    disabled={!canDeliver || Boolean(busyAction)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-violet-500/30 bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {busyAction === 'delivery' ? '排队中' : '提交并创建 PR'}
-                  </button>
+                <div className="shrink-0 text-right text-xs text-text-muted">
+                  <div>{formatTime(selected.task.updatedAt)}</div>
+                  <div>{getTaskStatusLabel(selected.task.status)}</div>
                 </div>
               </div>
             </div>
 
             <div className="flex-1 min-h-0 overflow-auto p-4 md:p-6 grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-5">
               <div className="min-w-0 flex flex-col gap-5">
+                <TaskFlowPanel
+                  flow={selected.flow}
+                  messageBody={messageBody}
+                  busyAction={busyAction}
+                  onMessageChange={setMessageBody}
+                  onSubmitMessage={submitMessageFromFlow}
+                  onAction={handleFlowAction}
+                />
+
                 <section className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-text-secondary">
@@ -1016,11 +1314,7 @@ export function TaskPlanningView() {
                   </div>
                 </section>
 
-                <AgentStagesPanel
-                  stages={selected.agentStages || []}
-                  onCopyResume={copyManualResumeCommand}
-                  onManualComplete={completeManualStage}
-                />
+                <AgentStagesPanel stages={selected.agentStages || []} />
 
                 <section className="flex flex-col gap-3">
                   <h3 className="text-sm font-semibold text-text-secondary">
@@ -1042,32 +1336,6 @@ export function TaskPlanningView() {
               </div>
 
               <aside className="min-w-0 flex flex-col gap-4">
-                <form
-                  onSubmit={submitMessage}
-                  className="rounded-lg border border-border-color bg-black/25 p-4 flex flex-col gap-3"
-                >
-                  <div className="font-semibold text-sm text-text-secondary">
-                    继续讨论
-                  </div>
-                  <textarea
-                    value={messageBody}
-                    onChange={(event) => setMessageBody(event.target.value)}
-                    placeholder="继续澄清或反馈"
-                    rows={8}
-                    disabled={!canReply}
-                    className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={
-                      !messageBody.trim() || !canReply || Boolean(busyAction)
-                    }
-                    className="px-3 py-2 rounded-lg text-sm font-semibold bg-brand text-white border border-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {busyAction === 'message' ? '发送中' : '发送'}
-                  </button>
-                </form>
-
                 <div className="rounded-lg border border-border-color bg-black/25 p-4 flex flex-col gap-3">
                   <div className="font-semibold text-sm text-text-secondary">
                     任务信息

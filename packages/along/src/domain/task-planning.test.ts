@@ -151,6 +151,7 @@ const mockDbState = vi.hoisted(() => {
             repoOwner,
             repoName,
             cwd,
+            seq,
             createdAt,
             updatedAt,
           ] = args;
@@ -164,6 +165,13 @@ const mockDbState = vi.hoisted(() => {
             repo_owner: repoOwner,
             repo_name: repoName,
             cwd,
+            worktree_path: null,
+            branch_name: null,
+            commit_shas: '[]',
+            pr_url: null,
+            pr_number: null,
+            seq,
+            type: null,
             created_at: createdAt,
             updated_at: updatedAt,
           });
@@ -575,6 +583,7 @@ vi.mock('../core/db', () => ({
 import {
   AGENT_RUN_STATUS,
   approveCurrentTaskPlan,
+  completeDeliveredTask,
   createPlanningTask,
   createTaskAgentRun,
   ensureTaskAgentBinding,
@@ -590,6 +599,7 @@ import {
   TASK_STATUS,
   THREAD_STATUS,
   updateTaskAgentProviderSession,
+  updateTaskStatus,
 } from './task-planning';
 
 function createTaskWithPlan() {
@@ -633,6 +643,12 @@ describe('task-planning', () => {
       'user_message',
       'plan_revision',
     ]);
+    expect(snapshot.data.flow.currentStageId).toBe('plan_confirmation');
+    expect(snapshot.data.flow.conclusion).toBe('等待你确认计划。');
+    expect(
+      snapshot.data.flow.actions.find((action) => action.id === 'approve_plan')
+        ?.enabled,
+    ).toBe(true);
   });
 
   it('当首版计划前需要澄清时，期望记录 Planning Update 并保持可继续讨论', () => {
@@ -659,6 +675,7 @@ describe('task-planning', () => {
     expect(snapshot.data.currentPlan).toBeNull();
     expect(snapshot.data.openRound).toBeNull();
     expect(snapshot.data.thread.status).toBe(THREAD_STATUS.DISCUSSING);
+    expect(snapshot.data.flow.currentStageId).toBe('plan_discussion');
     expect(snapshot.data.artifacts.map((item) => item.type)).toEqual([
       'user_message',
       'planning_update',
@@ -706,6 +723,22 @@ describe('task-planning', () => {
       throw new Error('missing snapshot');
     expect(snapshot.data.task.status).toBe(TASK_STATUS.PLANNING_APPROVED);
     expect(snapshot.data.thread.status).toBe(THREAD_STATUS.APPROVED);
+  });
+
+  it('当已交付任务验收完成时，期望流程进入任务完成阶段', () => {
+    const { taskId } = createTaskWithPlan();
+    const approve = approveCurrentTaskPlan(taskId);
+    expect(approve.success).toBe(true);
+
+    const delivered = updateTaskStatus(taskId, TASK_STATUS.DELIVERED);
+    expect(delivered.success).toBe(true);
+
+    const completed = completeDeliveredTask(taskId);
+    expect(completed.success).toBe(true);
+    if (!completed.success) throw new Error(completed.error);
+    expect(completed.data.task.status).toBe(TASK_STATUS.COMPLETED);
+    expect(completed.data.flow.currentStageId).toBe('completed');
+    expect(completed.data.flow.conclusion).toBe('任务已完成，关键产物已归档。');
   });
 
   it('当反馈改变执行约束时，期望生成新版计划并批准新版计划', () => {

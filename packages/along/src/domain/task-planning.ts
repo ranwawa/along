@@ -11,6 +11,7 @@ export const TASK_STATUS = {
   IMPLEMENTED: 'implemented',
   DELIVERING: 'delivering',
   DELIVERED: 'delivered',
+  COMPLETED: 'completed',
 } as const;
 
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
@@ -209,6 +210,85 @@ export interface TaskAgentStageRecord {
   manualResume?: TaskAgentManualResume;
 }
 
+export type TaskFlowStageId =
+  | 'requirements'
+  | 'plan_discussion'
+  | 'plan_confirmation'
+  | 'implementation'
+  | 'delivery'
+  | 'completed';
+
+export type TaskFlowStageState =
+  | 'pending'
+  | 'current'
+  | 'completed'
+  | 'blocked'
+  | 'attention';
+
+export type TaskFlowActionId =
+  | 'submit_feedback'
+  | 'approve_plan'
+  | 'request_revision'
+  | 'rerun_planner'
+  | 'start_implementation'
+  | 'copy_resume_command'
+  | 'manual_complete'
+  | 'start_delivery'
+  | 'accept_delivery'
+  | 'request_changes';
+
+export type TaskFlowEventType =
+  | 'task_created'
+  | 'user_feedback'
+  | 'plan_revision'
+  | 'plan_approved'
+  | 'feedback_round'
+  | 'agent_run_started'
+  | 'agent_run_succeeded'
+  | 'agent_run_failed'
+  | 'delivery_updated'
+  | 'task_completed';
+
+export interface TaskFlowAction {
+  id: TaskFlowActionId;
+  label: string;
+  description: string;
+  enabled: boolean;
+  disabledReason?: string;
+  stage: TaskFlowStageId;
+  variant: 'primary' | 'secondary' | 'danger';
+}
+
+export interface TaskFlowStage {
+  id: TaskFlowStageId;
+  label: string;
+  summary: string;
+  state: TaskFlowStageState;
+  blocker?: string;
+  details: string[];
+  startedAt?: string;
+  endedAt?: string;
+}
+
+export interface TaskFlowEvent {
+  eventId: string;
+  type: TaskFlowEventType;
+  stage: TaskFlowStageId;
+  title: string;
+  summary?: string;
+  occurredAt: string;
+}
+
+export interface TaskFlowSnapshot {
+  currentStageId: TaskFlowStageId;
+  conclusion: string;
+  severity: 'normal' | 'warning' | 'blocked' | 'success';
+  stages: TaskFlowStage[];
+  actions: TaskFlowAction[];
+  blockers: string[];
+  events: TaskFlowEvent[];
+}
+
 export interface TaskPlanningSnapshot {
   task: TaskItemRecord;
   thread: TaskThreadRecord;
@@ -218,6 +298,7 @@ export interface TaskPlanningSnapshot {
   plans: TaskPlanRevisionRecord[];
   agentRuns: TaskAgentRunRecord[];
   agentStages: TaskAgentStageRecord[];
+  flow: TaskFlowSnapshot;
 }
 
 export interface CreatePlanningTaskInput {
@@ -605,6 +686,682 @@ function buildTaskAgentStages(
   });
 }
 
+const TASK_FLOW_STAGE_ORDER: TaskFlowStageId[] = [
+  'requirements',
+  'plan_discussion',
+  'plan_confirmation',
+  'implementation',
+  'delivery',
+  'completed',
+];
+
+const TASK_FLOW_STAGE_LABELS: Record<TaskFlowStageId, string> = {
+  requirements: '需求接收',
+  plan_discussion: '计划讨论',
+  plan_confirmation: '计划确认',
+  implementation: '实现执行',
+  delivery: '结果交付',
+  completed: '任务完成',
+};
+
+function isLongRunning(run: TaskAgentRunRecord): boolean {
+  const startedAt = new Date(run.startedAt).getTime();
+  if (Number.isNaN(startedAt)) return false;
+  return Date.now() - startedAt > 30 * 60 * 1000;
+}
+
+function getStageByAgentStage(
+  stages: TaskAgentStageRecord[],
+  stage: TaskAgentStage,
+): TaskAgentStageRecord | undefined {
+  return stages.find((item) => item.stage === stage);
+}
+
+function getLatestFailedAgentStage(
+  stages: TaskAgentStageRecord[],
+): TaskAgentStageRecord | undefined {
+  return stages
+    .filter((stage) => stage.status === AGENT_RUN_STATUS.FAILED)
+    .sort((left, right) =>
+      (
+        right.latestRun?.endedAt ||
+        right.latestRun?.startedAt ||
+        ''
+      ).localeCompare(left.latestRun?.endedAt || left.latestRun?.startedAt || ''),
+    )[0];
+}
+
+function getCurrentTaskFlowStageId(input: {
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  agentStages: TaskAgentStageRecord[];
+}): TaskFlowStageId {
+  if (input.task.status === TASK_STATUS.COMPLETED) return 'completed';
+  if (input.task.status === TASK_STATUS.DELIVERED) return 'delivery';
+  if (input.openRound) return 'plan_discussion';
+
+  const failedStage = getLatestFailedAgentStage(input.agentStages);
+  if (failedStage?.stage === TASK_AGENT_STAGE.PLANNING) {
+    return 'plan_discussion';
+  }
+  if (failedStage?.stage === TASK_AGENT_STAGE.IMPLEMENTATION) {
+    return 'implementation';
+  }
+  if (failedStage?.stage === TASK_AGENT_STAGE.DELIVERY) {
+    return 'delivery';
+  }
+
+  const planningStage = getStageByAgentStage(
+    input.agentStages,
+    TASK_AGENT_STAGE.PLANNING,
+  );
+  if (
+    !input.currentPlan &&
+    (input.thread.status === THREAD_STATUS.DRAFTING ||
+      planningStage?.status === AGENT_RUN_STATUS.RUNNING)
+  ) {
+    return planningStage?.status === AGENT_RUN_STATUS.RUNNING
+      ? 'plan_discussion'
+      : 'requirements';
+  }
+  if (input.thread.status === THREAD_STATUS.AWAITING_APPROVAL) {
+    return 'plan_confirmation';
+  }
+  if (input.task.status === TASK_STATUS.IMPLEMENTING) return 'implementation';
+
+  const implementationStage = getStageByAgentStage(
+    input.agentStages,
+    TASK_AGENT_STAGE.IMPLEMENTATION,
+  );
+  if (implementationStage?.status === AGENT_RUN_STATUS.RUNNING) {
+    return 'implementation';
+  }
+  if (input.task.status === TASK_STATUS.IMPLEMENTED) return 'delivery';
+  if (input.task.status === TASK_STATUS.DELIVERING) return 'delivery';
+
+  const deliveryStage = getStageByAgentStage(
+    input.agentStages,
+    TASK_AGENT_STAGE.DELIVERY,
+  );
+  if (deliveryStage?.status === AGENT_RUN_STATUS.RUNNING) return 'delivery';
+  if (input.task.status === TASK_STATUS.PLANNING_APPROVED) {
+    return 'implementation';
+  }
+  return input.currentPlan ? 'plan_confirmation' : 'plan_discussion';
+}
+
+function getAgentRunFailureSummary(run: TaskAgentRunRecord): string {
+  if (!run.error) return 'Agent 运行失败，需要人工查看运行记录后接管。';
+  const firstLine = run.error
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return 'Agent 运行失败，需要人工查看运行记录后接管。';
+  return firstLine.length > 120 ? `${firstLine.slice(0, 120)}...` : firstLine;
+}
+
+function buildTaskFlowConclusion(input: {
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  failedStage?: TaskAgentStageRecord;
+  runningStage?: TaskAgentStageRecord;
+}): Pick<TaskFlowSnapshot, 'conclusion' | 'severity'> {
+  if (input.task.status === TASK_STATUS.COMPLETED) {
+    return { conclusion: '任务已完成，关键产物已归档。', severity: 'success' };
+  }
+  if (input.task.status === TASK_STATUS.DELIVERED) {
+    return {
+      conclusion: '结果已交付，等待验收或继续修改。',
+      severity: 'success',
+    };
+  }
+  if (input.failedStage?.latestRun) {
+    return {
+      conclusion: `${input.failedStage.label}失败，需要人工接管。`,
+      severity: 'blocked',
+    };
+  }
+  if (input.openRound) {
+    return {
+      conclusion: '当前反馈轮次已打开，等待 Planner 处理你的补充反馈。',
+      severity: 'warning',
+    };
+  }
+  if (input.runningStage?.latestRun) {
+    const attention = isLongRunning(input.runningStage.latestRun);
+    return {
+      conclusion: attention
+        ? `${input.runningStage.label}运行时间较长，需要关注或人工接管。`
+        : `${input.runningStage.label}正在执行。`,
+      severity: attention ? 'warning' : 'normal',
+    };
+  }
+  if (
+    input.thread.status === THREAD_STATUS.AWAITING_APPROVAL &&
+    input.currentPlan
+  ) {
+    return { conclusion: '等待你确认计划。', severity: 'normal' };
+  }
+  if (input.task.status === TASK_STATUS.PLANNING_APPROVED) {
+    return { conclusion: '计划已确认，可以开始实现。', severity: 'normal' };
+  }
+  if (input.task.status === TASK_STATUS.IMPLEMENTED) {
+    return { conclusion: '实现已完成，可以提交并创建 PR。', severity: 'normal' };
+  }
+  if (input.task.status === TASK_STATUS.DELIVERING) {
+    return { conclusion: '交付流程正在处理。', severity: 'normal' };
+  }
+  if (!input.currentPlan) {
+    return { conclusion: '需求已接收，等待 Planner 输出计划。', severity: 'normal' };
+  }
+  return { conclusion: '任务正在计划流程中。', severity: 'normal' };
+}
+
+function buildTaskFlowAction(
+  input: Omit<TaskFlowAction, 'enabled'> & {
+    enabled: boolean;
+    disabledReason?: string;
+  },
+): TaskFlowAction {
+  return {
+    id: input.id,
+    label: input.label,
+    description: input.description,
+    enabled: input.enabled,
+    disabledReason: input.enabled ? undefined : input.disabledReason,
+    stage: input.stage,
+    variant: input.variant,
+  };
+}
+
+function buildTaskFlowActions(input: {
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  agentStages: TaskAgentStageRecord[];
+}): TaskFlowAction[] {
+  const failedStage = getLatestFailedAgentStage(input.agentStages);
+  const implementationStage = getStageByAgentStage(
+    input.agentStages,
+    TASK_AGENT_STAGE.IMPLEMENTATION,
+  );
+  const deliveryStage = getStageByAgentStage(
+    input.agentStages,
+    TASK_AGENT_STAGE.DELIVERY,
+  );
+  const canSubmitFeedback =
+    input.thread.status !== THREAD_STATUS.APPROVED ||
+    input.task.status === TASK_STATUS.DELIVERED ||
+    input.task.status === TASK_STATUS.COMPLETED;
+  const canApprove = Boolean(
+    input.currentPlan &&
+      !input.openRound &&
+      input.thread.status !== THREAD_STATUS.APPROVED,
+  );
+  const canImplement = Boolean(
+    input.thread.approvedPlanId &&
+      input.task.status === TASK_STATUS.PLANNING_APPROVED &&
+      implementationStage?.status !== AGENT_RUN_STATUS.RUNNING,
+  );
+  const canDeliver = Boolean(
+    input.task.status === TASK_STATUS.IMPLEMENTED &&
+      deliveryStage?.status !== AGENT_RUN_STATUS.RUNNING,
+  );
+  const canAcceptDelivery = input.task.status === TASK_STATUS.DELIVERED;
+  const failedResumeReason = failedStage?.manualResume?.command
+    ? undefined
+    : failedStage?.manualResume?.reason || '当前没有失败阶段可接管';
+  const failedFlowStage: TaskFlowStageId =
+    failedStage?.stage === TASK_AGENT_STAGE.PLANNING
+      ? 'plan_discussion'
+      : failedStage?.stage === TASK_AGENT_STAGE.DELIVERY
+        ? 'delivery'
+        : 'implementation';
+
+  return [
+    buildTaskFlowAction({
+      id: 'submit_feedback',
+      label: input.openRound ? '补充当前反馈' : '继续讨论',
+      description: input.openRound
+        ? `反馈会进入当前轮次 ${input.openRound.roundId}`
+        : '补充需求、提问或说明验收后的修改要求',
+      enabled: canSubmitFeedback,
+      disabledReason: '当前已进入实现链路，不能再直接修改计划讨论',
+      stage: 'plan_discussion',
+      variant: 'secondary',
+    }),
+    buildTaskFlowAction({
+      id: 'approve_plan',
+      label: '批准计划',
+      description: '确认当前计划并进入实现准备',
+      enabled: canApprove,
+      disabledReason: input.openRound
+        ? '当前仍有开放反馈轮次'
+        : input.currentPlan
+          ? '计划已经批准'
+          : '当前还没有可批准的计划',
+      stage: 'plan_confirmation',
+      variant: 'primary',
+    }),
+    buildTaskFlowAction({
+      id: 'request_revision',
+      label: '要求修订',
+      description: '提交反馈并要求 Planner 产出新版计划',
+      enabled: Boolean(
+        input.currentPlan && input.thread.status !== THREAD_STATUS.APPROVED,
+      ),
+      disabledReason: input.currentPlan
+        ? '计划已批准，不能在此阶段要求修订'
+        : '当前还没有可修订的计划',
+      stage: 'plan_confirmation',
+      variant: 'secondary',
+    }),
+    buildTaskFlowAction({
+      id: 'rerun_planner',
+      label: '重新规划',
+      description: '重新调度 Planner 处理当前上下文',
+      enabled: input.task.status === TASK_STATUS.PLANNING,
+      disabledReason: '当前不处于计划阶段',
+      stage: 'plan_discussion',
+      variant: failedStage?.stage === TASK_AGENT_STAGE.PLANNING ? 'danger' : 'secondary',
+    }),
+    buildTaskFlowAction({
+      id: 'start_implementation',
+      label: '开始实现',
+      description: '按已批准计划启动 Implementation Agent',
+      enabled: canImplement,
+      disabledReason: input.thread.approvedPlanId
+        ? input.task.status === TASK_STATUS.IMPLEMENTING
+          ? '实现 Agent 正在执行'
+          : '当前 Task 状态不能开始实现'
+        : '当前没有已批准计划',
+      stage: 'implementation',
+      variant: 'primary',
+    }),
+    buildTaskFlowAction({
+      id: 'copy_resume_command',
+      label: '复制接管命令',
+      description: '复制失败阶段的本地接管命令',
+      enabled: Boolean(failedStage?.manualResume?.command),
+      disabledReason: failedResumeReason,
+      stage: failedFlowStage,
+      variant: 'secondary',
+    }),
+    buildTaskFlowAction({
+      id: 'manual_complete',
+      label: '人工已处理',
+      description: '将失败阶段标记为已由人工处理',
+      enabled: Boolean(failedStage),
+      disabledReason: '当前没有失败阶段需要人工标记',
+      stage: failedFlowStage,
+      variant: 'primary',
+    }),
+    buildTaskFlowAction({
+      id: 'start_delivery',
+      label: '提交并创建 PR',
+      description: '将已实现结果提交到分支并创建 PR',
+      enabled: canDeliver,
+      disabledReason:
+        input.task.status === TASK_STATUS.IMPLEMENTED
+          ? 'Delivery Agent 正在执行'
+          : '只有实现完成后才能交付',
+      stage: 'delivery',
+      variant: 'primary',
+    }),
+    buildTaskFlowAction({
+      id: 'accept_delivery',
+      label: '验收完成',
+      description: '确认交付结果并结束任务',
+      enabled: canAcceptDelivery,
+      disabledReason: '只有已交付任务可以验收完成',
+      stage: 'completed',
+      variant: 'primary',
+    }),
+    buildTaskFlowAction({
+      id: 'request_changes',
+      label: '继续修改',
+      description: '基于交付结果重新打开讨论',
+      enabled:
+        input.task.status === TASK_STATUS.DELIVERED ||
+        input.task.status === TASK_STATUS.COMPLETED,
+      disabledReason: '只有交付后才能发起继续修改',
+      stage: 'delivery',
+      variant: 'secondary',
+    }),
+  ];
+}
+
+function getTaskFlowStageSummary(input: {
+  stageId: TaskFlowStageId;
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  agentStages: TaskAgentStageRecord[];
+}): string {
+  const agentStage =
+    input.stageId === 'plan_discussion'
+      ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.PLANNING)
+      : input.stageId === 'implementation'
+        ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.IMPLEMENTATION)
+        : input.stageId === 'delivery'
+          ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.DELIVERY)
+          : undefined;
+
+  if (agentStage?.status === AGENT_RUN_STATUS.FAILED) {
+    return `${agentStage.label}失败`;
+  }
+  if (agentStage?.status === AGENT_RUN_STATUS.RUNNING) {
+    return agentStage.latestRun && isLongRunning(agentStage.latestRun)
+      ? '运行时间较长'
+      : '正在运行';
+  }
+
+  switch (input.stageId) {
+    case 'requirements':
+      return '任务目标和上下文已记录';
+    case 'plan_discussion':
+      if (input.openRound) return `开放反馈轮次 ${input.openRound.roundId}`;
+      return input.currentPlan ? '计划已产出' : '等待计划输出';
+    case 'plan_confirmation':
+      return input.thread.status === THREAD_STATUS.AWAITING_APPROVAL
+        ? '等待用户确认'
+        : input.thread.approvedPlanId
+          ? '计划已确认'
+          : '尚未进入确认';
+    case 'implementation':
+      if (input.task.status === TASK_STATUS.IMPLEMENTED) return '实现已完成';
+      if (input.task.status === TASK_STATUS.PLANNING_APPROVED) {
+        return '等待启动实现';
+      }
+      return '等待计划批准';
+    case 'delivery':
+      if (input.task.status === TASK_STATUS.DELIVERED) return '结果已交付';
+      if (input.task.status === TASK_STATUS.IMPLEMENTED) return '等待交付';
+      if (input.task.status === TASK_STATUS.DELIVERING) return '交付中';
+      return '等待实现完成';
+    case 'completed':
+      return input.task.status === TASK_STATUS.COMPLETED
+        ? '任务已完成'
+        : '等待验收';
+    default:
+      return TASK_FLOW_STAGE_LABELS[input.stageId];
+  }
+}
+
+function buildTaskFlowStageDetails(input: {
+  stageId: TaskFlowStageId;
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  plans: TaskPlanRevisionRecord[];
+  agentStages: TaskAgentStageRecord[];
+}): string[] {
+  const details: string[] = [];
+  if (input.stageId === 'requirements') {
+    details.push(`来源：${input.task.source}`);
+    if (input.task.repoOwner && input.task.repoName) {
+      details.push(`仓库：${input.task.repoOwner}/${input.task.repoName}`);
+    }
+  }
+  if (input.stageId === 'plan_discussion') {
+    details.push(`计划版本数：${input.plans.length}`);
+    if (input.openRound) {
+      details.push(`反馈数：${input.openRound.feedbackArtifactIds.length}`);
+    }
+  }
+  if (input.stageId === 'plan_confirmation' && input.currentPlan) {
+    details.push(`当前计划：v${input.currentPlan.version}`);
+  }
+  if (input.stageId === 'implementation') {
+    const stage = getStageByAgentStage(
+      input.agentStages,
+      TASK_AGENT_STAGE.IMPLEMENTATION,
+    );
+    if (stage?.latestRun) details.push(`最近运行：${stage.latestRun.runId}`);
+    if (input.task.worktreePath) details.push(`工作目录：${input.task.worktreePath}`);
+  }
+  if (input.stageId === 'delivery') {
+    if (input.task.branchName) details.push(`分支：${input.task.branchName}`);
+    if (input.task.prUrl) details.push(`PR：${input.task.prUrl}`);
+  }
+  if (input.stageId === 'completed') {
+    if (input.task.prUrl) details.push(`最终 PR：${input.task.prUrl}`);
+    if (input.task.commitShas.length > 0) {
+      details.push(`Commit：${input.task.commitShas.join(', ')}`);
+    }
+  }
+  return details;
+}
+
+function buildTaskFlowStages(input: {
+  currentStageId: TaskFlowStageId;
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  plans: TaskPlanRevisionRecord[];
+  agentStages: TaskAgentStageRecord[];
+}): TaskFlowStage[] {
+  const currentIndex = TASK_FLOW_STAGE_ORDER.indexOf(input.currentStageId);
+  const failedStage = getLatestFailedAgentStage(input.agentStages);
+
+  return TASK_FLOW_STAGE_ORDER.map((stageId, index) => {
+    let state: TaskFlowStageState =
+      index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'pending';
+    let blocker: string | undefined;
+
+    if (
+      stageId === input.currentStageId &&
+      failedStage &&
+      ((stageId === 'plan_discussion' &&
+        failedStage.stage === TASK_AGENT_STAGE.PLANNING) ||
+        (stageId === 'implementation' &&
+          failedStage.stage === TASK_AGENT_STAGE.IMPLEMENTATION) ||
+        (stageId === 'delivery' && failedStage.stage === TASK_AGENT_STAGE.DELIVERY))
+    ) {
+      state = 'blocked';
+      blocker = failedStage.latestRun
+        ? getAgentRunFailureSummary(failedStage.latestRun)
+        : `${failedStage.label}失败`;
+    } else {
+      const runningStage =
+        stageId === 'plan_discussion'
+          ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.PLANNING)
+          : stageId === 'implementation'
+            ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.IMPLEMENTATION)
+            : stageId === 'delivery'
+              ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.DELIVERY)
+              : undefined;
+      if (
+        stageId === input.currentStageId &&
+        runningStage?.status === AGENT_RUN_STATUS.RUNNING &&
+        runningStage.latestRun &&
+        isLongRunning(runningStage.latestRun)
+      ) {
+        state = 'attention';
+        blocker = '运行时间超过 30 分钟，可能需要确认运行状态或人工接管。';
+      }
+    }
+
+    return {
+      id: stageId,
+      label: TASK_FLOW_STAGE_LABELS[stageId],
+      summary: getTaskFlowStageSummary({ stageId, ...input }),
+      state,
+      blocker,
+      details: buildTaskFlowStageDetails({ stageId, ...input }),
+      startedAt: stageId === 'requirements' ? input.task.createdAt : undefined,
+      endedAt:
+        state === 'completed'
+          ? stageId === 'requirements'
+            ? input.thread.createdAt
+            : input.task.updatedAt
+          : undefined,
+    };
+  });
+}
+
+function buildTaskFlowEvents(input: {
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  artifacts: TaskArtifactRecord[];
+  plans: TaskPlanRevisionRecord[];
+  agentRuns: TaskAgentRunRecord[];
+}): TaskFlowEvent[] {
+  const events: TaskFlowEvent[] = [
+    {
+      eventId: `task:${input.task.taskId}`,
+      type: 'task_created',
+      stage: 'requirements',
+      title: '任务已创建',
+      summary: input.task.title,
+      occurredAt: input.task.createdAt,
+    },
+  ];
+
+  for (const artifact of input.artifacts) {
+    if (artifact.type === ARTIFACT_TYPE.USER_MESSAGE) {
+      events.push({
+        eventId: artifact.artifactId,
+        type: 'user_feedback',
+        stage: 'plan_discussion',
+        title: '用户补充反馈',
+        summary: artifact.body.slice(0, 120),
+        occurredAt: artifact.createdAt,
+      });
+    }
+    if (artifact.type === ARTIFACT_TYPE.APPROVAL) {
+      events.push({
+        eventId: artifact.artifactId,
+        type: 'plan_approved',
+        stage: 'plan_confirmation',
+        title: '计划已批准',
+        summary: artifact.body,
+        occurredAt: artifact.createdAt,
+      });
+    }
+  }
+
+  for (const plan of input.plans) {
+    events.push({
+      eventId: plan.planId,
+      type: 'plan_revision',
+      stage: 'plan_confirmation',
+      title: `计划 v${plan.version}`,
+      summary: plan.status,
+      occurredAt: plan.createdAt,
+    });
+  }
+
+  for (const run of input.agentRuns) {
+    const stage =
+      run.agentId === 'planner'
+        ? 'plan_discussion'
+        : run.agentId === 'delivery'
+          ? 'delivery'
+          : 'implementation';
+    events.push({
+      eventId: `${run.runId}:start`,
+      type: 'agent_run_started',
+      stage,
+      title: `${run.agentId} 开始运行`,
+      summary: `${run.provider} / ${run.runId}`,
+      occurredAt: run.startedAt,
+    });
+    if (run.endedAt) {
+      events.push({
+        eventId: `${run.runId}:end`,
+        type:
+          run.status === AGENT_RUN_STATUS.FAILED
+            ? 'agent_run_failed'
+            : 'agent_run_succeeded',
+        stage,
+        title:
+          run.status === AGENT_RUN_STATUS.FAILED
+            ? `${run.agentId} 运行失败`
+            : `${run.agentId} 运行完成`,
+        summary:
+          run.status === AGENT_RUN_STATUS.FAILED
+            ? getAgentRunFailureSummary(run)
+            : undefined,
+        occurredAt: run.endedAt,
+      });
+    }
+  }
+
+  if (input.task.prUrl) {
+    events.push({
+      eventId: `delivery:${input.task.taskId}`,
+      type: 'delivery_updated',
+      stage: 'delivery',
+      title: '结果已交付',
+      summary: input.task.prUrl,
+      occurredAt: input.task.updatedAt,
+    });
+  }
+  if (input.task.status === TASK_STATUS.COMPLETED) {
+    events.push({
+      eventId: `completed:${input.task.taskId}`,
+      type: 'task_completed',
+      stage: 'completed',
+      title: '任务已完成',
+      occurredAt: input.task.updatedAt,
+    });
+  }
+
+  return events.sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+}
+
+function buildTaskFlowSnapshot(input: {
+  task: TaskItemRecord;
+  thread: TaskThreadRecord;
+  currentPlan: TaskPlanRevisionRecord | null;
+  openRound: TaskFeedbackRoundRecord | null;
+  artifacts: TaskArtifactRecord[];
+  plans: TaskPlanRevisionRecord[];
+  agentRuns: TaskAgentRunRecord[];
+  agentStages: TaskAgentStageRecord[];
+}): TaskFlowSnapshot {
+  const currentStageId = getCurrentTaskFlowStageId(input);
+  const failedStage = getLatestFailedAgentStage(input.agentStages);
+  const runningStage = input.agentStages.find(
+    (stage) => stage.status === AGENT_RUN_STATUS.RUNNING,
+  );
+  const conclusion = buildTaskFlowConclusion({
+    failedStage,
+    runningStage,
+    ...input,
+  });
+  const stages = buildTaskFlowStages({ currentStageId, ...input });
+  const blockers = stages
+    .map((stage) => stage.blocker)
+    .filter((blocker): blocker is string => Boolean(blocker));
+
+  if (!input.task.cwd && !input.task.worktreePath) {
+    blockers.push('缺少工作目录，Agent 调度或人工接管可能无法定位仓库。');
+  }
+  if (failedStage?.manualResume?.reason) {
+    blockers.push(failedStage.manualResume.reason);
+  }
+
+  return {
+    currentStageId,
+    conclusion: conclusion.conclusion,
+    severity: conclusion.severity,
+    stages,
+    actions: buildTaskFlowActions(input),
+    blockers: [...new Set(blockers)],
+    events: buildTaskFlowEvents(input),
+  };
+}
+
 function buildManualResume(
   provider?: string,
   cwd?: string,
@@ -881,18 +1638,34 @@ export function readTaskPlanningSnapshot(
       )
       .all(threadRow.thread_id) as TaskAgentRunRow[];
     const task = mapTask(taskRow);
+    const thread = mapThread(threadRow);
+    const currentPlan = currentPlanRow ? mapPlan(currentPlanRow) : null;
+    const openRound = openRoundRow ? mapRound(openRoundRow) : null;
+    const artifacts = artifactRows.map(mapArtifact);
+    const plans = planRows.map(mapPlan);
     const agentBindings = bindingRows.map(mapBinding);
     const agentRuns = runRows.map(mapRun);
+    const agentStages = buildTaskAgentStages(agentRuns, agentBindings, task);
 
     return success({
       task,
-      thread: mapThread(threadRow),
-      currentPlan: currentPlanRow ? mapPlan(currentPlanRow) : null,
-      openRound: openRoundRow ? mapRound(openRoundRow) : null,
-      artifacts: artifactRows.map(mapArtifact),
-      plans: planRows.map(mapPlan),
+      thread,
+      currentPlan,
+      openRound,
+      artifacts,
+      plans,
       agentRuns,
-      agentStages: buildTaskAgentStages(agentRuns, agentBindings, task),
+      agentStages,
+      flow: buildTaskFlowSnapshot({
+        task,
+        thread,
+        currentPlan,
+        openRound,
+        artifacts,
+        plans,
+        agentRuns,
+        agentStages,
+      }),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -945,7 +1718,15 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
   if (!thread)
     return failure(`Task 不存在或缺少 active thread: ${input.taskId}`);
   if (thread.status === THREAD_STATUS.APPROVED) {
-    return failure('当前 Planning 已批准，不能继续提交反馈');
+    const taskRow = db
+      .prepare('SELECT * FROM task_items WHERE task_id = ?')
+      .get(input.taskId) as TaskItemRow | null;
+    if (
+      taskRow?.status !== TASK_STATUS.DELIVERED &&
+      taskRow?.status !== TASK_STATUS.COMPLETED
+    ) {
+      return failure('当前 Planning 已批准，不能继续提交反馈');
+    }
   }
 
   try {
@@ -1053,6 +1834,11 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
         now,
         thread.task_id,
       );
+      if (thread.status === THREAD_STATUS.APPROVED) {
+        db.prepare(
+          'UPDATE task_items SET status = ?, updated_at = ? WHERE task_id = ?',
+        ).run(TASK_STATUS.PLANNING, now, thread.task_id);
+      }
       roundResult = mapRound(roundRow);
     });
 
@@ -1370,6 +2156,56 @@ export function approveCurrentTaskPlan(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`批准 Task Plan 失败: ${message}`);
+  }
+}
+
+export function completeDeliveredTask(
+  taskId: string,
+): Result<TaskPlanningSnapshot> {
+  const snapshotRes = readTaskPlanningSnapshot(taskId);
+  if (!snapshotRes.success) return snapshotRes;
+  const snapshot = snapshotRes.data;
+  if (!snapshot) return failure(`Task 不存在: ${taskId}`);
+  if (snapshot.task.status === TASK_STATUS.COMPLETED) return success(snapshot);
+  if (snapshot.task.status !== TASK_STATUS.DELIVERED) {
+    return failure('只有已交付 Task 可以验收完成');
+  }
+
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const now = iso_timestamp();
+    const txn = dbRes.data.transaction(() => {
+      insertArtifact({
+        taskId: snapshot.task.taskId,
+        threadId: snapshot.thread.threadId,
+        type: ARTIFACT_TYPE.APPROVAL,
+        role: ARTIFACT_ROLE.USER,
+        body: '交付已验收，任务完成。',
+        metadata: {
+          kind: 'delivery_acceptance',
+          prUrl: snapshot.task.prUrl,
+          prNumber: snapshot.task.prNumber,
+        },
+        createdAt: now,
+      });
+      dbRes.data
+        .prepare(
+          'UPDATE task_items SET status = ?, updated_at = ? WHERE task_id = ?',
+        )
+        .run(TASK_STATUS.COMPLETED, now, snapshot.task.taskId);
+    });
+
+    txn();
+    const refreshedSnapshotRes = readTaskPlanningSnapshot(taskId);
+    if (!refreshedSnapshotRes.success) return refreshedSnapshotRes;
+    return refreshedSnapshotRes.data
+      ? success(refreshedSnapshotRes.data)
+      : failure(`Task ${taskId} 验收后读取快照失败`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`完成 Task 失败: ${message}`);
   }
 }
 

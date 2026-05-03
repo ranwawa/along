@@ -2,6 +2,7 @@ import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
   approveCurrentTaskPlan,
+  completeDeliveredTask,
   completeTaskAgentStageManually,
   createPlanningTask,
   listTaskPlanningSnapshots,
@@ -442,6 +443,16 @@ export async function handleTaskApiRequest(
       prUrl: readStringField(bodyRes.data, 'prUrl'),
       prNumber: readOptionalPositiveIntField(bodyRes.data, 'prNumber'),
     });
+    if (!completeRes.success) return errorResponse(completeRes.error, 409);
+
+    return jsonResponse({
+      taskId,
+      snapshot: completeRes.data,
+    });
+  }
+
+  if (action === 'complete' && req.method === 'POST') {
+    const completeRes = completeDeliveredTask(taskId);
     if (!completeRes.success) return errorResponse(completeRes.error, 409);
 
     return jsonResponse({

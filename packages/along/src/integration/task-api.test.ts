@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const planningMocks = vi.hoisted(() => ({
   approveCurrentTaskPlan: vi.fn(),
+  completeDeliveredTask: vi.fn(),
   completeTaskAgentStageManually: vi.fn(),
   createPlanningTask: vi.fn(),
   listTaskPlanningSnapshots: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('../domain/task-planning', () => ({
     DELIVERY: 'delivery',
   },
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
+  completeDeliveredTask: planningMocks.completeDeliveredTask,
   completeTaskAgentStageManually: planningMocks.completeTaskAgentStageManually,
   createPlanningTask: planningMocks.createPlanningTask,
   listTaskPlanningSnapshots: planningMocks.listTaskPlanningSnapshots,
@@ -115,6 +117,16 @@ describe('task-api', () => {
         task: {
           ...snapshot.task,
           status: 'implemented',
+        },
+      },
+    });
+    planningMocks.completeDeliveredTask.mockReturnValue({
+      success: true,
+      data: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          status: 'completed',
         },
       },
     });
@@ -397,6 +409,22 @@ describe('task-api', () => {
       prUrl: undefined,
       prNumber: undefined,
     });
+  });
+
+  it('当验收已交付 Task 时，期望返回完成后的 snapshot', async () => {
+    const response = await handleTaskApiRequest(
+      jsonRequest('/api/tasks/task-1/complete', {}),
+      new URL('http://localhost/api/tasks/task-1/complete'),
+      { defaultCwd: '/tmp/default' },
+    );
+    const payload = (await response.json()) as {
+      taskId: string;
+      snapshot: typeof snapshot;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.taskId).toBe('task-1');
+    expect(planningMocks.completeDeliveredTask).toHaveBeenCalledWith('task-1');
   });
 
   it('当读取不存在的 Task 时，期望返回 404', async () => {
