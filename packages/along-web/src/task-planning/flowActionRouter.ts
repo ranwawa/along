@@ -32,9 +32,23 @@ export function runFlowAction(
     void actions.submitMessageFromFlow();
   else if (action.id === 'copy_resume_command' && failedStage) {
     void actions.copyManualResumeCommand(failedStage);
+  } else if (action.id === 'resume_failed_stage' && failedStage) {
+    void resumeFailedStage(failedStage, actions.runSimpleAction);
   } else if (action.id === 'manual_complete' && failedStage) {
     void actions.completeManualStage(failedStage);
   } else runStageAction(action.id, input, actions.runSimpleAction);
+}
+
+function resumeFailedStage(
+  stage: TaskAgentStageRecord,
+  runSimpleAction: FlowActionParts['runSimpleAction'],
+) {
+  const pathByStage: Record<TaskAgentStageRecord['stage'], string> = {
+    planning: 'planner',
+    implementation: 'implementation',
+    delivery: 'delivery',
+  };
+  runSimpleAction(`resume-${stage.stage}`, pathByStage[stage.stage], true);
 }
 
 function runStageAction(

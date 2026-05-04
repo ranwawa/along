@@ -242,6 +242,12 @@ describe('task-claude-runner', () => {
     });
 
     expect(result.success).toBe(false);
+    expect(planningMocks.updateTaskAgentProviderSession).toHaveBeenCalledWith(
+      'thread-1',
+      'planner',
+      'claude',
+      'session-2',
+    );
     expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: 'run-1',

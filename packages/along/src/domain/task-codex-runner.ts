@@ -115,6 +115,14 @@ function failCodexTurn(
   providerSessionIdAtEnd?: string,
 ): Result<never> {
   const message = getErrorMessage(error);
+  if (providerSessionIdAtEnd) {
+    updateTaskAgentProviderSession(
+      context.threadId,
+      context.agentId,
+      PROVIDER,
+      providerSessionIdAtEnd,
+    );
+  }
   const failedRes = markTaskAgentFailed(
     context,
     message,

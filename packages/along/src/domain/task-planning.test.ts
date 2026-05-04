@@ -106,6 +106,26 @@ const mockDbState = vi.hoisted(() => {
         if (normalized === 'SELECT * FROM task_agent_runs WHERE run_id = ?') {
           return state.runs.find((row) => row.run_id === args[0]) || null;
         }
+        if (
+          normalized.includes('SELECT provider_session_id_at_end') &&
+          normalized.includes('FROM task_agent_runs')
+        ) {
+          return (
+            state.runs
+              .filter(
+                (row) =>
+                  row.thread_id === args[0] &&
+                  row.agent_id === args[1] &&
+                  row.provider === args[2] &&
+                  row.provider_session_id_at_end,
+              )
+              .sort((left, right) =>
+                String(right.ended_at || right.started_at).localeCompare(
+                  String(left.ended_at || left.started_at),
+                ),
+              )[0] || null
+          );
+        }
         return null;
       },
       all: (...args: Array<string | number | null>) => {
@@ -518,6 +538,7 @@ const mockDbState = vi.hoisted(() => {
             model,
             personalityVersion,
             shouldResetProviderSession,
+            fallbackProviderSession,
             updatedAt,
             threadId,
             agentId,
@@ -535,6 +556,7 @@ const mockDbState = vi.hoisted(() => {
             row.personality_version =
               personalityVersion || row.personality_version;
             if (shouldResetProviderSession) row.provider_session_id = null;
+            else row.provider_session_id ||= fallbackProviderSession;
             row.updated_at = updatedAt;
           }
           return { changes: row ? 1 : 0 };
@@ -882,6 +904,51 @@ describe('task-planning', () => {
     expect(nextBinding.success).toBe(true);
     if (!nextBinding.success) throw new Error(nextBinding.error);
     expect(nextBinding.data.providerSessionId).toBe('session-1');
+  });
+
+  it('当 Binding 缺少 session 但失败 run 有结束 session 时，期望下次绑定可恢复该 session', () => {
+    const { taskId } = createTaskWithPlan();
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+
+    const binding = ensureTaskAgentBinding({
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'implementer',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    });
+    expect(binding.success).toBe(true);
+    if (!binding.success) throw new Error(binding.error);
+    expect(binding.data.providerSessionId).toBeUndefined();
+
+    const run = createTaskAgentRun({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'implementer',
+      provider: 'codex',
+    });
+    expect(run.success).toBe(true);
+    if (!run.success) throw new Error(run.error);
+
+    const failed = finishTaskAgentRun({
+      runId: run.data.runId,
+      status: AGENT_RUN_STATUS.FAILED,
+      providerSessionIdAtEnd: 'codex-thread-failed',
+      error: 'provider failed',
+    });
+    expect(failed.success).toBe(true);
+
+    const nextBinding = ensureTaskAgentBinding({
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'implementer',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    });
+    expect(nextBinding.success).toBe(true);
+    if (!nextBinding.success) throw new Error(nextBinding.error);
+    expect(nextBinding.data.providerSessionId).toBe('codex-thread-failed');
   });
 
   it('当 Agent Binding 的 cwd 变化时，期望清空旧 provider session', () => {

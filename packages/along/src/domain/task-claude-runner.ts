@@ -152,6 +152,14 @@ function processClaudeMessage(
   if (output !== undefined) state.structuredOutput = output;
   const error = getResultError(message);
   if (!error) return success(undefined);
+  if (state.latestSessionId) {
+    updateTaskAgentProviderSession(
+      context.threadId,
+      context.agentId,
+      PROVIDER,
+      state.latestSessionId,
+    );
+  }
   const failedRes = markTaskAgentFailed(context, error, state.latestSessionId);
   return failedRes.success ? failure(error) : failure(failedRes.error);
 }
@@ -196,6 +204,14 @@ function failClaudeTurn(
   providerSessionIdAtEnd?: string,
 ): Result<never> {
   const message = error instanceof Error ? error.message : String(error);
+  if (providerSessionIdAtEnd) {
+    updateTaskAgentProviderSession(
+      context.threadId,
+      context.agentId,
+      PROVIDER,
+      providerSessionIdAtEnd,
+    );
+  }
   const failedRes = markTaskAgentFailed(
     context,
     message,

@@ -173,6 +173,7 @@ export type TaskFlowActionId =
   | 'request_revision'
   | 'rerun_planner'
   | 'start_implementation'
+  | 'resume_failed_stage'
   | 'copy_resume_command'
   | 'manual_complete'
   | 'start_delivery'

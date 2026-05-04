@@ -261,6 +261,7 @@ export type TaskFlowActionId =
   | 'request_revision'
   | 'rerun_planner'
   | 'start_implementation'
+  | 'resume_failed_stage'
   | 'copy_resume_command'
   | 'manual_complete'
   | 'start_delivery'
@@ -547,6 +548,10 @@ interface TaskAgentProgressEventRow {
 
 interface TaskIdRow {
   task_id: string;
+}
+
+interface LatestProviderSessionRow {
+  provider_session_id_at_end: string;
 }
 
 function generateId(prefix: string): string {
@@ -1076,6 +1081,17 @@ function buildTaskFlowActions(input: {
           : '当前 Task 状态不能开始实现'
         : '当前没有已批准计划',
       stage: 'implementation',
+      variant: 'primary',
+    }),
+    buildTaskFlowAction({
+      id: 'resume_failed_stage',
+      label: '继续执行',
+      description: failedStage
+        ? `恢复 ${failedStage.label} 的失败会话并继续执行`
+        : '恢复最近失败阶段并继续执行',
+      enabled: Boolean(failedStage),
+      disabledReason: '当前没有失败阶段可继续执行',
+      stage: failedFlowStage,
       variant: 'primary',
     }),
     buildTaskFlowAction({
@@ -2381,13 +2397,23 @@ export function ensureTaskAgentBinding(
       const shouldResetProviderSession = Boolean(
         input.cwd && existing.cwd && input.cwd !== existing.cwd,
       );
+      const fallbackProviderSession = shouldResetProviderSession
+        ? undefined
+        : readLatestRunProviderSession(
+            input.threadId,
+            input.agentId,
+            input.provider,
+          );
       db.prepare(
         `
           UPDATE task_agent_bindings
           SET cwd = COALESCE(?, cwd),
               model = COALESCE(?, model),
               personality_version = COALESCE(?, personality_version),
-              provider_session_id = CASE WHEN ? THEN NULL ELSE provider_session_id END,
+              provider_session_id = CASE
+                WHEN ? THEN NULL
+                ELSE COALESCE(provider_session_id, ?)
+              END,
               updated_at = ?
           WHERE thread_id = ? AND agent_id = ? AND provider = ?
         `,
@@ -2396,6 +2422,7 @@ export function ensureTaskAgentBinding(
         input.model || null,
         input.personalityVersion || null,
         shouldResetProviderSession ? 1 : 0,
+        fallbackProviderSession || null,
         now,
         input.threadId,
         input.agentId,
@@ -2423,6 +2450,30 @@ export function ensureTaskAgentBinding(
     const message = error instanceof Error ? error.message : String(error);
     return failure(`确保 Agent Binding 失败: ${message}`);
   }
+}
+
+function readLatestRunProviderSession(
+  threadId: string,
+  agentId: string,
+  provider: string,
+): string | undefined {
+  const dbRes = getDb();
+  if (!dbRes.success) return undefined;
+  const row = dbRes.data
+    .prepare(
+      `
+        SELECT provider_session_id_at_end
+        FROM task_agent_runs
+        WHERE thread_id = ?
+          AND agent_id = ?
+          AND provider = ?
+          AND provider_session_id_at_end IS NOT NULL
+        ORDER BY COALESCE(ended_at, started_at) DESC
+        LIMIT 1
+      `,
+    )
+    .get(threadId, agentId, provider) as LatestProviderSessionRow | null;
+  return row?.provider_session_id_at_end || undefined;
 }
 
 export function updateTaskStatus(

@@ -214,6 +214,40 @@ describe('task-codex-runner', () => {
     );
   });
 
+  it('当 Codex thread 执行失败但已有 session 时，期望保存 session 供下次恢复', async () => {
+    const thread = {
+      id: 'codex-thread-failed',
+      run: vi.fn().mockRejectedValue(new Error('provider unavailable')),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'implementer',
+      prompt: '继续实现',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(false);
+    expect(planningMocks.updateTaskAgentProviderSession).toHaveBeenCalledWith(
+      'thread-1',
+      'implementer',
+      'codex',
+      'codex-thread-failed',
+    );
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
+      runId: 'run-1',
+      status: 'failed',
+      providerSessionIdAtEnd: 'codex-thread-failed',
+      error: 'provider unavailable',
+    });
+  });
+
   it('当 Codex client 创建失败时，期望 run 被标记为失败', async () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
