@@ -120,6 +120,20 @@ const mockDbState = vi.hoisted(() => {
             .slice(0, Number(args[0]))
             .map((row) => ({ task_id: row.task_id }));
         }
+        if (
+          normalized ===
+          'SELECT task_id FROM task_items WHERE repo_owner = ? AND repo_name = ? ORDER BY updated_at DESC LIMIT ?'
+        ) {
+          return state.tasks
+            .filter(
+              (row) => row.repo_owner === args[0] && row.repo_name === args[1],
+            )
+            .sort((a, b) =>
+              String(b.updated_at).localeCompare(String(a.updated_at)),
+            )
+            .slice(0, Number(args[2]))
+            .map((row) => ({ task_id: row.task_id }));
+        }
         if (normalized.includes('FROM task_artifacts WHERE thread_id = ?')) {
           return state.artifacts.filter((row) => row.thread_id === args[0]);
         }
@@ -1073,5 +1087,32 @@ describe('task-planning', () => {
     expect(list.data.map((item) => item.task.title)).toEqual(
       expect.arrayContaining(['第一个任务', '第二个任务']),
     );
+  });
+
+  it('当按仓库列出 Task Planning 快照时，期望只返回当前仓库任务', () => {
+    const first = createPlanningTask({
+      title: 'Along 任务',
+      body: '当前仓库的 planning task。',
+      source: 'test',
+      repoOwner: 'ranwawa',
+      repoName: 'along',
+    });
+    expect(first.success).toBe(true);
+    const second = createPlanningTask({
+      title: '其他仓库任务',
+      body: '另一个仓库的 planning task。',
+      source: 'test',
+      repoOwner: 'ranwawa',
+      repoName: 'other',
+    });
+    expect(second.success).toBe(true);
+
+    const list = listTaskPlanningSnapshots(10, {
+      repoOwner: 'ranwawa',
+      repoName: 'along',
+    });
+    expect(list.success).toBe(true);
+    if (!list.success) throw new Error(list.error);
+    expect(list.data.map((item) => item.task.title)).toEqual(['Along 任务']);
   });
 });

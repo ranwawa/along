@@ -1796,6 +1796,7 @@ export function readTaskPlanningSnapshot(
 
 export function listTaskPlanningSnapshots(
   limit = 100,
+  filter: { repoOwner?: string; repoName?: string } = {},
 ): Result<TaskPlanningSnapshot[]> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -1803,11 +1804,21 @@ export function listTaskPlanningSnapshots(
 
   try {
     const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
-    const rows = db
-      .prepare(
-        'SELECT task_id FROM task_items ORDER BY updated_at DESC LIMIT ?',
-      )
-      .all(safeLimit) as TaskIdRow[];
+    const rows =
+      filter.repoOwner && filter.repoName
+        ? (db
+            .prepare(
+              `SELECT task_id FROM task_items
+               WHERE repo_owner = ? AND repo_name = ?
+               ORDER BY updated_at DESC
+               LIMIT ?`,
+            )
+            .all(filter.repoOwner, filter.repoName, safeLimit) as TaskIdRow[])
+        : (db
+            .prepare(
+              'SELECT task_id FROM task_items ORDER BY updated_at DESC LIMIT ?',
+            )
+            .all(safeLimit) as TaskIdRow[]);
     const snapshots: TaskPlanningSnapshot[] = [];
 
     for (const row of rows) {

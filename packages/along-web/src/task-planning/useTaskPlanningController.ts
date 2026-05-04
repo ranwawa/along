@@ -1,156 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { TaskFlowActionId, TaskPlanningSnapshot } from '../types';
-import {
-  type DraftTaskInput,
-  emptyDraft,
-  mergeSnapshotIntoList,
-  type RepositoryListResponse,
-  type RepositoryOption,
-  readJsonResponse,
-} from './api';
+import type { RepositoryOption } from './api';
 import { useTaskPlanningActions } from './useTaskPlanningActions';
-
-function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function useTaskState() {
-  const [tasks, setTasks] = useState<TaskPlanningSnapshot[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [selectedSnapshot, setSelectedSnapshot] =
-    useState<TaskPlanningSnapshot | null>(null);
-  const selected =
-    selectedSnapshot ||
-    tasks.find((snapshot) => snapshot.task.taskId === selectedTaskId) ||
-    null;
-  return {
-    tasks,
-    setTasks,
-    selected,
-    selectedTaskId,
-    setSelectedTaskId,
-    selectedSnapshot,
-    setSelectedSnapshot,
-  };
-}
-
-function useRepositories() {
-  const [repositories, setRepositories] = useState<RepositoryOption[]>([]);
-  const [draft, setDraft] = useState<DraftTaskInput>(emptyDraft);
-  const loadRepositories = useCallback(async () => {
-    const response = await fetch('/api/repositories');
-    const result = await readJsonResponse<RepositoryListResponse>(response);
-    setRepositories(result.repositories);
-    setDraft((previous) => {
-      if (previous.repository) return previous;
-      return {
-        ...previous,
-        repository:
-          result.defaultRepository || result.repositories[0]?.fullName || '',
-      };
-    });
-  }, []);
-  return { repositories, setRepositories, draft, setDraft, loadRepositories };
-}
-
-type TaskLoaderInput = {
-  selectedTaskId: string | null;
-  setTasks: React.Dispatch<React.SetStateAction<TaskPlanningSnapshot[]>>;
-  setSelectedTaskId: React.Dispatch<React.SetStateAction<string | null>>;
-  setSelectedSnapshot: React.Dispatch<
-    React.SetStateAction<TaskPlanningSnapshot | null>
-  >;
-};
-
-function useTaskLoaders(input: TaskLoaderInput) {
-  return {
-    loadTasks: useLoadTasks(input),
-    loadSelectedTask: useLoadSelectedTask(input),
-  };
-}
-
-function useLoadTasks(input: TaskLoaderInput) {
-  const loadTasks = useCallback(async () => {
-    const response = await fetch('/api/tasks?limit=100');
-    const snapshots = await readJsonResponse<TaskPlanningSnapshot[]>(response);
-    input.setTasks(snapshots);
-    if (!input.selectedTaskId && snapshots.length > 0) {
-      input.setSelectedTaskId(snapshots[0].task.taskId);
-      input.setSelectedSnapshot(snapshots[0]);
-    }
-  }, [
-    input.selectedTaskId,
-    input.setSelectedSnapshot,
-    input.setSelectedTaskId,
-    input.setTasks,
-  ]);
-  return loadTasks;
-}
-
-function useLoadSelectedTask(input: TaskLoaderInput) {
-  const loadSelectedTask = useCallback(
-    async (taskId: string) => {
-      const response = await fetch(`/api/tasks/${taskId}`);
-      const snapshot = await readJsonResponse<TaskPlanningSnapshot>(response);
-      input.setSelectedSnapshot(snapshot);
-      input.setTasks((previous) => mergeSnapshotIntoList(previous, snapshot));
-    },
-    [input.setSelectedSnapshot, input.setTasks],
-  );
-  return loadSelectedTask;
-}
-
-function useInitialRepositories(
-  loadRepositories: () => Promise<void>,
-  setError: (value: string) => void,
-) {
-  useEffect(() => {
-    loadRepositories().catch((err: unknown) => setError(getErrorMessage(err)));
-  }, [loadRepositories, setError]);
-}
-
-function useTaskPolling(
-  loadTasks: () => Promise<void>,
-  setError: (value: string) => void,
-) {
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    loadTasks()
-      .catch((err: unknown) => active && setError(getErrorMessage(err)))
-      .finally(() => active && setLoading(false));
-    const timer = setInterval(() => {
-      loadTasks().catch((err: unknown) => setError(getErrorMessage(err)));
-    }, 3000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [loadTasks, setError]);
-  return loading;
-}
-
-function useSelectedTaskPolling(
-  selectedTaskId: string | null,
-  loadSelectedTask: (taskId: string) => Promise<void>,
-  setError: (value: string) => void,
-) {
-  useEffect(() => {
-    if (!selectedTaskId) return;
-    let active = true;
-    const refresh = () =>
-      loadSelectedTask(selectedTaskId).catch((err: unknown) => {
-        if (active) setError(getErrorMessage(err));
-      });
-    refresh();
-    const timer = setInterval(refresh, 3000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [selectedTaskId, loadSelectedTask, setError]);
-}
+import {
+  useInitialRepositories,
+  useRepositories,
+  useSelectedTaskPolling,
+  useTaskLoaders,
+  useTaskPolling,
+  useTaskState,
+} from './useTaskPlanningState';
 
 function getFlowFlags(getAction: (id: TaskFlowActionId) => unknown) {
   return {
@@ -221,8 +80,14 @@ function sortArtifacts(selected: TaskPlanningSnapshot | null) {
 }
 
 function usePlanningLoaders(base: ReturnType<typeof usePlanningBaseState>) {
+  const selectedRepository = findSelectedRepository(
+    base.repositoryState.repositories,
+    base.repositoryState.draft.repository,
+  );
   const loaders = useTaskLoaders({
     selectedTaskId: base.taskState.selectedTaskId,
+    isNewTaskOpen: base.taskState.isNewTaskOpen,
+    selectedRepository,
     setTasks: base.taskState.setTasks,
     setSelectedTaskId: base.taskState.setSelectedTaskId,
     setSelectedSnapshot: base.taskState.setSelectedSnapshot,
@@ -261,6 +126,7 @@ function usePlanningActions(
     setDraft: base.repositoryState.setDraft,
     setTasks: base.taskState.setTasks,
     setSelectedTaskId: base.taskState.setSelectedTaskId,
+    setIsNewTaskOpen: base.taskState.setIsNewTaskOpen,
     setSelectedSnapshot: base.taskState.setSelectedSnapshot,
     setMessageBody: base.setMessageBody,
     setBusyAction: base.setBusyAction,

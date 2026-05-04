@@ -68,7 +68,26 @@ async function postCreateTask(payload: Record<string, string | boolean>) {
 
 function useDraftActions(input: UseTaskPlanningActionsInput) {
   const updateDraft = (key: keyof DraftTaskInput, value: string) => {
-    input.setDraft((previous) => ({ ...previous, [key]: value }));
+    input.setDraft((previous) => {
+      if (key !== 'repository') return { ...previous, [key]: value };
+      return { ...emptyDraft, repository: value };
+    });
+    if (key === 'repository') {
+      input.setSelectedTaskId(null);
+      input.setSelectedSnapshot(null);
+      input.setMessageBody('');
+      input.setIsNewTaskOpen(false);
+    }
+  };
+  const openNewTask = () => {
+    input.setDraft((previous) => ({
+      ...emptyDraft,
+      repository: previous.repository,
+    }));
+    input.setSelectedTaskId(null);
+    input.setSelectedSnapshot(null);
+    input.setMessageBody('');
+    input.setIsNewTaskOpen(true);
   };
   const createTask = async (event: FormEvent) => {
     event.preventDefault();
@@ -76,12 +95,16 @@ function useDraftActions(input: UseTaskPlanningActionsInput) {
     if (!body || input.busyAction) return;
     await runBusy(input, 'create', async () => {
       const result = await postCreateTask(buildCreatePayload(input, body));
-      input.setDraft(emptyDraft);
+      input.setDraft((previous) => ({
+        ...emptyDraft,
+        repository: previous.repository,
+      }));
+      input.setIsNewTaskOpen(false);
       input.setSelectedTaskId(result.taskId);
       applySnapshot(result.snapshot, input);
     });
   };
-  return { createTask, updateDraft };
+  return { createTask, openNewTask, updateDraft };
 }
 
 function useRepositoryActions(input: UseTaskPlanningActionsInput) {
@@ -106,8 +129,10 @@ function useRepositoryActions(input: UseTaskPlanningActionsInput) {
 
 function useSelectionActions(input: UseTaskPlanningActionsInput) {
   const selectTask = (snapshot: TaskPlanningSnapshot) => {
+    input.setIsNewTaskOpen(false);
     input.setSelectedTaskId(snapshot.task.taskId);
     input.setSelectedSnapshot(snapshot);
+    input.setMessageBody('');
   };
   return { selectTask };
 }
