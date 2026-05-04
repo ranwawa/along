@@ -6,10 +6,10 @@
   "author": "ranwawa <274544338@qq.com>",
   "type": "module",
   "files": [
+    "agents",
     "biome",
     "gitignore",
     "hooks",
-    "prompts",
     "quality",
     "skills",
     "templates"
