@@ -150,12 +150,11 @@ function ExistingTaskComposer({
       }}
       className="flex flex-col gap-3"
     >
-      <div className="text-sm font-semibold text-text-secondary">继续输入</div>
       <textarea
         value={messageBody}
         onChange={(event) => onMessageChange(event.target.value)}
         placeholder="补充反馈、继续提问或说明交付后的修改要求"
-        rows={5}
+        rows={2}
         disabled={!canSubmitMessage}
         className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
       />
@@ -195,21 +194,12 @@ function NewTaskComposer({
 }) {
   return (
     <form onSubmit={onCreateTask} className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold text-text-secondary">
-          任务内容
-        </div>
-        {selectedRepository && (
-          <span className="text-xs text-text-muted truncate">
-            {selectedRepository.fullName}
-          </span>
-        )}
-      </div>
+      <div className="text-sm font-semibold text-text-secondary">任务内容</div>
       <textarea
         value={draft.body}
         onChange={(event) => onDraftChange('body', event.target.value)}
         placeholder="输入任务目标或问题"
-        rows={6}
+        rows={2}
         className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60"
       />
       <div className="flex items-center justify-between gap-3">
@@ -352,33 +342,37 @@ function SelectedTaskDetail({
   onScroll: (element: HTMLDivElement) => void;
 }) {
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <div
-        ref={scrollRef}
-        onScroll={(event) => onScroll(event.currentTarget)}
-        className="flex-1 min-h-0 overflow-auto p-4 md:p-6 grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-5"
-      >
-        <div className="min-w-0 flex flex-col gap-5">
-          <TaskFlowPanel
-            flow={selected.flow}
-            busyAction={detail.busyAction}
-            onAction={detail.onAction}
-          />
-          <CurrentPlanPanel selected={selected} />
-          <TaskProgressPanel snapshot={selected} />
-          <AgentStagesPanel stages={selected.agentStages || []} />
-          <TaskRecordsPanel artifacts={detail.sortedArtifacts} />
+    <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(180px,34vh)] 2xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-rows-1">
+      <section className="min-h-0 min-w-0 flex flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={(event) => onScroll(event.currentTarget)}
+          className="flex-1 min-h-0 overflow-auto p-4 md:p-6"
+        >
+          <div className="min-w-0 flex flex-col gap-5">
+            <TaskFlowPanel
+              flow={selected.flow}
+              busyAction={detail.busyAction}
+              onAction={detail.onAction}
+            />
+            <CurrentPlanPanel selected={selected} />
+            <TaskProgressPanel snapshot={selected} />
+            <AgentStagesPanel stages={selected.agentStages || []} />
+            <TaskRecordsPanel artifacts={detail.sortedArtifacts} />
+          </div>
         </div>
+        <div className="shrink-0 border-t border-border-color bg-bg-secondary p-3 md:p-4">
+          <ExistingTaskComposer
+            flow={selected.flow}
+            messageBody={detail.messageBody}
+            busyAction={detail.busyAction}
+            onMessageChange={detail.onMessageChange}
+            onSubmitMessage={detail.onSubmitMessage}
+          />
+        </div>
+      </section>
+      <div className="min-h-0 min-w-0 overflow-auto border-t border-border-color p-4 md:p-6 2xl:border-l 2xl:border-t-0">
         <TaskInfoPanel selected={selected} />
-      </div>
-      <div className="shrink-0 border-t border-border-color bg-bg-secondary p-4 md:p-5">
-        <ExistingTaskComposer
-          flow={selected.flow}
-          messageBody={detail.messageBody}
-          busyAction={detail.busyAction}
-          onMessageChange={detail.onMessageChange}
-          onSubmitMessage={detail.onSubmitMessage}
-        />
       </div>
     </div>
   );
