@@ -39,11 +39,17 @@ export interface ScheduledTaskDeliveryRun {
   reason: 'manual';
 }
 
+export interface ScheduledTaskTitleSummaryRun {
+  taskId: string;
+  body: string;
+}
+
 export interface TaskApiContext {
   defaultCwd: string;
   schedulePlanner?: (input: ScheduledTaskPlanningRun) => void;
   scheduleImplementation?: (input: ScheduledTaskImplementationRun) => void;
   scheduleDelivery?: (input: ScheduledTaskDeliveryRun) => void;
+  scheduleTitleSummary?: (input: ScheduledTaskTitleSummaryRun) => void;
   resolveRepoPath?: (owner: string, repo: string) => string | undefined;
   resolveRepositoryForPath?: (
     cwd: string,

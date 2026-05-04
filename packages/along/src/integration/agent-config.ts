@@ -17,12 +17,20 @@ export interface TaskAgentConfig {
   personalityVersion?: string;
 }
 
+export interface ProviderConfig {
+  name?: string;
+  baseUrl?: string;
+  token?: string;
+  models?: string[];
+}
+
 export interface AlongGlobalConfig {
   agents?: Record<string, AgentRoleConfig>;
   defaultAgent?: string;
   webhookSecret?: string;
   workspaces?: string[];
   taskAgents?: Record<string, TaskAgentConfig>;
+  providers?: Record<string, ProviderConfig>;
 }
 
 let cachedConfig: AlongGlobalConfig | null = null;
@@ -140,4 +148,10 @@ export function getTaskAgentConfig(agentId: string): TaskAgentConfig | null {
   const taskAgents = res.data?.taskAgents;
   if (!taskAgents) return null;
   return taskAgents[agentId] || taskAgents['*'] || null;
+}
+
+export function getProviderConfig(providerId: string): ProviderConfig | null {
+  const res = readGlobalConfig();
+  if (!res.success) return null;
+  return res.data?.providers?.[providerId] || null;
 }

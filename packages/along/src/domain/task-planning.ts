@@ -342,6 +342,11 @@ export interface CreatePlanningTaskInput {
   cwd?: string;
 }
 
+export interface UpdatePlanningTaskTitleInput {
+  taskId: string;
+  title: string;
+}
+
 export interface SubmitTaskMessageInput {
   taskId: string;
   body: string;
@@ -1703,6 +1708,28 @@ export function createPlanningTask(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`创建 Task 失败: ${message}`);
+  }
+}
+
+export function updatePlanningTaskTitle(
+  input: UpdatePlanningTaskTitleInput,
+): Result<TaskPlanningSnapshot | null> {
+  const title = input.title.trim();
+  if (!title) return failure('Task 标题不能为空');
+
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
+
+  try {
+    const now = iso_timestamp();
+    db.prepare(
+      'UPDATE task_items SET title = ?, updated_at = ? WHERE task_id = ?',
+    ).run(title, now, input.taskId);
+    return readTaskPlanningSnapshot(input.taskId);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`更新 Task 标题失败: ${message}`);
   }
 }
 

@@ -9,6 +9,7 @@ import {
   submitTaskMessage,
   type TaskPlanningSnapshot,
 } from '../domain/task-planning';
+import { runTaskTitleSummary } from '../domain/task-title-summary';
 import type { TaskApiContext } from './task-api';
 import {
   deriveTitle,
@@ -50,6 +51,11 @@ export async function handleTaskCreateRequest(
   const createRes = createTaskFromPayload(bodyRes.data, context, taskBody);
   if (!createRes.success) return errorResponse(createRes.error, 400);
 
+  scheduleTitleSummary(context, {
+    taskId: createRes.data.task.taskId,
+    body: taskBody,
+  });
+
   const scheduledRes = schedulePlannerIfNeeded(bodyRes.data, context, {
     taskId: createRes.data.task.taskId,
     reason: 'task_created',
@@ -64,6 +70,17 @@ export async function handleTaskCreateRequest(
   );
 }
 
+function scheduleTitleSummary(
+  context: TaskApiContext,
+  input: { taskId: string; body: string },
+) {
+  if (context.scheduleTitleSummary) {
+    context.scheduleTitleSummary(input);
+    return;
+  }
+  void runTaskTitleSummary(input);
+}
+
 function createTaskFromPayload(
   payload: UnknownRecord,
   context: TaskApiContext,
@@ -73,7 +90,7 @@ function createTaskFromPayload(
   if (!cwdRes.success) return cwdRes;
   const repository = getTaskRepositoryFields(payload, context, cwdRes.data);
   return createPlanningTask({
-    title: readStringField(payload, 'title') || deriveTitle(taskBody),
+    title: deriveTitle(taskBody),
     body: taskBody,
     source: readStringField(payload, 'source') || 'web',
     repoOwner: repository.repoOwner,

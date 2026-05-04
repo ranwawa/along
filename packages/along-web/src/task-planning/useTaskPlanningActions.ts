@@ -49,7 +49,6 @@ async function runBusy(
 
 function buildCreatePayload(input: UseTaskPlanningActionsInput, body: string) {
   const payload: Record<string, string | boolean> = { body, autoRun: true };
-  if (input.draft.title.trim()) payload.title = input.draft.title.trim();
   if (input.selectedRepository) {
     payload.owner = input.selectedRepository.owner;
     payload.repo = input.selectedRepository.repo;

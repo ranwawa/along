@@ -209,13 +209,6 @@ function NewTaskComposer({
           </span>
         )}
       </div>
-      <input
-        type="text"
-        value={draft.title}
-        onChange={(event) => onDraftChange('title', event.target.value)}
-        placeholder="标题"
-        className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
-      />
       <textarea
         value={draft.body}
         onChange={(event) => onDraftChange('body', event.target.value)}

@@ -40,6 +40,14 @@ describe('config-api', () => {
         taskAgents: {
           planner: { editor: 'claude' },
         },
+        providers: {
+          deepseek: {
+            name: 'DeepSeek',
+            baseUrl: 'https://api.deepseek.com',
+            token: 'sk-secret-token',
+            models: ['deepseek-v4-flash'],
+          },
+        },
       },
     });
     agentConfigMocks.writeGlobalConfig.mockImplementation((input) => ({
@@ -61,6 +69,10 @@ describe('config-api', () => {
       configPath: string;
       editors: Array<{ id: string; name: string }>;
       taskAgents: Record<string, { editor?: string }>;
+      providers: Record<
+        string,
+        { tokenConfigured?: boolean; tokenPreview?: string; token?: string }
+      >;
     };
 
     expect(response.status).toBe(200);
@@ -70,13 +82,23 @@ describe('config-api', () => {
       'codex',
     ]);
     expect(payload.taskAgents.planner.editor).toBe('claude');
+    expect(payload.providers.deepseek.tokenConfigured).toBe(true);
+    expect(payload.providers.deepseek.tokenPreview).toBe('sk-s...oken');
+    expect(payload.providers.deepseek).not.toHaveProperty('token');
   });
 
-  it('PUT 只更新 taskAgents 并保留其它全局配置', async () => {
+  it('PUT 更新 taskAgents/providers 并保留未回显 token', async () => {
     const response = await handleConfigApiRequest(
       jsonRequest({
         taskAgents: {
           planner: { editor: 'codex', model: 'gpt-5.2' },
+        },
+        providers: {
+          deepseek: {
+            name: 'DeepSeek',
+            baseUrl: 'https://api.deepseek.com',
+            models: ['deepseek-v4-flash'],
+          },
         },
       }),
     );
@@ -89,6 +111,44 @@ describe('config-api', () => {
           editor: 'codex',
           model: 'gpt-5.2',
           personalityVersion: undefined,
+        },
+      },
+      providers: {
+        deepseek: {
+          name: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com',
+          token: 'sk-secret-token',
+          models: ['deepseek-v4-flash'],
+        },
+      },
+    });
+  });
+
+  it('PUT 支持更新 provider token 和 models', async () => {
+    const response = await handleConfigApiRequest(
+      jsonRequest({
+        taskAgents: {},
+        providers: {
+          deepseek: {
+            name: 'DeepSeek',
+            baseUrl: 'https://api.deepseek.com',
+            token: 'sk-new-token',
+            models: ['deepseek-v4-flash', 'deepseek-chat'],
+          },
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(agentConfigMocks.writeGlobalConfig).toHaveBeenCalledWith({
+      webhookSecret: 'secret',
+      taskAgents: {},
+      providers: {
+        deepseek: {
+          name: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com',
+          token: 'sk-new-token',
+          models: ['deepseek-v4-flash', 'deepseek-chat'],
         },
       },
     });
