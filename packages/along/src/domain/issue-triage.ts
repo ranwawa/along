@@ -10,7 +10,13 @@
 
 import { ChatOpenAI } from '@langchain/openai';
 import { consola } from 'consola';
-import { z } from 'zod';
+import {
+  TRIAGE_CLASSIFICATIONS,
+  TRIAGE_SYSTEM_PROMPT,
+  type TriageClassification,
+  type TriageResult,
+  TriageResultSchema,
+} from '../agents/issue-triage';
 import type { Result } from '../core/common';
 import { failure, success } from '../core/common';
 import { GitHubClient, readGithubToken } from '../integration/github-client';
@@ -19,49 +25,53 @@ import { LIFECYCLE } from './session-state-machine';
 
 const logger = consola.withTag('issue-triage');
 
-export type TriageClassification = 'bug' | 'feature' | 'question' | 'spam';
+function buildTriageUserMessage(
+  issueTitle: string,
+  issueBody: string,
+  issueLabels: string[],
+): string {
+  const truncatedBody = (issueBody || '').slice(0, 4000);
+  const labelText =
+    issueLabels.length > 0 ? issueLabels.join(', ') : '（无标签）';
+  return `## Issue 标题\n${issueTitle}\n\n## Issue 正文\n${truncatedBody || '（空）'}\n\n## 标签\n${labelText}`;
+}
 
-export type TriageResult = {
-  classification: TriageClassification;
-  reason: string;
-  replyMessage?: string;
-};
+function createTriageLlm(apiKey: string, modelName: string) {
+  const llm = new ChatOpenAI({
+    model: modelName,
+    temperature: 0,
+    maxTokens: 1024,
+    configuration: {
+      baseURL: 'https://api.deepseek.com',
+      apiKey,
+    },
+  });
 
-const TRIAGE_SYSTEM_PROMPT = `你是一个 GitHub Issue 分类助手。你的任务是判断一个 Issue 的类型。
+  return llm.withStructuredOutput(TriageResultSchema, {
+    name: 'classify_issue',
+    method: 'functionCalling',
+  });
+}
 
-请分析以下 Issue 的标题、正文和标签，并将其分类为以下四类之一：
+function normalizeTriageResult(result: TriageResult): TriageResult {
+  if (TRIAGE_CLASSIFICATIONS.includes(result.classification)) {
+    return {
+      classification: result.classification,
+      reason: result.reason || '',
+      replyMessage: result.replyMessage,
+    };
+  }
 
-1. **bug**：缺陷、回归、异常行为，需要代码修复
-2. **feature**：新功能、增强、重构、文档改进，需要代码修改
-3. **question**：提问、求助、咨询，不需要代码修改
-4. **spam**：广告、无意义内容、测试 Issue、打招呼、垃圾信息
+  logger.warn(`AI 返回未知分类: ${result.classification}，默认 bug`);
+  return {
+    classification: 'bug',
+    reason: '未知分类结果，默认为 bug',
+  };
+}
 
-注意：
-- 如果无法确定是 bug 还是 feature，请分类为 bug（宁可多做，不可错过）
-- 如果无法确定是否需要代码修改，请分类为 bug
-- question 的 replyMessage 应友好、专业，尽量给出有帮助的回答方向
-- spam 的 replyMessage 应简短说明关闭原因
-- question/spam 的 replyMessage 末尾必须加上提示："\\n\\n---\\n> 如果你认为这个 Issue 确实需要代码修改，请在 Issue 中评论 \`/approve\` 以重新触发处理流程。"`;
-
-const VALID_CLASSIFICATIONS: TriageClassification[] = [
-  'bug',
-  'feature',
-  'question',
-  'spam',
-];
-
-const TriageResultSchema = z.object({
-  classification: z
-    .enum(['bug', 'feature', 'question', 'spam'])
-    .describe(
-      'Issue 分类：bug=缺陷/回归, feature=新功能/增强, question=提问/咨询, spam=垃圾信息',
-    ),
-  reason: z.string().describe('分类原因（中文简述）'),
-  replyMessage: z
-    .string()
-    .optional()
-    .describe('仅 question/spam 时需要的友好中文回复消息，Markdown 格式'),
-});
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function triageIssue(
   issueTitle: string,
@@ -76,26 +86,16 @@ export async function triageIssue(
   }
 
   const modelName = process.env.ALONG_TRIAGE_MODEL || 'deepseek-chat';
-  const truncatedBody = (issueBody || '').slice(0, 4000);
-  const userMessage = `## Issue 标题\n${issueTitle}\n\n## Issue 正文\n${truncatedBody || '（空）'}\n\n## 标签\n${issueLabels.length > 0 ? issueLabels.join(', ') : '（无标签）'}`;
+  const userMessage = buildTriageUserMessage(
+    issueTitle,
+    issueBody,
+    issueLabels,
+  );
 
   logger.info(`[triage] model=${modelName}, apiKey=${apiKey.slice(0, 8)}...`);
 
   try {
-    const llm = new ChatOpenAI({
-      model: modelName,
-      temperature: 0,
-      maxTokens: 1024,
-      configuration: {
-        baseURL: 'https://api.deepseek.com',
-        apiKey,
-      },
-    });
-
-    const structuredLlm = llm.withStructuredOutput(TriageResultSchema, {
-      name: 'classify_issue',
-      method: 'functionCalling',
-    });
+    const structuredLlm = createTriageLlm(apiKey, modelName);
 
     const result = await structuredLlm.invoke([
       { role: 'system', content: TRIAGE_SYSTEM_PROMPT },
@@ -103,23 +103,11 @@ export async function triageIssue(
     ]);
 
     logger.info(`[triage] 分类结果: ${JSON.stringify(result)}`);
-
-    if (!VALID_CLASSIFICATIONS.includes(result.classification)) {
-      logger.warn(`AI 返回未知分类: ${result.classification}，默认 bug`);
-      return success({
-        classification: 'bug',
-        reason: '未知分类结果，默认为 bug',
-      });
-    }
-
-    return success({
-      classification: result.classification,
-      reason: result.reason || '',
-      replyMessage: result.replyMessage,
-    });
-  } catch (error: any) {
-    logger.error(`[triage] AI 分类失败: ${error.message}`);
-    return failure(`AI 分类异常: ${error.message}`);
+    return success(normalizeTriageResult(result));
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error(`[triage] AI 分类失败: ${message}`);
+    return failure(`AI 分类异常: ${message}`);
   }
 }
 
@@ -133,9 +121,97 @@ const CLASSIFICATION_LABELS: Record<TriageClassification, string> = {
   spam: 'spam',
 };
 
-/**
- * 根据分类结果处理 Issue
- */
+async function addIssueLabels(
+  client: GitHubClient,
+  issueNumber: number,
+  labels: string[],
+) {
+  const addRes = await client.addIssueLabels(issueNumber, labels);
+  if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
+}
+
+async function replyIssueIfNeeded(
+  client: GitHubClient,
+  issueNumber: number,
+  replyMessage?: string,
+) {
+  if (!replyMessage) return;
+  const commentRes = await client.addIssueComment(issueNumber, replyMessage);
+  if (!commentRes.success) logger.warn(`回复失败: ${commentRes.error}`);
+  logger.info(`已回复 Issue #${issueNumber}`);
+}
+
+async function handleCodeChangeIssue(input: {
+  client: GitHubClient;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  typeLabel: string;
+  options?: { skipAgentLaunch?: boolean; repoPath?: string };
+}): Promise<Result<void>> {
+  await addIssueLabels(input.client, input.issueNumber, [
+    input.typeLabel,
+    LIFECYCLE.RUNNING,
+  ]);
+  logger.info(
+    `Issue #${input.issueNumber} 已标记 [${input.typeLabel}, ${LIFECYCLE.RUNNING}]`,
+  );
+
+  if (input.options?.skipAgentLaunch) return success(undefined);
+  return launchIssueAgent(
+    input.owner,
+    input.repo,
+    input.issueNumber,
+    'planning',
+    {
+      trigger: 'triage',
+      taskData: { title: `Issue #${input.issueNumber}` },
+      repoPath: input.options?.repoPath,
+    },
+  );
+}
+
+async function handleReplyOnlyIssue(input: {
+  client: GitHubClient;
+  issueNumber: number;
+  typeLabel: string;
+  replyMessage?: string;
+}) {
+  await addIssueLabels(input.client, input.issueNumber, [input.typeLabel]);
+  logger.info(`Issue #${input.issueNumber} 已标记 [${input.typeLabel}]`);
+  await replyIssueIfNeeded(input.client, input.issueNumber, input.replyMessage);
+}
+
+async function handleClassifiedIssue(input: {
+  client: GitHubClient;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  result: TriageResult;
+  typeLabel: string;
+  options?: { skipAgentLaunch?: boolean; repoPath?: string };
+}): Promise<Result<void>> {
+  if (
+    input.result.classification === 'bug' ||
+    input.result.classification === 'feature'
+  ) {
+    return handleCodeChangeIssue(input);
+  }
+
+  await handleReplyOnlyIssue({
+    client: input.client,
+    issueNumber: input.issueNumber,
+    typeLabel: input.typeLabel,
+    replyMessage: input.result.replyMessage,
+  });
+
+  if (input.result.classification === 'spam') {
+    await input.client.closeIssue(input.issueNumber);
+    logger.info(`Issue #${input.issueNumber} 已关闭（spam）`);
+  }
+  return success(undefined);
+}
+
 export async function handleTriagedIssue(
   owner: string,
   repo: string,
@@ -152,73 +228,13 @@ export async function handleTriagedIssue(
   const client = new GitHubClient(tokenRes.data, owner, repo);
   const typeLabel = CLASSIFICATION_LABELS[result.classification];
 
-  switch (result.classification) {
-    case 'bug':
-    case 'feature': {
-      // 打类型标签 + running 标签
-      const addRes = await client.addIssueLabels(issueNumber, [
-        typeLabel,
-        LIFECYCLE.RUNNING,
-      ]);
-      if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
-      logger.info(
-        `Issue #${issueNumber} 已标记 [${typeLabel}, ${LIFECYCLE.RUNNING}]`,
-      );
-
-      if (!options?.skipAgentLaunch) {
-        // 启动 planning 阶段（出方案）
-        const launchRes = await launchIssueAgent(
-          owner,
-          repo,
-          issueNumber,
-          'planning',
-          {
-            trigger: 'triage',
-            taskData: { title: `Issue #${issueNumber}` },
-            repoPath: options?.repoPath,
-          },
-        );
-        if (!launchRes.success) return launchRes;
-      }
-      break;
-    }
-
-    case 'question': {
-      // 打标签 + 回复
-      const addRes = await client.addIssueLabels(issueNumber, [typeLabel]);
-      if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
-      logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}]`);
-
-      if (result.replyMessage) {
-        const commentRes = await client.addIssueComment(
-          issueNumber,
-          result.replyMessage,
-        );
-        if (!commentRes.success) logger.warn(`回复失败: ${commentRes.error}`);
-        logger.info(`已回复 Issue #${issueNumber}`);
-      }
-      break;
-    }
-
-    case 'spam': {
-      // 打标签 + 回复 + 关闭
-      const addRes = await client.addIssueLabels(issueNumber, [typeLabel]);
-      if (!addRes.success) logger.warn(`打标签失败: ${addRes.error}`);
-      logger.info(`Issue #${issueNumber} 已标记 [${typeLabel}]`);
-
-      if (result.replyMessage) {
-        const commentRes = await client.addIssueComment(
-          issueNumber,
-          result.replyMessage,
-        );
-        if (!commentRes.success) logger.warn(`回复失败: ${commentRes.error}`);
-        logger.info(`已回复 Issue #${issueNumber}`);
-      }
-
-      await client.closeIssue(issueNumber);
-      logger.info(`Issue #${issueNumber} 已关闭（spam）`);
-      break;
-    }
-  }
-  return success(undefined);
+  return handleClassifiedIssue({
+    client,
+    owner,
+    repo,
+    issueNumber,
+    result,
+    typeLabel,
+    options,
+  });
 }

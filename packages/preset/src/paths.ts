@@ -25,7 +25,7 @@ export function getPresetQualityDir(): string {
 }
 
 export function getPresetPromptsDir(): string {
-  return path.join(getPresetAssetsRoot(), 'prompts');
+  return path.join(getPresetAssetsRoot(), 'agents/prompts');
 }
 
 export function getPresetSkillsDir(): string {

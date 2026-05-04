@@ -1,12 +1,12 @@
+import {
+  buildAutoCommitFixPrompt,
+  buildImplementationPrompt,
+} from '../agents/task-implementation';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import { runTaskAgentTurn } from './task-agent-runtime';
 import { runTaskAutoCommit } from './task-auto-commit';
 import type { TaskAutoCommitFailure } from './task-auto-commit-types';
-import {
-  buildAutoCommitFixPrompt,
-  buildImplementationPrompt,
-} from './task-implementation-prompts';
 import {
   PLAN_STATUS,
   readTaskPlanningSnapshot,

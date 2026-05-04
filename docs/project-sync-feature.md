@@ -18,7 +18,7 @@
   - 负责读取项目配置、渲染文档、写入受管文件
 - `packages/preset-assets`
   - 集中分发的唯一资产源
-  - 负责保存 prompts、skills、quality engine、hooks
+  - 负责保存 agent prompts、skills、quality engine、hooks
 - `packages/biome-config`
   - 共享 Biome 配置源
   - 由 `project-sync` 分发到业务仓的 `.along/preset/biome.shared.json`
@@ -29,7 +29,7 @@
 
 - `packages/preset-assets/hooks/`
 - `packages/preset-assets/quality/`
-- `packages/preset-assets/prompts/`
+- `packages/preset-assets/agents/prompts/`
 - `packages/preset-assets/skills/`
 
 后续新增这几类通用能力，也只能继续扩展这里。

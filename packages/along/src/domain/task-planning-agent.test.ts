@@ -178,6 +178,22 @@ describe('task-planning-agent', () => {
     });
   });
 
+  it('Planner prompt 包含根因、架构、兼容性和计划粒度规则', async () => {
+    const result = await runTaskPlanningAgent({
+      taskId: 'task-1',
+      cwd: '/tmp/project',
+    });
+
+    expect(result.success).toBe(true);
+    const callInput = runnerMock.mock.calls[0]?.[0] as
+      | { prompt?: string }
+      | undefined;
+    expect(callInput?.prompt).toContain('定位根因');
+    expect(callInput?.prompt).toContain('业务语义和架构合理性');
+    expect(callInput?.prompt).toContain('不要主动设计向下兼容');
+    expect(callInput?.prompt).toContain('不要写具体代码实现细节');
+  });
+
   it('当 Agent 返回澄清消息时，期望发布 Planning Update', async () => {
     runnerMock.mockResolvedValueOnce({
       success: true,

@@ -1,8 +1,8 @@
-import type { TaskAutoCommitFailure } from './task-auto-commit-types';
+import type { TaskAutoCommitFailure } from '../domain/task-auto-commit-types';
 import type {
   TaskPlanningSnapshot,
   TaskPlanRevisionRecord,
-} from './task-planning';
+} from '../domain/task-planning';
 
 function truncateText(value: string, maxLength = 5000): string {
   const text = value.trim();

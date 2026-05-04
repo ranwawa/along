@@ -71,7 +71,7 @@ packages/preset-assets/
 
 - `hooks/`
 - `quality/`
-- `prompts/`
+- `agents/prompts/`
 - `skills/`
 
 Biome 配置单独由 `packages/biome-config/biome.shared.json` 维护，避免和运行时 prompt / hook 资产混在一起。
