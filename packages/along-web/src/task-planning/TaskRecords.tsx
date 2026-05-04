@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { TaskArtifactRecord } from '../types';
 import { formatTime, getArtifactClass, getArtifactLabel } from './format';
 
@@ -21,8 +22,10 @@ export function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
 
 export function TaskRecordsPanel({
   artifacts,
+  children,
 }: {
   artifacts: TaskArtifactRecord[];
+  children?: ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-3">
@@ -36,6 +39,7 @@ export function TaskRecordsPanel({
           ))
         )}
       </div>
+      {children}
     </section>
   );
 }

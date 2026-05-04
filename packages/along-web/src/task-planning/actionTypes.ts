@@ -29,6 +29,7 @@ export interface UseTaskPlanningActionsInput {
   setDraft: React.Dispatch<React.SetStateAction<DraftTaskInput>>;
   setTasks: React.Dispatch<React.SetStateAction<TaskPlanningSnapshot[]>>;
   setSelectedTaskId: React.Dispatch<React.SetStateAction<string | null>>;
+  setIsNewTaskOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setSelectedSnapshot: React.Dispatch<
     React.SetStateAction<TaskPlanningSnapshot | null>
   >;
