@@ -1,4 +1,5 @@
 import type {
+  TaskAgentProgressPhase,
   TaskAgentStageRecord,
   TaskAgentStageStatus,
   TaskArtifactType,
@@ -116,6 +117,48 @@ export function getStageStatusClass(status: TaskAgentStageStatus): string {
       return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
     default:
       return 'bg-white/5 text-text-muted border-border-color';
+  }
+}
+
+export function getProgressPhaseLabel(phase: TaskAgentProgressPhase): string {
+  switch (phase) {
+    case 'starting':
+      return '启动';
+    case 'context':
+      return '上下文';
+    case 'tool':
+      return '工具';
+    case 'waiting':
+      return '等待';
+    case 'verifying':
+      return '验证';
+    case 'finalizing':
+      return '整理';
+    case 'completed':
+      return '完成';
+    case 'failed':
+      return '失败';
+    case 'cancelled':
+      return '取消';
+    default:
+      return phase;
+  }
+}
+
+export function getProgressPhaseClass(phase: TaskAgentProgressPhase): string {
+  switch (phase) {
+    case 'completed':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+    case 'failed':
+    case 'cancelled':
+      return 'border-rose-500/30 bg-rose-500/10 text-rose-200';
+    case 'waiting':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+    case 'tool':
+    case 'verifying':
+      return 'border-violet-500/30 bg-violet-500/10 text-violet-200';
+    default:
+      return 'border-cyan-500/25 bg-cyan-500/10 text-cyan-100';
   }
 }
 

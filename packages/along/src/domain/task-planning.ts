@@ -1,3 +1,5 @@
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy planning module predates current function-size rule.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy planning module predates current file-size rule.
 import crypto from 'node:crypto';
 import { iso_timestamp } from '../core/common';
 import { getDb } from '../core/db';
@@ -85,6 +87,21 @@ export const AGENT_RUN_STATUS = {
 
 export type AgentRunStatus =
   (typeof AGENT_RUN_STATUS)[keyof typeof AGENT_RUN_STATUS];
+
+export const TASK_AGENT_PROGRESS_PHASE = {
+  STARTING: 'starting',
+  CONTEXT: 'context',
+  TOOL: 'tool',
+  WAITING: 'waiting',
+  VERIFYING: 'verifying',
+  FINALIZING: 'finalizing',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  CANCELLED: 'cancelled',
+} as const;
+
+export type TaskAgentProgressPhase =
+  (typeof TASK_AGENT_PROGRESS_PHASE)[keyof typeof TASK_AGENT_PROGRESS_PHASE];
 
 export const TASK_AGENT_STAGE = {
   PLANNING: 'planning',
@@ -201,6 +218,19 @@ export interface TaskAgentRunRecord {
   endedAt?: string;
 }
 
+export interface TaskAgentProgressEventRecord {
+  progressId: string;
+  runId: string;
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+  phase: TaskAgentProgressPhase;
+  summary: string;
+  detail?: string;
+  createdAt: string;
+}
+
 export interface TaskAgentStageRecord {
   stage: TaskAgentStage;
   agentId: string;
@@ -297,6 +327,7 @@ export interface TaskPlanningSnapshot {
   artifacts: TaskArtifactRecord[];
   plans: TaskPlanRevisionRecord[];
   agentRuns: TaskAgentRunRecord[];
+  agentProgressEvents: TaskAgentProgressEventRecord[];
   agentStages: TaskAgentStageRecord[];
   flow: TaskFlowSnapshot;
 }
@@ -353,6 +384,17 @@ export interface FinishTaskAgentRunInput {
   providerSessionIdAtEnd?: string;
   outputArtifactIds?: string[];
   error?: string;
+}
+
+export interface RecordTaskAgentProgressInput {
+  runId: string;
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+  phase: TaskAgentProgressPhase;
+  summary: string;
+  detail?: string;
 }
 
 export interface RecoverInterruptedTaskAgentRunsOutput {
@@ -488,6 +530,19 @@ interface TaskAgentRunRow {
   error: string | null;
   started_at: string;
   ended_at: string | null;
+}
+
+interface TaskAgentProgressEventRow {
+  progress_id: string;
+  run_id: string;
+  task_id: string;
+  thread_id: string;
+  agent_id: string;
+  provider: string;
+  phase: TaskAgentProgressPhase;
+  summary: string;
+  detail: string | null;
+  created_at: string;
 }
 
 interface TaskIdRow {
@@ -631,6 +686,23 @@ function mapRun(row: TaskAgentRunRow): TaskAgentRunRecord {
     error: row.error || undefined,
     startedAt: row.started_at,
     endedAt: row.ended_at || undefined,
+  };
+}
+
+function mapProgressEvent(
+  row: TaskAgentProgressEventRow,
+): TaskAgentProgressEventRecord {
+  return {
+    progressId: row.progress_id,
+    runId: row.run_id,
+    taskId: row.task_id,
+    threadId: row.thread_id,
+    agentId: row.agent_id,
+    provider: row.provider,
+    phase: row.phase,
+    summary: row.summary,
+    detail: row.detail || undefined,
+    createdAt: row.created_at,
   };
 }
 
@@ -1367,6 +1439,7 @@ function buildTaskFlowSnapshot(input: {
   artifacts: TaskArtifactRecord[];
   plans: TaskPlanRevisionRecord[];
   agentRuns: TaskAgentRunRecord[];
+  agentProgressEvents: TaskAgentProgressEventRecord[];
   agentStages: TaskAgentStageRecord[];
 }): TaskFlowSnapshot {
   const currentStageId = getCurrentTaskFlowStageId(input);
@@ -1677,6 +1750,11 @@ export function readTaskPlanningSnapshot(
         'SELECT * FROM task_agent_runs WHERE thread_id = ? ORDER BY started_at ASC',
       )
       .all(threadRow.thread_id) as TaskAgentRunRow[];
+    const progressRows = db
+      .prepare(
+        'SELECT * FROM task_agent_progress_events WHERE thread_id = ? ORDER BY created_at ASC',
+      )
+      .all(threadRow.thread_id) as TaskAgentProgressEventRow[];
     const task = mapTask(taskRow);
     const thread = mapThread(threadRow);
     const currentPlan = currentPlanRow ? mapPlan(currentPlanRow) : null;
@@ -1685,6 +1763,7 @@ export function readTaskPlanningSnapshot(
     const plans = planRows.map(mapPlan);
     const agentBindings = bindingRows.map(mapBinding);
     const agentRuns = runRows.map(mapRun);
+    const agentProgressEvents = progressRows.map(mapProgressEvent);
     const agentStages = buildTaskAgentStages(agentRuns, agentBindings, task);
 
     return success({
@@ -1695,6 +1774,7 @@ export function readTaskPlanningSnapshot(
       artifacts,
       plans,
       agentRuns,
+      agentProgressEvents,
       agentStages,
       flow: buildTaskFlowSnapshot({
         task,
@@ -1704,6 +1784,7 @@ export function readTaskPlanningSnapshot(
         artifacts,
         plans,
         agentRuns,
+        agentProgressEvents,
         agentStages,
       }),
     });
@@ -2573,6 +2654,58 @@ export function updateTaskAgentProviderSession(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`更新 provider session 失败: ${message}`);
+  }
+}
+
+export function recordTaskAgentProgress(
+  input: RecordTaskAgentProgressInput,
+): Result<TaskAgentProgressEventRecord> {
+  const summary = input.summary.trim();
+  if (!summary) return failure('Agent Progress 摘要不能为空');
+  const detail = input.detail?.trim();
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const progressId = generateId('prog');
+  const createdAt = iso_timestamp();
+
+  try {
+    dbRes.data
+      .prepare(
+        `
+          INSERT INTO task_agent_progress_events (
+            progress_id, run_id, task_id, thread_id, agent_id, provider,
+            phase, summary, detail, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        progressId,
+        input.runId,
+        input.taskId,
+        input.threadId,
+        input.agentId,
+        input.provider,
+        input.phase,
+        summary,
+        detail || null,
+        createdAt,
+      );
+
+    return success({
+      progressId,
+      runId: input.runId,
+      taskId: input.taskId,
+      threadId: input.threadId,
+      agentId: input.agentId,
+      provider: input.provider,
+      phase: input.phase,
+      summary,
+      detail: detail || undefined,
+      createdAt,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`记录 Agent Progress 失败: ${message}`);
   }
 }
 

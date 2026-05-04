@@ -1,25 +1,37 @@
-import { spawnSync } from 'node:child_process';
-import { Codex, type ThreadOptions } from '@openai/codex-sdk';
+import type { ThreadOptions } from '@openai/codex-sdk';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
+import {
+  type TaskAgentProgressContext,
+  writeTaskAgentProgress,
+} from './task-agent-progress';
+import {
+  finishTaskAgentSuccess,
+  markTaskAgentFailed,
+  type StartedTaskAgentRun,
+  saveTaskAgentOutput,
+  startTaskAgentRun,
+  startTaskAgentRunHeartbeat,
+} from './task-agent-run-lifecycle';
 import type {
   RunTaskClaudeTurnInput,
   RunTaskClaudeTurnOutput,
 } from './task-claude-runner';
 import {
-  AGENT_RUN_STATUS,
-  createTaskAgentRun,
-  ensureTaskAgentBinding,
-  finishTaskAgentRun,
-  recordTaskAgentResult,
+  buildThreadOptions,
+  createDefaultCodexClient,
+  formatDuration,
+  getCodexAssistantText,
+  getCodexOutputSchema,
+  parseStructuredOutput,
+  readCodexTurnTimeoutMs,
+} from './task-codex-utils';
+import {
+  TASK_AGENT_PROGRESS_PHASE,
   updateTaskAgentProviderSession,
 } from './task-planning';
 
 const PROVIDER = 'codex';
-
-interface UnknownRecord {
-  [key: string]: unknown;
-}
 
 export interface TaskCodexTurn {
   finalResponse: string;
@@ -50,238 +62,201 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isRecord(value: unknown): value is UnknownRecord {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function getCodexOutputSchema(input: RunTaskCodexTurnInput): unknown {
-  const options = input.options as unknown;
-  if (!isRecord(options)) return undefined;
-  const outputFormat = options.outputFormat;
-  if (!isRecord(outputFormat)) return undefined;
-  return outputFormat.type === 'json_schema' ? outputFormat.schema : undefined;
-}
-
-function parseStructuredOutput(text: string, schema: unknown): unknown {
-  if (schema === undefined) return undefined;
-  const raw = text.trim();
-  if (!raw) return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-}
-
-function collectAgentMessageText(items: unknown[]): string {
-  return items
-    .flatMap((item) => {
-      if (!isRecord(item)) return [];
-      return item.type === 'agent_message' && typeof item.text === 'string'
-        ? [item.text]
-        : [];
-    })
-    .join('\n\n')
-    .trim();
-}
-
-function getAssistantText(turn: TaskCodexTurn): string {
-  const finalResponse = turn.finalResponse.trim();
-  if (finalResponse) return finalResponse;
-  const agentMessages = collectAgentMessageText(turn.items);
-  if (agentMessages) return agentMessages;
-  return turn.items.length > 0 ? JSON.stringify(turn.items, null, 2) : '';
-}
-
-function buildThreadOptions(input: RunTaskCodexTurnInput): ThreadOptions {
-  return {
-    model: input.model,
-    workingDirectory: input.cwd,
-    sandboxMode: 'danger-full-access',
-    approvalPolicy: 'never',
-  };
-}
-
-function findCodexExecutable(): string | undefined {
-  if (process.env.CODEX_PATH?.trim()) {
-    return process.env.CODEX_PATH.trim();
-  }
-
-  const command = process.platform === 'win32' ? 'where' : 'which';
-  const result = spawnSync(command, ['codex'], {
-    encoding: 'utf-8',
-    shell: false,
-  });
-  if (result.status !== 0) return undefined;
-
-  const firstMatch = result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-  return firstMatch || undefined;
-}
-
-function createDefaultClient(): TaskCodexClient {
-  const codexPath = findCodexExecutable();
-  return codexPath ? new Codex({ codexPathOverride: codexPath }) : new Codex();
-}
-
-function readCodexTurnTimeoutMs(): number {
-  const raw = Number(process.env.ALONG_TASK_AGENT_TIMEOUT_MS);
-  if (Number.isFinite(raw) && raw > 0) return raw;
-  return 30 * 60 * 1000;
-}
-
-function formatDuration(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  return minutes >= 1 ? `${minutes} 分钟` : `${ms} ms`;
-}
-
-function failRun(
-  runId: string,
-  error: string,
-  providerSessionIdAtEnd?: string,
-): Result<never> {
-  const failedRun = finishTaskAgentRun({
-    runId,
-    status: AGENT_RUN_STATUS.FAILED,
-    providerSessionIdAtEnd,
-    error,
-  });
-  return failedRun.success ? failure(error) : failure(failedRun.error);
-}
-
 export async function runTaskCodexTurn(
   input: RunTaskCodexTurnInput,
 ): Promise<Result<RunTaskClaudeTurnOutput>> {
   const prompt = input.prompt.trim();
   if (!prompt) return failure('Codex prompt 不能为空');
 
-  const bindingRes = ensureTaskAgentBinding({
-    threadId: input.threadId,
-    agentId: input.agentId,
-    provider: PROVIDER,
-    cwd: input.cwd,
-    model: input.model,
-    personalityVersion: input.personalityVersion,
-  });
-  if (!bindingRes.success) return bindingRes;
+  const startedRes = startTaskAgentRun(input, PROVIDER);
+  if (!startedRes.success) return startedRes;
+  return runStartedCodexTurn(input, prompt, startedRes.data);
+}
 
-  const binding = bindingRes.data;
-  const usedResume = Boolean(binding.providerSessionId);
-
-  const runRes = createTaskAgentRun({
-    taskId: input.taskId,
-    threadId: input.threadId,
-    agentId: input.agentId,
-    provider: PROVIDER,
-    providerSessionIdAtStart: binding.providerSessionId,
-    inputArtifactIds: input.inputArtifactIds,
-  });
-  if (!runRes.success) return runRes;
-
+async function runStartedCodexTurn(
+  input: RunTaskCodexTurnInput,
+  prompt: string,
+  started: StartedTaskAgentRun,
+): Promise<Result<RunTaskClaudeTurnOutput>> {
+  const { binding, progressContext, usedResume } = started;
   const outputSchema = getCodexOutputSchema(input);
   let thread: TaskCodexThread | undefined;
   let latestThreadId = binding.providerSessionId;
+  const stopHeartbeat = startTaskAgentRunHeartbeat(
+    progressContext,
+    usedResume
+      ? 'Agent 已启动，正在恢复 Codex thread。'
+      : 'Agent 已启动，正在创建 Codex thread。',
+    input.cwd,
+  );
 
   try {
-    const client = (input.createClient || createDefaultClient)();
-    thread = binding.providerSessionId
-      ? client.resumeThread(
-          binding.providerSessionId,
-          buildThreadOptions(input),
-        )
-      : client.startThread(buildThreadOptions(input));
-
-    const timeoutMs = readCodexTurnTimeoutMs();
-    const abortController = new AbortController();
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      abortController.abort();
-    }, timeoutMs);
-
-    let turn: TaskCodexTurn;
-    try {
-      turn = await thread.run(prompt, {
-        outputSchema,
-        signal: abortController.signal,
-      });
-    } catch (error: unknown) {
-      if (timedOut) {
-        throw new Error(
-          `Codex Agent 执行超时（超过 ${formatDuration(timeoutMs)}）`,
-          { cause: error },
-        );
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
-
+    thread = openCodexThread(input, progressContext, binding.providerSessionId);
+    const turn = await runCodexPrompt(thread, prompt, outputSchema);
     latestThreadId = thread.id || binding.providerSessionId;
-    if (latestThreadId) {
-      const updateRes = updateTaskAgentProviderSession(
-        input.threadId,
-        input.agentId,
-        PROVIDER,
-        latestThreadId,
-      );
-      if (!updateRes.success) {
-        return failRun(runRes.data.runId, updateRes.error, latestThreadId);
-      }
-    }
-
-    const assistantText = getAssistantText(turn);
-    const structuredOutput = parseStructuredOutput(assistantText, outputSchema);
-    const outputArtifactIds: string[] = [];
-    if (assistantText) {
-      const artifactRes = recordTaskAgentResult({
-        taskId: input.taskId,
-        threadId: input.threadId,
-        agentId: input.agentId,
-        provider: PROVIDER,
-        runId: runRes.data.runId,
-        body: assistantText,
-      });
-      if (!artifactRes.success) {
-        const failedRun = finishTaskAgentRun({
-          runId: runRes.data.runId,
-          status: AGENT_RUN_STATUS.FAILED,
-          providerSessionIdAtEnd: latestThreadId,
-          error: artifactRes.error,
-        });
-        if (!failedRun.success) return failedRun;
-        return failure(artifactRes.error);
-      }
-      outputArtifactIds.push(artifactRes.data.artifactId);
-    }
-
-    const finishedRun = finishTaskAgentRun({
-      runId: runRes.data.runId,
-      status: AGENT_RUN_STATUS.SUCCEEDED,
-      providerSessionIdAtEnd: latestThreadId,
-      outputArtifactIds,
-    });
-    if (!finishedRun.success) return finishedRun;
-
-    return success({
-      run: finishedRun.data,
-      providerSessionId: latestThreadId,
+    return completeCodexTurn(
+      input,
+      progressContext,
       usedResume,
-      assistantText,
-      structuredOutput,
-      outputArtifactIds,
+      turn,
+      outputSchema,
+      latestThreadId,
+    );
+  } catch (error: unknown) {
+    return failCodexTurn(progressContext, error, thread?.id || latestThreadId);
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+function failCodexTurn(
+  context: TaskAgentProgressContext,
+  error: unknown,
+  providerSessionIdAtEnd?: string,
+): Result<never> {
+  const message = getErrorMessage(error);
+  const failedRes = markTaskAgentFailed(
+    context,
+    message,
+    providerSessionIdAtEnd,
+  );
+  return failedRes.success
+    ? failure(`Codex Agent 执行失败: ${message}`)
+    : failure(failedRes.error);
+}
+
+function openCodexThread(
+  input: RunTaskCodexTurnInput,
+  context: TaskAgentProgressContext,
+  providerSessionId?: string,
+): TaskCodexThread {
+  const client = (input.createClient || createDefaultCodexClient)();
+  writeTaskAgentProgress(
+    context,
+    TASK_AGENT_PROGRESS_PHASE.CONTEXT,
+    '正在准备工作目录和模型参数。',
+  );
+  const options = buildThreadOptions(input);
+  const thread = providerSessionId
+    ? client.resumeThread(providerSessionId, options)
+    : client.startThread(options);
+  writeTaskAgentProgress(
+    context,
+    TASK_AGENT_PROGRESS_PHASE.WAITING,
+    'Agent 正在执行任务，等待 Codex 返回结果。',
+  );
+  return thread;
+}
+
+async function runCodexPrompt(
+  thread: TaskCodexThread,
+  prompt: string,
+  outputSchema: unknown,
+): Promise<TaskCodexTurn> {
+  const timeoutMs = readCodexTurnTimeoutMs();
+  const abortController = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    abortController.abort();
+  }, timeoutMs);
+  return runCodexThreadWithTimeout(
+    thread,
+    prompt,
+    outputSchema,
+    abortController,
+    timeout,
+    () => timedOut,
+    timeoutMs,
+  );
+}
+
+async function runCodexThreadWithTimeout(
+  thread: TaskCodexThread,
+  prompt: string,
+  outputSchema: unknown,
+  abortController: AbortController,
+  timeout: ReturnType<typeof setTimeout>,
+  isTimedOut: () => boolean,
+  timeoutMs: number,
+): Promise<TaskCodexTurn> {
+  try {
+    return await thread.run(prompt, {
+      outputSchema,
+      signal: abortController.signal,
     });
   } catch (error: unknown) {
-    const message = getErrorMessage(error);
-    const failedRun = finishTaskAgentRun({
-      runId: runRes.data.runId,
-      status: AGENT_RUN_STATUS.FAILED,
-      providerSessionIdAtEnd: thread?.id || latestThreadId,
-      error: message,
-    });
-    if (!failedRun.success) return failedRun;
-    return failure(`Codex Agent 执行失败: ${message}`);
+    if (!isTimedOut()) throw error;
+    throw new Error(
+      `Codex Agent 执行超时（超过 ${formatDuration(timeoutMs)}）`,
+      {
+        cause: error,
+      },
+    );
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+function completeCodexTurn(
+  input: RunTaskCodexTurnInput,
+  context: TaskAgentProgressContext,
+  usedResume: boolean,
+  turn: TaskCodexTurn,
+  outputSchema: unknown,
+  latestThreadId?: string,
+): Result<RunTaskClaudeTurnOutput> {
+  const sessionRes = saveCodexSession(input, context, latestThreadId);
+  if (!sessionRes.success) return sessionRes;
+  const assistantText = getCodexAssistantText(turn);
+  const structuredOutput = parseStructuredOutput(assistantText, outputSchema);
+  const outputRes = saveTaskAgentOutput(
+    input,
+    PROVIDER,
+    assistantText,
+    context,
+    latestThreadId,
+  );
+  if (!outputRes.success) return outputRes;
+  const finishedRun = finishTaskAgentSuccess(
+    context,
+    outputRes.data,
+    latestThreadId,
+  );
+  if (!finishedRun.success) return finishedRun;
+  return success({
+    run: finishedRun.data,
+    providerSessionId: latestThreadId,
+    usedResume,
+    assistantText,
+    structuredOutput,
+    outputArtifactIds: outputRes.data,
+  });
+}
+
+function saveCodexSession(
+  input: RunTaskCodexTurnInput,
+  context: TaskAgentProgressContext,
+  latestThreadId?: string,
+): Result<void> {
+  if (!latestThreadId) return success(undefined);
+  writeTaskAgentProgress(
+    context,
+    TASK_AGENT_PROGRESS_PHASE.CONTEXT,
+    '正在保存 Agent 会话标识。',
+  );
+  const updateRes = updateTaskAgentProviderSession(
+    input.threadId,
+    input.agentId,
+    PROVIDER,
+    latestThreadId,
+  );
+  if (updateRes.success) return success(undefined);
+  const failedRes = markTaskAgentFailed(
+    context,
+    updateRes.error,
+    latestThreadId,
+    '保存 Agent 会话标识失败。',
+  );
+  return failedRes.success ? failure(updateRes.error) : failedRes;
 }

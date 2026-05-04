@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner tests use large shared mock setup.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const queryMock = vi.hoisted(() => vi.fn());
@@ -5,6 +6,7 @@ const planningMocks = vi.hoisted(() => ({
   ensureTaskAgentBinding: vi.fn(),
   createTaskAgentRun: vi.fn(),
   finishTaskAgentRun: vi.fn(),
+  recordTaskAgentProgress: vi.fn(),
   recordTaskAgentResult: vi.fn(),
   updateTaskAgentProviderSession: vi.fn(),
 }));
@@ -22,7 +24,19 @@ vi.mock('./task-planning', () => ({
   ensureTaskAgentBinding: planningMocks.ensureTaskAgentBinding,
   createTaskAgentRun: planningMocks.createTaskAgentRun,
   finishTaskAgentRun: planningMocks.finishTaskAgentRun,
+  recordTaskAgentProgress: planningMocks.recordTaskAgentProgress,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
+  TASK_AGENT_PROGRESS_PHASE: {
+    STARTING: 'starting',
+    CONTEXT: 'context',
+    TOOL: 'tool',
+    WAITING: 'waiting',
+    VERIFYING: 'verifying',
+    FINALIZING: 'finalizing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+    CANCELLED: 'cancelled',
+  },
   updateTaskAgentProviderSession: planningMocks.updateTaskAgentProviderSession,
 }));
 
@@ -111,6 +125,20 @@ describe('task-claude-runner', () => {
         body: '最终计划 JSON',
         metadata: {},
         createdAt: '2026-01-01T00:00:01.000Z',
+      },
+    });
+    planningMocks.recordTaskAgentProgress.mockReturnValue({
+      success: true,
+      data: {
+        progressId: 'prog-1',
+        runId: 'run-1',
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'planner',
+        provider: 'claude',
+        phase: 'starting',
+        summary: 'Agent 已启动，正在准备任务上下文。',
+        createdAt: '2026-01-01T00:00:00.000Z',
       },
     });
     planningMocks.updateTaskAgentProviderSession.mockReturnValue({

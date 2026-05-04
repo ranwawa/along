@@ -6,11 +6,26 @@ import {
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
-  AGENT_RUN_STATUS,
-  createTaskAgentRun,
-  ensureTaskAgentBinding,
-  finishTaskAgentRun,
-  recordTaskAgentResult,
+  type TaskAgentProgressContext,
+  writeTaskAgentProgress,
+} from './task-agent-progress';
+import {
+  finishTaskAgentSuccess,
+  markTaskAgentFailed,
+  type StartedTaskAgentRun,
+  saveTaskAgentOutput,
+  startTaskAgentRun,
+  startTaskAgentRunHeartbeat,
+} from './task-agent-run-lifecycle';
+import {
+  getAssistantMessageText,
+  getResultError,
+  getResultStructuredOutput,
+  getResultText,
+  getSessionId,
+  summarizeClaudeProgress,
+} from './task-claude-messages';
+import {
   type TaskAgentRunRecord,
   updateTaskAgentProviderSession,
 } from './task-planning';
@@ -38,70 +53,11 @@ export interface RunTaskClaudeTurnOutput {
   outputArtifactIds: string[];
 }
 
-type MessageWithSession = SDKMessage & { session_id?: string };
-type UnknownRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function getSessionId(message: SDKMessage): string | undefined {
-  const candidate = message as MessageWithSession;
-  return typeof candidate.session_id === 'string'
-    ? candidate.session_id
-    : undefined;
-}
-
-function getResultError(message: SDKMessage): string | null {
-  const result = message as {
-    type?: string;
-    is_error?: boolean;
-    errors?: unknown;
-    subtype?: string;
-  };
-  if (result.type !== 'result') return null;
-  if (result.is_error !== true) return null;
-
-  if (Array.isArray(result.errors)) {
-    const errors = result.errors
-      .filter((item): item is string => typeof item === 'string')
-      .join(', ');
-    return errors || 'Claude Agent 返回错误结果';
-  }
-
-  return typeof result.subtype === 'string'
-    ? `Claude Agent 返回错误结果: ${result.subtype}`
-    : 'Claude Agent 返回错误结果';
-}
-
-function collectTextBlocks(content: unknown): string[] {
-  if (!Array.isArray(content)) return [];
-
-  return content.flatMap((block) => {
-    if (!isRecord(block)) return [];
-    return block.type === 'text' && typeof block.text === 'string'
-      ? [block.text]
-      : [];
-  });
-}
-
-function getAssistantMessageText(message: SDKMessage): string[] {
-  const record: unknown = message;
-  if (!isRecord(record) || record.type !== 'assistant') return [];
-  if (!isRecord(record.message)) return [];
-  return collectTextBlocks(record.message.content);
-}
-
-function getResultText(message: SDKMessage): string | undefined {
-  const record: unknown = message;
-  if (!isRecord(record) || record.type !== 'result') return undefined;
-  return typeof record.result === 'string' ? record.result : undefined;
-}
-
-function getResultStructuredOutput(message: SDKMessage): unknown {
-  const record: unknown = message;
-  if (!isRecord(record) || record.type !== 'result') return undefined;
-  return record.structured_output;
+interface ClaudeTurnState {
+  latestSessionId?: string;
+  assistantTextParts: string[];
+  finalResultText?: string;
+  structuredOutput?: unknown;
 }
 
 function buildOptions(
@@ -124,130 +80,165 @@ export async function runTaskClaudeTurn(
   const prompt = input.prompt.trim();
   if (!prompt) return failure('Claude prompt 不能为空');
 
-  const bindingRes = ensureTaskAgentBinding({
-    threadId: input.threadId,
-    agentId: input.agentId,
-    provider: PROVIDER,
-    cwd: input.cwd,
-    model: input.model,
-    personalityVersion: input.personalityVersion,
-  });
-  if (!bindingRes.success) return bindingRes;
+  const startedRes = startTaskAgentRun(input, PROVIDER);
+  if (!startedRes.success) return startedRes;
+  return runStartedClaudeTurn(input, prompt, startedRes.data);
+}
 
-  const binding = bindingRes.data;
-  const usedResume = Boolean(binding.providerSessionId);
-
-  const runRes = createTaskAgentRun({
-    taskId: input.taskId,
-    threadId: input.threadId,
-    agentId: input.agentId,
-    provider: PROVIDER,
-    providerSessionIdAtStart: binding.providerSessionId,
-    inputArtifactIds: input.inputArtifactIds,
-  });
-  if (!runRes.success) return runRes;
-
-  let latestSessionId = binding.providerSessionId;
-  const assistantTextParts: string[] = [];
-  let finalResultText: string | undefined;
-  let structuredOutput: unknown;
+async function runStartedClaudeTurn(
+  input: RunTaskClaudeTurnInput,
+  prompt: string,
+  started: StartedTaskAgentRun,
+): Promise<Result<RunTaskClaudeTurnOutput>> {
+  const stopHeartbeat = startTaskAgentRunHeartbeat(
+    started.progressContext,
+    started.usedResume
+      ? 'Agent 已启动，正在恢复上次会话。'
+      : 'Agent 已启动，正在准备任务上下文。',
+    input.cwd,
+  );
 
   try {
     const conversation = query({
       prompt,
-      options: buildOptions(input, binding.providerSessionId),
+      options: buildOptions(input, started.binding.providerSessionId),
     });
-
-    for await (const message of conversation) {
-      const sessionId = getSessionId(message);
-      if (sessionId) latestSessionId = sessionId;
-
-      assistantTextParts.push(...getAssistantMessageText(message));
-      const resultText = getResultText(message);
-      if (resultText) finalResultText = resultText;
-      const resultStructuredOutput = getResultStructuredOutput(message);
-      if (resultStructuredOutput !== undefined) {
-        structuredOutput = resultStructuredOutput;
-      }
-
-      const error = getResultError(message);
-      if (error) {
-        const failedRun = finishTaskAgentRun({
-          runId: runRes.data.runId,
-          status: AGENT_RUN_STATUS.FAILED,
-          providerSessionIdAtEnd: latestSessionId,
-          error,
-        });
-        if (!failedRun.success) return failedRun;
-        return failure(error);
-      }
-    }
-
-    if (latestSessionId) {
-      const updateRes = updateTaskAgentProviderSession(
-        input.threadId,
-        input.agentId,
-        PROVIDER,
-        latestSessionId,
-      );
-      if (!updateRes.success) return updateRes;
-    }
-
-    const assistantText = (
-      finalResultText ||
-      assistantTextParts.join('\n\n') ||
-      (structuredOutput === undefined
-        ? ''
-        : JSON.stringify(structuredOutput, null, 2))
-    ).trim();
-    const outputArtifactIds: string[] = [];
-    if (assistantText) {
-      const artifactRes = recordTaskAgentResult({
-        taskId: input.taskId,
-        threadId: input.threadId,
-        agentId: input.agentId,
-        provider: PROVIDER,
-        runId: runRes.data.runId,
-        body: assistantText,
-      });
-      if (!artifactRes.success) {
-        const failedRun = finishTaskAgentRun({
-          runId: runRes.data.runId,
-          status: AGENT_RUN_STATUS.FAILED,
-          providerSessionIdAtEnd: latestSessionId,
-          error: artifactRes.error,
-        });
-        if (!failedRun.success) return failedRun;
-        return failure(artifactRes.error);
-      }
-      outputArtifactIds.push(artifactRes.data.artifactId);
-    }
-
-    const finishedRun = finishTaskAgentRun({
-      runId: runRes.data.runId,
-      status: AGENT_RUN_STATUS.SUCCEEDED,
-      providerSessionIdAtEnd: latestSessionId,
-      outputArtifactIds,
-    });
-    if (!finishedRun.success) return finishedRun;
-
-    return success({
-      run: finishedRun.data,
-      providerSessionId: latestSessionId,
-      usedResume,
-      assistantText,
-      structuredOutput,
-      outputArtifactIds,
-    });
+    const stateRes = await collectClaudeConversation(
+      conversation,
+      started.progressContext,
+      started.binding.providerSessionId,
+    );
+    if (!stateRes.success) return stateRes;
+    return completeClaudeTurn(input, started, stateRes.data);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failedRun = finishTaskAgentRun({
-      runId: runRes.data.runId,
-      status: AGENT_RUN_STATUS.FAILED,
-      providerSessionIdAtEnd: latestSessionId,
-      error: message,
-    });
-    if (!failedRun.success) return failedRun;
-    return failure(`Claude Agent 执行失败: ${message}`);
+    return failClaudeTurn(
+      started.progressContext,
+      error,
+      started.binding.providerSessionId,
+    );
+  } finally {
+    stopHeartbeat();
   }
+}
+
+async function collectClaudeConversation(
+  conversation: AsyncIterable<SDKMessage>,
+  context: TaskAgentProgressContext,
+  latestSessionId?: string,
+): Promise<Result<ClaudeTurnState>> {
+  const state: ClaudeTurnState = {
+    latestSessionId,
+    assistantTextParts: [],
+  };
+  for await (const message of conversation) {
+    const messageRes = processClaudeMessage(state, context, message);
+    if (!messageRes.success) return messageRes;
+  }
+  return success(state);
+}
+
+function processClaudeMessage(
+  state: ClaudeTurnState,
+  context: TaskAgentProgressContext,
+  message: SDKMessage,
+): Result<void> {
+  const sessionId = getSessionId(message);
+  if (sessionId) state.latestSessionId = sessionId;
+  writeClaudeProgress(context, message);
+  state.assistantTextParts.push(...getAssistantMessageText(message));
+  const resultText = getResultText(message);
+  if (resultText) state.finalResultText = resultText;
+  const output = getResultStructuredOutput(message);
+  if (output !== undefined) state.structuredOutput = output;
+  const error = getResultError(message);
+  if (!error) return success(undefined);
+  const failedRes = markTaskAgentFailed(context, error, state.latestSessionId);
+  return failedRes.success ? failure(error) : failure(failedRes.error);
+}
+
+function completeClaudeTurn(
+  input: RunTaskClaudeTurnInput,
+  started: StartedTaskAgentRun,
+  state: ClaudeTurnState,
+): Result<RunTaskClaudeTurnOutput> {
+  const sessionRes = saveClaudeSession(input, state.latestSessionId);
+  if (!sessionRes.success) return sessionRes;
+  const assistantText = formatClaudeAssistantText(state);
+  const outputRes = saveTaskAgentOutput(
+    input,
+    PROVIDER,
+    assistantText,
+    started.progressContext,
+    state.latestSessionId,
+  );
+  if (!outputRes.success) return outputRes;
+
+  const finishedRun = finishTaskAgentSuccess(
+    started.progressContext,
+    outputRes.data,
+    state.latestSessionId,
+  );
+  if (!finishedRun.success) return finishedRun;
+
+  return success({
+    run: finishedRun.data,
+    providerSessionId: state.latestSessionId,
+    usedResume: started.usedResume,
+    assistantText,
+    structuredOutput: state.structuredOutput,
+    outputArtifactIds: outputRes.data,
+  });
+}
+
+function failClaudeTurn(
+  context: TaskAgentProgressContext,
+  error: unknown,
+  providerSessionIdAtEnd?: string,
+): Result<never> {
+  const message = error instanceof Error ? error.message : String(error);
+  const failedRes = markTaskAgentFailed(
+    context,
+    message,
+    providerSessionIdAtEnd,
+  );
+  return failedRes.success
+    ? failure(`Claude Agent 执行失败: ${message}`)
+    : failure(failedRes.error);
+}
+
+function writeClaudeProgress(
+  context: TaskAgentProgressContext,
+  message: SDKMessage,
+) {
+  const progress = summarizeClaudeProgress(message);
+  if (!progress) return;
+  writeTaskAgentProgress(
+    context,
+    progress.phase,
+    progress.summary,
+    progress.detail,
+  );
+}
+
+function saveClaudeSession(
+  input: RunTaskClaudeTurnInput,
+  latestSessionId?: string,
+): Result<void> {
+  if (!latestSessionId) return success(undefined);
+  return updateTaskAgentProviderSession(
+    input.threadId,
+    input.agentId,
+    PROVIDER,
+    latestSessionId,
+  );
+}
+
+function formatClaudeAssistantText(state: ClaudeTurnState): string {
+  return (
+    state.finalResultText ||
+    state.assistantTextParts.join('\n\n') ||
+    (state.structuredOutput === undefined
+      ? ''
+      : JSON.stringify(state.structuredOutput, null, 2))
+  ).trim();
 }

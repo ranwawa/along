@@ -6,6 +6,7 @@ import type {
 import { AgentStagesPanel } from './AgentStagesPanel';
 import { formatTime, getTaskStatusLabel, getThreadStatusLabel } from './format';
 import { TaskFlowPanel } from './TaskFlowPanel';
+import { TaskProgressPanel } from './TaskProgressPanel';
 import { TaskRecordsPanel } from './TaskRecords';
 import { TaskStatusBadge } from './TaskStatusBadge';
 
@@ -164,6 +165,7 @@ export function TaskDetail({
             onAction={onAction}
           />
           <CurrentPlanPanel selected={selected} />
+          <TaskProgressPanel snapshot={selected} />
           <AgentStagesPanel stages={selected.agentStages || []} />
           <TaskRecordsPanel artifacts={sortedArtifacts} />
         </div>

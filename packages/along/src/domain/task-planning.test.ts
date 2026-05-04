@@ -1,3 +1,5 @@
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy planning tests use a large in-memory database mock.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy planning test file predates current file-size rule.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Row = Record<string, string | number | null>;
@@ -11,6 +13,7 @@ const mockDbState = vi.hoisted(() => {
     rounds: Row[];
     bindings: Row[];
     runs: Row[];
+    progress: Row[];
   };
 
   const state: State = {
@@ -21,6 +24,7 @@ const mockDbState = vi.hoisted(() => {
     rounds: [],
     bindings: [],
     runs: [],
+    progress: [],
   };
 
   function reset() {
@@ -31,6 +35,7 @@ const mockDbState = vi.hoisted(() => {
     state.rounds = [];
     state.bindings = [];
     state.runs = [];
+    state.progress = [];
   }
 
   function normalizeSql(sql: string): string {
@@ -135,6 +140,17 @@ const mockDbState = vi.hoisted(() => {
             .filter((row) => row.thread_id === args[0])
             .sort((a, b) =>
               String(a.started_at).localeCompare(String(b.started_at)),
+            );
+        }
+        if (
+          normalized.includes(
+            'FROM task_agent_progress_events WHERE thread_id = ?',
+          )
+        ) {
+          return state.progress
+            .filter((row) => row.thread_id === args[0])
+            .sort((a, b) =>
+              String(a.created_at).localeCompare(String(b.created_at)),
             );
         }
         if (
@@ -572,6 +588,34 @@ const mockDbState = vi.hoisted(() => {
           return { changes: row ? 1 : 0 };
         }
 
+        if (normalized.startsWith('INSERT INTO task_agent_progress_events')) {
+          const [
+            progressId,
+            runId,
+            taskId,
+            threadId,
+            agentId,
+            provider,
+            phase,
+            summary,
+            detail,
+            createdAt,
+          ] = args;
+          state.progress.push({
+            progress_id: progressId,
+            run_id: runId,
+            task_id: taskId,
+            thread_id: threadId,
+            agent_id: agentId,
+            provider,
+            phase,
+            summary,
+            detail,
+            created_at: createdAt,
+          });
+          return { changes: 1 };
+        }
+
         return { changes: 0 };
       },
     };
@@ -604,9 +648,11 @@ import {
   publishTaskPlanRevision,
   readTaskAgentBinding,
   readTaskPlanningSnapshot,
+  recordTaskAgentProgress,
   recordTaskAgentResult,
   recoverInterruptedTaskAgentRuns,
   submitTaskMessage,
+  TASK_AGENT_PROGRESS_PHASE,
   TASK_STATUS,
   THREAD_STATUS,
   updateTaskAgentProviderSession,
@@ -898,6 +944,52 @@ describe('task-planning', () => {
     expect(finished.data.providerSessionIdAtStart).toBe('session-1');
     expect(finished.data.providerSessionIdAtEnd).toBe('session-2');
     expect(finished.data.outputArtifactIds).toEqual(['art-2']);
+  });
+
+  it('当记录 Agent Progress 时，期望快照包含可序列化进展事件', () => {
+    const { taskId } = createTaskWithPlan();
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+
+    const run = createTaskAgentRun({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'claude',
+    });
+    expect(run.success).toBe(true);
+    if (!run.success) throw new Error(run.error);
+
+    const progress = recordTaskAgentProgress({
+      runId: run.data.runId,
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'claude',
+      phase: TASK_AGENT_PROGRESS_PHASE.TOOL,
+      summary: '正在执行工具或命令。',
+      detail: '只保存用户可理解摘要。',
+    });
+    expect(progress.success).toBe(true);
+    if (!progress.success) throw new Error(progress.error);
+    expect(progress.data.phase).toBe('tool');
+
+    const refreshed = readTaskPlanningSnapshot(taskId);
+    expect(refreshed.success).toBe(true);
+    if (!refreshed.success || !refreshed.data)
+      throw new Error('missing refreshed snapshot');
+    expect(refreshed.data.agentProgressEvents).toEqual([
+      expect.objectContaining({
+        runId: run.data.runId,
+        agentId: 'planner',
+        provider: 'claude',
+        phase: 'tool',
+        summary: '正在执行工具或命令。',
+        detail: '只保存用户可理解摘要。',
+      }),
+    ]);
   });
 
   it('当记录 Agent 原始输出时，期望保存为 agent_result artifact', () => {
