@@ -4,6 +4,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 import type {
   TaskArtifactRecord,
@@ -50,7 +51,7 @@ function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
     <aside className="min-w-0 flex flex-col gap-4">
       <div className="rounded-lg border border-border-color bg-black/25 p-4 flex flex-col gap-3">
         <div className="font-semibold text-sm text-text-secondary">
-          任务信息
+          任务元信息
         </div>
         <div className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-2 text-sm">
           <span className="text-text-muted">ID</span>
@@ -107,6 +108,46 @@ function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+function TaskBodyPanel({ selected }: { selected: TaskPlanningSnapshot }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const body = selected.task.body.trim();
+  const bodyText = body || '暂无任务详情。';
+  const collapsedText = body ? body.replace(/\s+/g, ' ') : bodyText;
+
+  return (
+    <section className="rounded-lg border border-border-color bg-black/25">
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        onClick={() => setIsExpanded((value) => !value)}
+        className="w-full min-w-0 px-4 py-3 text-left outline-none focus:ring-1 focus:ring-brand/60"
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="shrink-0 text-sm font-semibold text-text-secondary">
+            任务详情
+          </span>
+          {!isExpanded && (
+            <span
+              className="min-w-0 flex-1 truncate text-sm text-text-primary"
+              title={collapsedText}
+            >
+              {collapsedText}
+            </span>
+          )}
+          <span className="ml-auto shrink-0 text-xs text-text-muted">
+            {isExpanded ? '收起' : '展开'}
+          </span>
+        </div>
+        {isExpanded && (
+          <div className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-text-primary">
+            {bodyText}
+          </div>
+        )}
+      </button>
+    </section>
   );
 }
 
@@ -342,7 +383,7 @@ function SelectedTaskDetail({
   onScroll: (element: HTMLDivElement) => void;
 }) {
   return (
-    <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(180px,34vh)] 2xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-rows-1">
+    <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(260px,40vh)] 2xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-rows-1">
       <section className="min-h-0 min-w-0 flex flex-col">
         <div
           ref={scrollRef}
@@ -350,11 +391,6 @@ function SelectedTaskDetail({
           className="flex-1 min-h-0 overflow-auto p-4 md:p-6"
         >
           <div className="min-w-0 flex flex-col gap-5">
-            <TaskFlowPanel
-              flow={selected.flow}
-              busyAction={detail.busyAction}
-              onAction={detail.onAction}
-            />
             <CurrentPlanPanel selected={selected} />
             <TaskProgressPanel snapshot={selected} />
             <AgentStagesPanel stages={selected.agentStages || []} />
@@ -372,7 +408,15 @@ function SelectedTaskDetail({
         </div>
       </section>
       <div className="min-h-0 min-w-0 overflow-auto border-t border-border-color p-4 md:p-6 2xl:border-l 2xl:border-t-0">
-        <TaskInfoPanel selected={selected} />
+        <div className="flex min-w-0 flex-col gap-4">
+          <TaskBodyPanel selected={selected} />
+          <TaskFlowPanel
+            flow={selected.flow}
+            busyAction={detail.busyAction}
+            onAction={detail.onAction}
+          />
+          <TaskInfoPanel selected={selected} />
+        </div>
       </div>
     </div>
   );
