@@ -14,6 +14,7 @@ const mockDbState = vi.hoisted(() => {
     bindings: Row[];
     runs: Row[];
     progress: Row[];
+    sessionEvents: Row[];
   };
 
   const state: State = {
@@ -25,6 +26,7 @@ const mockDbState = vi.hoisted(() => {
     bindings: [],
     runs: [],
     progress: [],
+    sessionEvents: [],
   };
 
   function reset() {
@@ -36,6 +38,7 @@ const mockDbState = vi.hoisted(() => {
     state.bindings = [];
     state.runs = [];
     state.progress = [];
+    state.sessionEvents = [];
   }
 
   function normalizeSql(sql: string): string {
@@ -182,6 +185,17 @@ const mockDbState = vi.hoisted(() => {
           )
         ) {
           return state.progress
+            .filter((row) => row.thread_id === args[0])
+            .sort((a, b) =>
+              String(a.created_at).localeCompare(String(b.created_at)),
+            );
+        }
+        if (
+          normalized.includes(
+            'FROM task_agent_session_events WHERE thread_id = ?',
+          )
+        ) {
+          return state.sessionEvents
             .filter((row) => row.thread_id === args[0])
             .sort((a, b) =>
               String(a.created_at).localeCompare(String(b.created_at)),
@@ -652,6 +666,36 @@ const mockDbState = vi.hoisted(() => {
           return { changes: 1 };
         }
 
+        if (normalized.startsWith('INSERT INTO task_agent_session_events')) {
+          const [
+            eventId,
+            runId,
+            taskId,
+            threadId,
+            agentId,
+            provider,
+            source,
+            kind,
+            content,
+            metadata,
+            createdAt,
+          ] = args;
+          state.sessionEvents.push({
+            event_id: eventId,
+            run_id: runId,
+            task_id: taskId,
+            thread_id: threadId,
+            agent_id: agentId,
+            provider,
+            source,
+            kind,
+            content,
+            metadata,
+            created_at: createdAt,
+          });
+          return { changes: 1 };
+        }
+
         return { changes: 0 };
       },
     };
@@ -686,6 +730,7 @@ import {
   readTaskPlanningSnapshot,
   recordTaskAgentProgress,
   recordTaskAgentResult,
+  recordTaskAgentSessionEvent,
   recoverInterruptedTaskAgentRuns,
   submitTaskMessage,
   TASK_AGENT_PROGRESS_PHASE,
@@ -1080,6 +1125,49 @@ describe('task-planning', () => {
         phase: 'tool',
         summary: '正在执行工具或命令。',
         detail: '只保存用户可理解摘要。',
+      }),
+    ]);
+  });
+
+  it('当记录 Agent Session 事件时，期望快照包含脱敏后的会话流', () => {
+    const { taskId } = createTaskWithPlan();
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+
+    const run = createTaskAgentRun({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'claude',
+    });
+    expect(run.success).toBe(true);
+    if (!run.success) throw new Error(run.error);
+
+    const event = recordTaskAgentSessionEvent({
+      runId: run.data.runId,
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'claude',
+      source: 'agent',
+      kind: 'output',
+      content: '执行中 TOKEN=secret-value',
+    });
+    expect(event.success).toBe(true);
+    if (!event.success) throw new Error(event.error);
+
+    const refreshed = readTaskPlanningSnapshot(taskId);
+    expect(refreshed.success).toBe(true);
+    if (!refreshed.success || !refreshed.data)
+      throw new Error('missing refreshed snapshot');
+    expect(refreshed.data.agentSessionEvents).toEqual([
+      expect.objectContaining({
+        runId: run.data.runId,
+        source: 'agent',
+        kind: 'output',
+        content: '执行中 TOKEN=[REDACTED]',
       }),
     ]);
   });

@@ -1,7 +1,10 @@
 import {
   recordTaskAgentProgress,
+  recordTaskAgentSessionEvent,
   TASK_AGENT_PROGRESS_PHASE,
   type TaskAgentProgressPhase,
+  type TaskAgentSessionEventKind,
+  type TaskAgentSessionEventSource,
 } from './task-planning';
 
 export interface TaskAgentProgressContext {
@@ -23,6 +26,29 @@ export function writeTaskAgentProgress(
     phase,
     summary,
     detail,
+  });
+  recordTaskAgentSessionEvent({
+    ...context,
+    source: 'system',
+    kind: phase === TASK_AGENT_PROGRESS_PHASE.FAILED ? 'error' : 'progress',
+    content: detail ? `${summary}\n${detail}` : summary,
+    metadata: { phase },
+  });
+}
+
+export function writeTaskAgentSessionEvent(
+  context: TaskAgentProgressContext,
+  source: TaskAgentSessionEventSource,
+  kind: TaskAgentSessionEventKind,
+  content: string,
+  metadata?: Record<string, unknown>,
+): void {
+  recordTaskAgentSessionEvent({
+    ...context,
+    source,
+    kind,
+    content,
+    metadata,
   });
 }
 

@@ -115,6 +115,16 @@ const TABLES = [
     FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
     FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
   );`,
+  `CREATE TABLE IF NOT EXISTS task_agent_session_events (
+    event_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL, task_id TEXT NOT NULL, thread_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL, provider TEXT NOT NULL, source TEXT NOT NULL,
+    kind TEXT NOT NULL, content TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(run_id) REFERENCES task_agent_runs(run_id) ON DELETE CASCADE,
+    FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
+    FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
+  );`,
 ];
 
 const INDEXES = [
@@ -133,6 +143,7 @@ const INDEXES = [
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_feedback_rounds_open_thread ON task_feedback_rounds(thread_id) WHERE status IN ('open','processing','stale_partial')",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_agent_runs_active ON task_agent_runs(thread_id, agent_id, provider) WHERE status = 'running'",
   'CREATE INDEX IF NOT EXISTS idx_task_agent_progress_thread ON task_agent_progress_events(thread_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_task_agent_session_thread ON task_agent_session_events(thread_id, created_at)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_task_items_repo_seq ON task_items(repo_owner, repo_name, seq)',
 ];
 

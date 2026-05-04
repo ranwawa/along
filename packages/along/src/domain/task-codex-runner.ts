@@ -4,6 +4,7 @@ import { failure, success } from '../core/result';
 import {
   type TaskAgentProgressContext,
   writeTaskAgentProgress,
+  writeTaskAgentSessionEvent,
 } from './task-agent-progress';
 import {
   finishTaskAgentSuccess,
@@ -94,6 +95,7 @@ async function runStartedCodexTurn(
     thread = openCodexThread(input, progressContext, binding.providerSessionId);
     const turn = await runCodexPrompt(thread, prompt, outputSchema);
     latestThreadId = thread.id || binding.providerSessionId;
+    writeCodexTurnSessionEvents(progressContext, turn);
     return completeCodexTurn(
       input,
       progressContext,
@@ -106,6 +108,26 @@ async function runStartedCodexTurn(
     return failCodexTurn(progressContext, error, thread?.id || latestThreadId);
   } finally {
     stopHeartbeat();
+  }
+}
+
+function writeCodexTurnSessionEvents(
+  context: TaskAgentProgressContext,
+  turn: TaskCodexTurn,
+) {
+  if (turn.finalResponse.trim()) {
+    writeTaskAgentSessionEvent(context, 'agent', 'output', turn.finalResponse, {
+      type: 'final_response',
+    });
+  }
+  if (turn.items.length > 0) {
+    writeTaskAgentSessionEvent(
+      context,
+      'tool',
+      'message',
+      `Codex 返回 ${turn.items.length} 条会话 item。`,
+      { type: 'items', count: turn.items.length },
+    );
   }
 }
 

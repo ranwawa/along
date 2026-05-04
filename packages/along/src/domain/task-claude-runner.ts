@@ -8,6 +8,7 @@ import { failure, success } from '../core/result';
 import {
   type TaskAgentProgressContext,
   writeTaskAgentProgress,
+  writeTaskAgentSessionEvent,
 } from './task-agent-progress';
 import {
   finishTaskAgentSuccess,
@@ -24,6 +25,7 @@ import {
   getResultText,
   getSessionId,
   summarizeClaudeProgress,
+  summarizeClaudeSessionEvent,
 } from './task-claude-messages';
 import {
   type TaskAgentRunRecord,
@@ -144,6 +146,7 @@ function processClaudeMessage(
 ): Result<void> {
   const sessionId = getSessionId(message);
   if (sessionId) state.latestSessionId = sessionId;
+  writeClaudeSessionEvent(context, message);
   writeClaudeProgress(context, message);
   state.assistantTextParts.push(...getAssistantMessageText(message));
   const resultText = getResultText(message);
@@ -162,6 +165,21 @@ function processClaudeMessage(
   }
   const failedRes = markTaskAgentFailed(context, error, state.latestSessionId);
   return failedRes.success ? failure(error) : failure(failedRes.error);
+}
+
+function writeClaudeSessionEvent(
+  context: TaskAgentProgressContext,
+  message: SDKMessage,
+) {
+  const event = summarizeClaudeSessionEvent(message);
+  if (!event) return;
+  writeTaskAgentSessionEvent(
+    context,
+    event.source,
+    event.kind,
+    event.content,
+    event.metadata,
+  );
 }
 
 function completeClaudeTurn(

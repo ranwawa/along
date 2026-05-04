@@ -239,7 +239,7 @@ type TaskDetailProps = {
   onAction: (action: TaskFlowAction) => void;
 };
 
-function useLatestScroll(detailKey: string, artifactCount: number) {
+function useLatestScroll(detailKey: string, activityCount: number) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowLatestRef = useRef(true);
   const onScroll = (element: HTMLDivElement) => {
@@ -254,9 +254,9 @@ function useLatestScroll(detailKey: string, artifactCount: number) {
   }, [detailKey]);
 
   useEffect(() => {
-    void artifactCount;
+    void activityCount;
     if (shouldFollowLatestRef.current) scrollToLatest(scrollRef.current);
-  }, [artifactCount]);
+  }, [activityCount]);
 
   return { scrollRef, onScroll };
 }
@@ -264,10 +264,11 @@ function useLatestScroll(detailKey: string, artifactCount: number) {
 export function TaskDetail(props: TaskDetailProps) {
   const detailKey =
     props.selected?.task.taskId || (props.isNewTaskOpen ? 'new' : 'empty');
-  const { scrollRef, onScroll } = useLatestScroll(
-    detailKey,
-    props.sortedArtifacts.length,
-  );
+  const activityCount =
+    props.sortedArtifacts.length +
+    (props.selected?.agentProgressEvents.length || 0) +
+    (props.selected?.agentSessionEvents.length || 0);
+  const { scrollRef, onScroll } = useLatestScroll(detailKey, activityCount);
 
   if (!props.selected) {
     if (props.isNewTaskOpen) {

@@ -5,6 +5,7 @@ import { failure, success } from '../core/result';
 import {
   type TaskAgentProgressContext,
   writeTaskAgentProgress,
+  writeTaskAgentSessionEvent,
 } from './task-agent-progress';
 import {
   finishTaskAgentSuccess,
@@ -25,6 +26,8 @@ export interface TaskAgentSpawnCommand {
   args: string[];
   cwd: string;
   stdin?: string;
+  onStdout?: (chunk: string) => void;
+  onStderr?: (chunk: string) => void;
 }
 
 export interface TaskAgentSpawnResult {
@@ -102,9 +105,11 @@ export async function defaultTaskAgentSpawnRunner(
     proc.stderr?.setEncoding('utf-8');
     proc.stdout?.on('data', (chunk) => {
       stdout += chunk;
+      command.onStdout?.(chunk);
     });
     proc.stderr?.on('data', (chunk) => {
       stderr += chunk;
+      command.onStderr?.(chunk);
     });
     proc.on('error', (error) => {
       resolve(failure(getErrorMessage(error)));
@@ -155,12 +160,14 @@ export async function runTaskSpawnTurn(
   );
   const runner = input.spawnRunner || defaultTaskAgentSpawnRunner;
   try {
+    const streamState = { seen: false };
     return executeSpawnTurn(
       input,
       commandRes.data,
       editorRes.data,
       startedRes.data,
       runner,
+      streamState,
     );
   } finally {
     stopHeartbeat();
@@ -187,13 +194,16 @@ async function executeSpawnTurn(
   editor: EditorConfig,
   started: StartedTaskAgentRun,
   runner: TaskAgentSpawnRunner,
+  streamState: { seen: boolean },
 ): Promise<Result<RunTaskClaudeTurnOutput>> {
   writeTaskAgentProgress(
     started.progressContext,
     TASK_AGENT_PROGRESS_PHASE.TOOL,
     '正在等待外部 Agent 命令返回。',
   );
-  const executionRes = await runner(command);
+  const executionRes = await runner(
+    withSessionStreamCallbacks(command, started.progressContext, streamState),
+  );
   if (!executionRes.success) {
     return failSpawnTurn(
       started.progressContext,
@@ -201,7 +211,37 @@ async function executeSpawnTurn(
       executionRes.error,
     );
   }
-  return finishSpawnExecution(input, editor, started, executionRes.data);
+  return finishSpawnExecution(
+    input,
+    editor,
+    started,
+    executionRes.data,
+    streamState.seen,
+  );
+}
+
+function withSessionStreamCallbacks(
+  command: TaskAgentSpawnCommand,
+  context: TaskAgentProgressContext,
+  streamState: { seen: boolean },
+): TaskAgentSpawnCommand {
+  return {
+    ...command,
+    onStdout: (chunk) => {
+      streamState.seen = true;
+      command.onStdout?.(chunk);
+      writeTaskAgentSessionEvent(context, 'stdout', 'output', chunk, {
+        stream: 'stdout',
+      });
+    },
+    onStderr: (chunk) => {
+      streamState.seen = true;
+      command.onStderr?.(chunk);
+      writeTaskAgentSessionEvent(context, 'stderr', 'error', chunk, {
+        stream: 'stderr',
+      });
+    },
+  };
 }
 
 function finishSpawnExecution(
@@ -209,7 +249,9 @@ function finishSpawnExecution(
   editor: EditorConfig,
   started: StartedTaskAgentRun,
   execution: TaskAgentSpawnResult,
+  hadStreamEvents: boolean,
 ): Result<RunTaskClaudeTurnOutput> {
+  if (!hadStreamEvents) writeSpawnFinalSessionEvent(started, execution);
   if (execution.exitCode !== 0) {
     return failSpawnTurn(
       started.progressContext,
@@ -238,6 +280,32 @@ function finishSpawnExecution(
     assistantText,
     outputArtifactIds: outputRes.data,
   });
+}
+
+function writeSpawnFinalSessionEvent(
+  started: StartedTaskAgentRun,
+  execution: TaskAgentSpawnResult,
+) {
+  const stdout = execution.stdout.trim();
+  const stderr = execution.stderr.trim();
+  if (stdout) {
+    writeTaskAgentSessionEvent(
+      started.progressContext,
+      'stdout',
+      'output',
+      stdout,
+      { stream: 'stdout', final: true },
+    );
+  }
+  if (stderr) {
+    writeTaskAgentSessionEvent(
+      started.progressContext,
+      'stderr',
+      execution.exitCode === 0 ? 'output' : 'error',
+      stderr,
+      { stream: 'stderr', final: true },
+    );
+  }
 }
 
 function failSpawnTurn(
