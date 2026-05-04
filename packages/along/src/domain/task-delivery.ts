@@ -1,3 +1,5 @@
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy delivery orchestration predates current function-size rule.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy delivery module predates current file-size rule.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -97,8 +99,8 @@ function buildPrBody(input: {
     '',
     '## 执行步骤',
     '1. 读取 Task 已批准方案',
-    '2. 在本地仓库完成代码实现',
-    `3. 提交并推送分支 \`${input.branchName}\``,
+    '2. 确认实施阶段已完成本地 commit',
+    `3. 推送分支 \`${input.branchName}\``,
     '4. 创建 Pull Request',
     '',
     '## 影响范围',
@@ -245,73 +247,43 @@ export async function runTaskDelivery(
     );
   }
 
-  const changedFiles = parseChangedFiles(statusRes.data);
-  if (changedFiles.length === 0 && snapshot.task.commitShas.length === 0) {
+  const uncommittedFiles = parseChangedFiles(statusRes.data);
+  if (uncommittedFiles.length > 0) {
     return failDeliveryRun(
       run,
       input.taskId,
       snapshot.thread.threadId,
-      '没有可提交变更',
+      `存在未提交变更，不能交付。请先完成实施阶段 auto-commit: ${uncommittedFiles.join(
+        ', ',
+      )}`,
     );
   }
 
   let commitShas = snapshot.task.commitShas;
-  if (changedFiles.length > 0) {
-    const branchRes = updateTaskDelivery({
-      taskId: input.taskId,
-      status: TASK_STATUS.DELIVERING,
-      branchName,
-    });
-    if (!branchRes.success) {
-      return failDeliveryRun(
-        run,
-        input.taskId,
-        snapshot.thread.threadId,
-        branchRes.error,
-      );
-    }
-
-    const addRes = await runGit(runner, worktreePath, ['add', '-A']);
-    if (!addRes.success) {
-      return failDeliveryRun(
-        run,
-        input.taskId,
-        snapshot.thread.threadId,
-        `暂存变更失败: ${addRes.error}`,
-      );
-    }
-
-    const commitMessage = `feat(task): 完成${normalizeTitle(
-      snapshot.task.title,
-      42,
-    )}，交付已批准方案`;
-    const commitRes = await runGit(runner, worktreePath, [
-      'commit',
-      '-m',
-      commitMessage,
+  if (commitShas.length === 0) {
+    const existingCommitRes = await runGit(runner, worktreePath, [
+      'rev-list',
+      '--max-count=1',
+      `origin/${defaultBranch}..HEAD`,
     ]);
-    if (!commitRes.success) {
+    if (!existingCommitRes.success) {
       return failDeliveryRun(
         run,
         input.taskId,
         snapshot.thread.threadId,
-        `提交失败: ${commitRes.error}`,
+        `读取已有 commit 失败: ${existingCommitRes.error}`,
       );
     }
-
-    const committedShaRes = await runGit(runner, worktreePath, [
-      'rev-parse',
-      'HEAD',
-    ]);
-    if (!committedShaRes.success) {
+    const existingCommit = existingCommitRes.data.trim();
+    if (!existingCommit) {
       return failDeliveryRun(
         run,
         input.taskId,
         snapshot.thread.threadId,
-        `读取 commit sha 失败: ${committedShaRes.error}`,
+        '没有已提交 commit，不能交付',
       );
     }
-    commitShas = [committedShaRes.data.trim()];
+    commitShas = [existingCommit];
     const commitMetaRes = updateTaskDelivery({
       taskId: input.taskId,
       status: TASK_STATUS.DELIVERING,
@@ -327,6 +299,25 @@ export async function runTaskDelivery(
       );
     }
   }
+
+  const changedFileRes = await runGit(runner, worktreePath, [
+    'diff',
+    '--name-only',
+    `origin/${defaultBranch}...HEAD`,
+  ]);
+  if (!changedFileRes.success) {
+    return failDeliveryRun(
+      run,
+      input.taskId,
+      snapshot.thread.threadId,
+      `读取 PR 文件列表失败: ${changedFileRes.error}`,
+    );
+  }
+  const changedFiles = changedFileRes.data
+    .split('\n')
+    .map((file) => file.trim())
+    .filter(Boolean)
+    .sort();
 
   const rebaseRes = await runGit(runner, worktreePath, [
     'rebase',
@@ -445,7 +436,7 @@ export async function runTaskDelivery(
       agentId: 'delivery',
       provider: 'system',
       body: [
-        'Delivery 完成：已提交、推送并创建 PR。',
+        'Delivery 完成：已推送并创建 PR。',
         '',
         `- 分支：${branchName}`,
         `- Commit：${finalCommitSha}`,

@@ -6,6 +6,7 @@ const planningMocks = vi.hoisted(() => ({
 }));
 const runnerMock = vi.hoisted(() => vi.fn());
 const worktreeMock = vi.hoisted(() => vi.fn());
+const autoCommitMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./task-planning', () => ({
   PLAN_STATUS: {
@@ -25,7 +26,12 @@ vi.mock('./task-agent-runtime', () => ({
 }));
 
 vi.mock('./task-worktree', () => ({
+  defaultTaskWorktreeCommandRunner: vi.fn(),
   prepareTaskWorktree: worktreeMock,
+}));
+
+vi.mock('./task-auto-commit', () => ({
+  runTaskAutoCommit: autoCommitMock,
 }));
 
 import { runTaskImplementationAgent } from './task-implementation-agent';
@@ -130,9 +136,18 @@ describe('task-implementation-agent', () => {
         outputArtifactIds: ['art-result'],
       },
     });
+    autoCommitMock.mockResolvedValue({
+      success: true,
+      data: {
+        commitShas: ['abc123'],
+        changedFiles: ['src/app.ts'],
+        commitMessage: 'fix(task): 完成移动演示数据按钮',
+        alreadyCommitted: false,
+      },
+    });
   });
 
-  it('当 Task 有已批准方案时，期望启动实现 Agent 并更新状态', async () => {
+  it('当 Task 有已批准方案时，期望启动实现 Agent 并在完成后自动提交', async () => {
     const result = await runTaskImplementationAgent({
       taskId: 'task-1',
       cwd: '/tmp/kinkeeper',
@@ -145,11 +160,8 @@ describe('task-implementation-agent', () => {
       'task-1',
       'implementing',
     );
-    expect(planningMocks.updateTaskStatus).toHaveBeenNthCalledWith(
-      2,
-      'task-1',
-      'implemented',
-    );
+    expect(planningMocks.updateTaskStatus).toHaveBeenCalledTimes(1);
+    expect(result.data.commitShas).toEqual(['abc123']);
     expect(runnerMock).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: 'task-1',
@@ -160,6 +172,13 @@ describe('task-implementation-agent', () => {
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
         }),
+      }),
+    );
+    expect(autoCommitMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worktreePath: '/tmp/along-task-worktree',
+        branchName: 'along-task/task-1-demo',
+        defaultBranch: 'main',
       }),
     );
   });
@@ -181,6 +200,45 @@ describe('task-implementation-agent', () => {
       'task-1',
       'planning_approved',
     );
+  });
+
+  it('当 auto-commit 失败后，期望反馈错误给实现 Agent 修复并重试提交', async () => {
+    autoCommitMock
+      .mockResolvedValueOnce({
+        success: false,
+        error: '提交失败: biome check failed',
+        command: 'git commit -m "fix(task): 完成移动演示数据按钮"',
+        summary: 'biome check failed',
+        changedFiles: ['src/app.ts'],
+        failureArtifactId: 'art-commit-failure',
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          commitShas: ['def456'],
+          changedFiles: ['src/app.ts'],
+          commitMessage: 'fix(task): 完成移动演示数据按钮',
+          alreadyCommitted: false,
+        },
+      });
+
+    const result = await runTaskImplementationAgent({
+      taskId: 'task-1',
+      cwd: '/tmp/kinkeeper',
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data.commitShas).toEqual(['def456']);
+    expect(runnerMock).toHaveBeenCalledTimes(2);
+    expect(runnerMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        prompt: expect.stringContaining('auto-commit 子步骤'),
+        inputArtifactIds: expect.arrayContaining(['art-commit-failure']),
+      }),
+    );
+    expect(autoCommitMock).toHaveBeenCalledTimes(2);
   });
 
   it('当 Task worktree 准备失败时，期望拒绝启动实现', async () => {
