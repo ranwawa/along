@@ -52,6 +52,7 @@ import { runTaskDelivery } from '../domain/task-delivery';
 import { runTaskImplementationAgent } from '../domain/task-implementation-agent';
 import { recoverInterruptedTaskAgentRuns } from '../domain/task-planning';
 import { runTaskPlanningAgent } from '../domain/task-planning-agent';
+import { runTaskTitleSummary } from '../domain/task-title-summary';
 import {
   handleConfigApiRequest,
   isConfigApiPath,
@@ -66,6 +67,7 @@ import {
   type ScheduledTaskDeliveryRun,
   type ScheduledTaskImplementationRun,
   type ScheduledTaskPlanningRun,
+  type ScheduledTaskTitleSummaryRun,
 } from '../integration/task-api';
 import {
   cleanupIssueSession,
@@ -502,6 +504,20 @@ function enqueueTaskDeliveryRun(input: ScheduledTaskDeliveryRun) {
       logger.info(`[Task ${input.taskId}] delivery 完成: ${result.data.prUrl}`);
     });
   });
+}
+
+function runScheduledTaskTitleSummary(input: ScheduledTaskTitleSummaryRun) {
+  void runTaskTitleSummary(input)
+    .then((result) => {
+      if (!result.success) {
+        logger.warn(`[Task ${input.taskId}] 标题自动总结失败: ${result.error}`);
+      }
+    })
+    .catch((error: unknown) => {
+      logger.error(
+        `[Task ${input.taskId}] 标题自动总结异常: ${getErrorMessage(error)}`,
+      );
+    });
 }
 
 /**
@@ -1210,6 +1226,7 @@ async function main() {
           schedulePlanner: enqueueTaskPlanningRun,
           scheduleImplementation: enqueueTaskImplementationRun,
           scheduleDelivery: enqueueTaskDeliveryRun,
+          scheduleTitleSummary: runScheduledTaskTitleSummary,
         });
       }
 

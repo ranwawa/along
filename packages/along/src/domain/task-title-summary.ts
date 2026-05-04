@@ -14,9 +14,9 @@ import {
 const logger = consola.withTag('task-title-summary');
 
 const DEEPSEEK_PROVIDER_ID = 'deepseek';
-const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
-const DEEPSEEK_TITLE_MODEL = 'deepseek-v4-flash';
+const TITLE_MODEL_ENV = 'ALONG_TASK_TITLE_MODEL';
 const TITLE_TIMEOUT_MS = 8000;
+const TITLE_MAX_TOKENS = 256;
 
 const SYSTEM_PROMPT = `你是 Along 的任务标题总结 Agent。
 请根据用户的任务内容生成一个简短、准确、适合作为任务列表标题的中文标题。
@@ -33,30 +33,45 @@ interface ResolvedTitleProvider {
   model: string;
 }
 
-function getProviderModels(provider: ProviderConfig | null): string[] {
-  if (!provider) return [DEEPSEEK_TITLE_MODEL];
-  return provider.models && provider.models.length > 0
-    ? provider.models
-    : [DEEPSEEK_TITLE_MODEL];
+function resolveTitleModel(provider: ProviderConfig): Result<string> {
+  const models = provider.models || [];
+  const override = process.env[TITLE_MODEL_ENV]?.trim();
+  if (override) {
+    return models.includes(override)
+      ? success(override)
+      : failure(
+          `DeepSeek 标题模型 ${override} 不可用，已使用内容前 15 个字符作为标题`,
+        );
+  }
+
+  const model = models[0]?.trim();
+  return model
+    ? success(model)
+    : failure('DeepSeek 标题模型不可用，已使用内容前 15 个字符作为标题');
 }
 
 function resolveTitleProvider(): Result<ResolvedTitleProvider> {
   const provider = getProviderConfig(DEEPSEEK_PROVIDER_ID);
+  if (!provider)
+    return failure(
+      '缺少 DeepSeek provider 配置，已使用内容前 15 个字符作为标题',
+    );
+  if (!provider.baseUrl)
+    return failure(
+      '缺少 DeepSeek baseUrl 配置，已使用内容前 15 个字符作为标题',
+    );
+
   const token = provider?.token || process.env.DEEPSEEK_API_KEY;
   if (!token)
     return failure('缺少 DeepSeek token，已使用内容前 15 个字符作为标题');
 
-  const models = getProviderModels(provider);
-  if (!models.includes(DEEPSEEK_TITLE_MODEL)) {
-    return failure(
-      'DeepSeek V4 Flash 模型不可用，已使用内容前 15 个字符作为标题',
-    );
-  }
+  const modelRes = resolveTitleModel(provider);
+  if (!modelRes.success) return modelRes;
 
   return success({
-    baseUrl: provider?.baseUrl || DEEPSEEK_BASE_URL,
+    baseUrl: provider.baseUrl,
     token,
-    model: DEEPSEEK_TITLE_MODEL,
+    model: modelRes.data,
   });
 }
 
@@ -109,7 +124,7 @@ export async function generateTaskTitle(body: string): Promise<Result<string>> {
     const llm = new ChatOpenAI({
       model: providerRes.data.model,
       temperature: 0.2,
-      maxTokens: 64,
+      maxTokens: TITLE_MAX_TOKENS,
       configuration: {
         baseURL: providerRes.data.baseUrl,
         apiKey: providerRes.data.token,
@@ -145,6 +160,6 @@ export async function runTaskTitleSummary(
   });
   if (!updateRes.success) return updateRes;
 
-  logger.info(`[Task ${input.taskId}] 标题已由 ${DEEPSEEK_TITLE_MODEL} 更新`);
+  logger.info(`[Task ${input.taskId}] 标题已自动总结更新`);
   return updateRes;
 }

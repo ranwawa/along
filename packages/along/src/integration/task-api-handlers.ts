@@ -1,3 +1,4 @@
+import { consola } from 'consola';
 import type { Result } from '../core/result';
 import {
   approveCurrentTaskPlan,
@@ -27,6 +28,12 @@ import {
   schedulePlannerIfNeeded,
   type UnknownRecord,
 } from './task-api-utils';
+
+const logger = consola.withTag('task-api');
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function handleTaskListRequest(url: URL): Response {
   const limit = readPositiveInt(url.searchParams.get('limit'), 100);
@@ -78,7 +85,17 @@ function scheduleTitleSummary(
     context.scheduleTitleSummary(input);
     return;
   }
-  void runTaskTitleSummary(input);
+  void runTaskTitleSummary(input)
+    .then((result) => {
+      if (!result.success) {
+        logger.warn(`[Task ${input.taskId}] 标题自动总结失败: ${result.error}`);
+      }
+    })
+    .catch((error: unknown) => {
+      logger.error(
+        `[Task ${input.taskId}] 标题自动总结异常: ${getErrorMessage(error)}`,
+      );
+    });
 }
 
 function createTaskFromPayload(
