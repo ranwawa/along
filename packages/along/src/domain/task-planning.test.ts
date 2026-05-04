@@ -825,6 +825,17 @@ describe('task-planning', () => {
 
     const delivered = updateTaskStatus(taskId, TASK_STATUS.DELIVERED);
     expect(delivered.success).toBe(true);
+    if (!delivered.success) throw new Error(delivered.error);
+    const deliveredSnapshot = readTaskPlanningSnapshot(taskId);
+    expect(deliveredSnapshot.success).toBe(true);
+    if (!deliveredSnapshot.success || !deliveredSnapshot.data)
+      throw new Error('missing delivered snapshot');
+    expect(deliveredSnapshot.data.flow.currentStageId).toBe('delivery');
+    expect(
+      deliveredSnapshot.data.flow.actions.find(
+        (action) => action.id === 'accept_delivery',
+      ),
+    ).toMatchObject({ enabled: true, stage: 'delivery' });
 
     const completed = completeDeliveredTask(taskId);
     expect(completed.success).toBe(true);
