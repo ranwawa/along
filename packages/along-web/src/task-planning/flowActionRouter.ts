@@ -14,6 +14,7 @@ export type FlowActionParts = {
     actionKey: string,
     path: string,
     canRun: boolean,
+    body?: Record<string, unknown>,
   ) => Promise<void>;
 };
 
@@ -61,6 +62,11 @@ function runStageAction(
   if (id === 'rerun_planner') runSimpleAction('planner', 'planner', true);
   if (id === 'start_implementation') {
     runSimpleAction('implementation', 'implementation', input.canImplement);
+  }
+  if (id === 'confirm_implementation_steps') {
+    runSimpleAction('implementation', 'implementation', input.canImplement, {
+      confirmImplementationSteps: true,
+    });
   }
   if (id === 'start_delivery') {
     runSimpleAction('delivery', 'delivery', input.canDeliver);

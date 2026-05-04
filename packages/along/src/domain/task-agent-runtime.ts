@@ -18,6 +18,11 @@ export interface RunTaskAgentTurnInput {
   model?: string;
   personalityVersion?: string;
   inputArtifactIds?: string[];
+  outputMetadata?: Record<string, unknown>;
+  codexOptions?: {
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
+    approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+  };
   options?: Partial<ClaudeSDKOptions>;
 }
 
