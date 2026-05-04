@@ -289,7 +289,7 @@ Approve 后：
 - Planning Agent 编排层负责把 Claude 输出解析为 `plan_revision` 或 `planning_update`。
 - Web API 支持创建 Task、读取 Task、追加用户消息、批准 Plan、手动触发 planner。
 - Web API 支持批准后手动触发 implementation agent。
-- Implementation 开始前创建 Task 专属 Git worktree，并在该 worktree 内创建 Task 分支。
+- Implementation Agent 首次启动时先产出详细实施步骤，人工确认后才创建 Task 专属 Git worktree、进入编码和 auto-commit。
 - Implementation 流程在 Task worktree 内完成代码修改，并由系统 auto-commit 子步骤提交本地变更。
 - Delivery 流程在 Task worktree 内确认已有本地 commit 后 rebase、推送并创建 PR。
 - webhook-server 复用现有 agent 队列，并按 `taskId` 串行化 Task planner。
@@ -356,4 +356,4 @@ POST /api/tasks/:taskId/implementation
 POST /api/tasks/:taskId/delivery
 ```
 
-`approve` 只批准当前 active Plan，且要求没有未处理 feedback round。`planner` 是给 Web UI 或排障使用的手动重跑入口，不要求用户记 CLI。`implementation` 会在 Task 已有批准方案后调度 implementation agent，并且只允许在 Task 专属 worktree 中修改代码；agent 完成后系统会自动生成 Conventional Commit message、执行本地 commit，并在 hook/biome 失败时把裁剪后的错误摘要反馈给新的修复回合，完整日志记录为 artifact。`delivery` 会在同一个 Task worktree 中确认已有本地 commit 后推送并创建 PR，若仍存在未提交变更则中止，PR body 使用 `along-task: <taskId>` 标记，不写 `fixes/closes/resolves #...`，避免触发 GitHub Issue session 生命周期逻辑。
+`approve` 只批准当前 active Plan，且要求没有未处理 feedback round。`planner` 是给 Web UI 或排障使用的手动重跑入口，不要求用户记 CLI。`implementation` 会在 Task 已有批准方案后先调度 implementation agent 产出详细实施步骤；再次请求时必须带 `confirmImplementationSteps: true` 才会记录人工确认并进入编码、worktree 准备和 auto-commit。编码阶段只允许在 Task 专属 worktree 中修改代码；agent 完成后系统会自动生成 Conventional Commit message、执行本地 commit，并在 hook/biome 失败时把裁剪后的错误摘要反馈给新的修复回合，完整日志记录为 artifact。`delivery` 会在同一个 Task worktree 中确认已有本地 commit 后推送并创建 PR，若仍存在未提交变更则中止，PR body 使用 `along-task: <taskId>` 标记，不写 `fixes/closes/resolves #...`，避免触发 GitHub Issue session 生命周期逻辑。

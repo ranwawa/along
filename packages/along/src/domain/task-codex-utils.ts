@@ -59,8 +59,8 @@ export function buildThreadOptions(
   return {
     model: input.model,
     workingDirectory: input.cwd,
-    sandboxMode: 'danger-full-access',
-    approvalPolicy: 'never',
+    sandboxMode: input.codexOptions?.sandboxMode || 'danger-full-access',
+    approvalPolicy: input.codexOptions?.approvalPolicy || 'never',
   };
 }
 

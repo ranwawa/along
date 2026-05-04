@@ -43,6 +43,7 @@ export interface RunTaskClaudeTurnInput {
   model?: string;
   personalityVersion?: string;
   inputArtifactIds?: string[];
+  outputMetadata?: Record<string, unknown>;
   options?: Partial<ClaudeSDKOptions>;
 }
 

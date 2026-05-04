@@ -24,6 +24,7 @@ export interface TaskAgentTurnInput {
   model?: string;
   personalityVersion?: string;
   inputArtifactIds?: string[];
+  outputMetadata?: Record<string, unknown>;
 }
 
 export interface StartedTaskAgentRun {
@@ -132,6 +133,7 @@ export function saveTaskAgentOutput(
     provider,
     runId: context.runId,
     body: assistantText,
+    metadata: input.outputMetadata,
   });
   if (artifactRes.success) return success([artifactRes.data.artifactId]);
   return failOutputSave(context, artifactRes.error, providerSessionIdAtEnd);

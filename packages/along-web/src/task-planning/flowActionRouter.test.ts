@@ -135,4 +135,25 @@ describe('flowActionRouter', () => {
       true,
     );
   });
+
+  it('当确认实施步骤时，期望带显式确认参数调度 implementation API', () => {
+    const actions = makeActions();
+    const action: TaskFlowAction = {
+      id: 'confirm_implementation_steps',
+      label: '确认步骤并开始实现',
+      description: '确认步骤',
+      enabled: true,
+      stage: 'implementation',
+      variant: 'primary',
+    };
+
+    runFlowAction(action, makeInput(makeSnapshot('implementation')), actions);
+
+    expect(actions.runSimpleAction).toHaveBeenCalledWith(
+      'implementation',
+      'implementation',
+      false,
+      { confirmImplementationSteps: true },
+    );
+  });
 });

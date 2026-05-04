@@ -191,11 +191,12 @@ function useSimpleFlowActions(
     actionKey: string,
     path: string,
     canRun: boolean,
+    body: Record<string, unknown> = {},
   ) => {
     if (!input.selected || !canRun || input.busyAction) return;
     const taskId = input.selected.task.taskId;
     await runBusy(input, actionKey, async () => {
-      const result = await api.postSelected<SimpleActionResponse>(path, {});
+      const result = await api.postSelected<SimpleActionResponse>(path, body);
       if ('snapshot' in result)
         await api.updateFromOptionalSnapshot(result.snapshot);
       else await input.loadSelectedTask(taskId);

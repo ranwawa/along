@@ -3,6 +3,7 @@ import { expect, vi } from 'vitest';
 type PlanningMock = ReturnType<typeof vi.fn>;
 
 export type PlanningMocks = {
+  approveTaskImplementationSteps: PlanningMock;
   approveCurrentTaskPlan: PlanningMock;
   completeDeliveredTask: PlanningMock;
   completeTaskAgentStageManually: PlanningMock;
@@ -43,8 +44,29 @@ export function resetPlanningMocks(planningMocks: PlanningMocks) {
   mockTaskReads(planningMocks);
   mockTaskMessage(planningMocks);
   mockPlanApproval(planningMocks);
+  mockImplementationStepsApproval(planningMocks);
   mockManualComplete(planningMocks);
   mockDeliveredComplete(planningMocks);
+}
+
+function mockImplementationStepsApproval(planningMocks: PlanningMocks) {
+  planningMocks.approveTaskImplementationSteps.mockReturnValue({
+    success: true,
+    data: {
+      artifactId: 'art-steps-approval',
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      type: 'approval',
+      role: 'user',
+      body: 'Approved Implementation Steps for Plan v1',
+      metadata: {
+        kind: 'implementation_steps_approval',
+        planId: 'plan-1',
+        stepsArtifactId: 'art-steps',
+      },
+      createdAt: '2026-01-01T00:00:02.000Z',
+    },
+  });
 }
 
 function mockTaskReads(planningMocks: PlanningMocks) {

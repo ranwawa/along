@@ -57,6 +57,10 @@ export type CreateTaskCodexClient = () => TaskCodexClient;
 
 export interface RunTaskCodexTurnInput extends RunTaskClaudeTurnInput {
   createClient?: CreateTaskCodexClient;
+  codexOptions?: {
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
+    approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+  };
 }
 
 function getErrorMessage(error: unknown): string {

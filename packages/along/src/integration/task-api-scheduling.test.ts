@@ -10,6 +10,7 @@ import {
 } from './task-api.test-utils';
 
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
+  approveTaskImplementationSteps: vi.fn(),
   approveCurrentTaskPlan: vi.fn(),
   completeDeliveredTask: vi.fn(),
   completeTaskAgentStageManually: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../domain/task-planning', () => ({
     IMPLEMENTATION: 'implementation',
     DELIVERY: 'delivery',
   },
+  approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
   completeDeliveredTask: planningMocks.completeDeliveredTask,
   completeTaskAgentStageManually: planningMocks.completeTaskAgentStageManually,
@@ -107,6 +109,57 @@ it('当 Task 方案已批准时，期望可以调度 implementation', async () =
   expectScheduledRunner(scheduled, '/tmp/project', 'manual');
 });
 
+it('当实施步骤已产出但未确认时，期望拒绝直接调度编码', async () => {
+  const scheduled: unknown[] = [];
+  planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+    success: true,
+    data: approvedSnapshot('/tmp/project', 'planning_approved', {
+      withSteps: true,
+    }),
+  });
+
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/task-1/implementation', {}),
+    new URL('http://localhost/api/tasks/task-1/implementation'),
+    {
+      defaultCwd: '/tmp/default',
+      scheduleImplementation: (input) => scheduled.push(input),
+    },
+  );
+  const payload = (await response.json()) as { error: string };
+
+  expect(response.status).toBe(409);
+  expect(payload.error).toBe('实施步骤已产出，需人工确认后才能开始编码');
+  expect(scheduled).toEqual([]);
+});
+
+it('当实施步骤已产出且请求显式确认时，期望记录确认并调度 implementation', async () => {
+  const scheduled: unknown[] = [];
+  planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+    success: true,
+    data: approvedSnapshot('/tmp/project', 'planning_approved', {
+      withSteps: true,
+    }),
+  });
+
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/task-1/implementation', {
+      confirmImplementationSteps: true,
+    }),
+    new URL('http://localhost/api/tasks/task-1/implementation'),
+    {
+      defaultCwd: '/tmp/default',
+      scheduleImplementation: (input) => scheduled.push(input),
+    },
+  );
+
+  expect(response.status).toBe(202);
+  expect(planningMocks.approveTaskImplementationSteps).toHaveBeenCalledWith(
+    'task-1',
+  );
+  expectScheduledRunner(scheduled, '/tmp/project', 'manual');
+});
+
 it('当 Task 已实现时，期望可以调度 delivery', async () => {
   const scheduled: unknown[] = [];
   planningMocks.readTaskPlanningSnapshot.mockReturnValue({
@@ -127,7 +180,29 @@ it('当 Task 已实现时，期望可以调度 delivery', async () => {
   expectScheduledDelivery(scheduled, '/tmp/project');
 });
 
-function approvedSnapshot(cwd: string, status: string) {
+function approvedSnapshot(
+  cwd: string,
+  status: string,
+  options: { withSteps?: boolean } = {},
+) {
+  const artifacts = options.withSteps
+    ? [
+        {
+          artifactId: 'art-steps',
+          taskId: 'task-1',
+          threadId: 'thread-1',
+          type: 'agent_result',
+          role: 'agent',
+          body: '## 实施步骤',
+          metadata: {
+            kind: 'implementation_steps',
+            planId: 'plan-1',
+            planVersion: 1,
+          },
+          createdAt: '2026-01-01T00:00:02.000Z',
+        },
+      ]
+    : [];
   return {
     ...snapshot,
     task: {
@@ -137,10 +212,34 @@ function approvedSnapshot(cwd: string, status: string) {
       repoOwner: 'ranwawa',
       repoName: 'along',
     },
+    artifacts,
     thread: {
       ...snapshot.thread,
       status: 'approved',
+      currentPlanId: 'plan-1',
       approvedPlanId: 'plan-1',
     },
+    currentPlan: {
+      planId: 'plan-1',
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      version: 1,
+      status: 'approved',
+      artifactId: 'art-plan',
+      body: '## Plan',
+      createdAt: '2026-01-01T00:00:01.000Z',
+    },
+    plans: [
+      {
+        planId: 'plan-1',
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        version: 1,
+        status: 'approved',
+        artifactId: 'art-plan',
+        body: '## Plan',
+        createdAt: '2026-01-01T00:00:01.000Z',
+      },
+    ],
   };
 }

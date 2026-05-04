@@ -1,7 +1,13 @@
 import { consola } from 'consola';
 import type { Result } from '../core/result';
+import { failure, success } from '../core/result';
+import {
+  areImplementationStepsApproved,
+  findImplementationStepsArtifact,
+} from '../domain/task-implementation-steps';
 import {
   approveCurrentTaskPlan,
+  approveTaskImplementationSteps,
   completeDeliveredTask,
   completeTaskAgentStageManually,
   createPlanningTask,
@@ -17,6 +23,7 @@ import {
   errorResponse,
   getTaskRepositoryFields,
   jsonResponse,
+  readBooleanField,
   readJsonObject,
   readOptionalPositiveIntField,
   readPositiveInt,
@@ -210,12 +217,43 @@ export async function handleTaskImplementationRequest(
   if (!snapshotRes.data.thread.approvedPlanId) {
     return errorResponse('当前 Task 没有已批准方案，不能开始实现', 409);
   }
+  const confirmRes = confirmImplementationStepsIfNeeded(
+    taskId,
+    snapshotRes.data,
+    bodyRes.data,
+  );
+  if (!confirmRes.success) return errorResponse(confirmRes.error, 409);
 
   const scheduledRes = scheduleImplementationIfNeeded(bodyRes.data, context, {
     taskId,
     reason: 'manual',
   });
   return scheduledResponse(taskId, scheduledRes, 'Implementation 调度器未启用');
+}
+
+function confirmImplementationStepsIfNeeded(
+  taskId: string,
+  snapshot: TaskPlanningSnapshot,
+  payload: UnknownRecord,
+): Result<void> {
+  const approvedPlan = snapshot.plans.find(
+    (plan) => plan.planId === snapshot.thread.approvedPlanId,
+  );
+  if (!approvedPlan) return failure('当前 Task 没有已批准方案，不能开始实现');
+
+  const steps = findImplementationStepsArtifact(snapshot, approvedPlan);
+  const stepsApproved = areImplementationStepsApproved(snapshot, approvedPlan);
+  const wantsConfirm =
+    readBooleanField(payload, 'confirmImplementationSteps') === true;
+
+  if (!steps && wantsConfirm)
+    return failure('当前 Task 还没有可确认的实施步骤');
+  if (!steps || stepsApproved) return success(undefined);
+  if (!wantsConfirm) return failure('实施步骤已产出，需人工确认后才能开始编码');
+
+  const approveStepsRes = approveTaskImplementationSteps(taskId);
+  if (!approveStepsRes.success) return failure(approveStepsRes.error);
+  return success(undefined);
 }
 
 export async function handleTaskDeliveryRequest(

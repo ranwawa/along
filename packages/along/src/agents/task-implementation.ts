@@ -50,7 +50,7 @@ export function buildImplementationPrompt(
     '',
     '要求：',
     '1. 不重新制定计划，不扩大需求范围。',
-    '2. 修改代码前先检查当前 worktree 状态和相关代码。',
+    '2. 已获得人工确认的实施步骤后才允许编码；修改代码前先检查当前 worktree 状态和相关代码。',
     '3. 只修改完成已批准方案所必需的文件。',
     '4. 需要测试时，优先运行相关的局部测试或类型检查。',
     '5. 不要创建 PR，不要提交或推送代码；本阶段只完成工作区代码改动和必要验证。',
@@ -59,6 +59,42 @@ export function buildImplementationPrompt(
     '任务上下文：',
     JSON.stringify(
       buildImplementationContext(snapshot, approvedPlan, worktreePath),
+      null,
+      2,
+    ),
+  ].join('\n');
+}
+
+export function buildImplementationStepsPrompt(
+  snapshot: TaskPlanningSnapshot,
+  approvedPlan: TaskPlanRevisionRecord,
+): string {
+  return [
+    '你是 Along 的 Implementation Agent。当前已进入实施准备阶段，但还没有获得人工确认的详细实施步骤。',
+    '',
+    '你的任务：依据已批准 Plan 和当前代码上下文，先产出可执行的详细实施步骤，等待人工确认后再进入编码。',
+    '',
+    '严格限制：',
+    '1. 本轮只允许阅读和分析，不要修改、创建或删除任何文件。',
+    '2. 不要运行会产生持久变更的命令，不要安装依赖，不要格式化代码，不要执行提交、推送或 PR 操作。',
+    '3. 不重新制定 Plan，不扩大需求范围；实施步骤必须服从已批准 Plan。',
+    '',
+    '实施步骤正文必须覆盖：',
+    '1. 执行顺序。',
+    '2. 预计改动文件或模块。',
+    '3. 验证方式，优先列局部测试或类型检查。',
+    '4. 主要风险点和回退关注点。',
+    '5. 提交策略，说明建议的 Conventional Commit 类型和范围；不要实际提交。',
+    '',
+    '最终回复请使用简短中文，结尾明确说明：等待人工确认后再开始编码。',
+    '',
+    '任务上下文：',
+    JSON.stringify(
+      buildImplementationContext(
+        snapshot,
+        approvedPlan,
+        snapshot.task.cwd || '',
+      ),
       null,
       2,
     ),

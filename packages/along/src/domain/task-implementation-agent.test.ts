@@ -97,6 +97,50 @@ const approvedSnapshot = {
   ],
 };
 
+const stepsArtifact = {
+  artifactId: 'art-steps',
+  taskId: 'task-1',
+  threadId: 'thread-1',
+  type: 'agent_result',
+  role: 'agent',
+  body: '## 实施步骤\n\n1. 先检查状态。',
+  metadata: {
+    kind: 'implementation_steps',
+    planId: 'plan-1',
+    planVersion: 1,
+  },
+  createdAt: '2026-01-01T00:00:02.000Z',
+};
+
+const stepsApprovalArtifact = {
+  artifactId: 'art-steps-approval',
+  taskId: 'task-1',
+  threadId: 'thread-1',
+  type: 'approval',
+  role: 'user',
+  body: 'Approved Implementation Steps for Plan v1',
+  metadata: {
+    kind: 'implementation_steps_approval',
+    planId: 'plan-1',
+    stepsArtifactId: 'art-steps',
+  },
+  createdAt: '2026-01-01T00:00:03.000Z',
+};
+
+const stepsSnapshot = {
+  ...approvedSnapshot,
+  artifacts: [...approvedSnapshot.artifacts, stepsArtifact],
+};
+
+const confirmedSnapshot = {
+  ...approvedSnapshot,
+  artifacts: [
+    ...approvedSnapshot.artifacts,
+    stepsArtifact,
+    stepsApprovalArtifact,
+  ],
+};
+
 describe('task-implementation-agent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -147,7 +191,60 @@ describe('task-implementation-agent', () => {
     });
   });
 
-  it('当 Task 有已批准方案时，期望启动实现 Agent 并在完成后自动提交', async () => {
+  it('当 Task 有已批准方案但没有实施步骤时，期望只产出实施步骤且不修改工作区', async () => {
+    const result = await runTaskImplementationAgent({
+      taskId: 'task-1',
+      cwd: '/tmp/kinkeeper',
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(planningMocks.updateTaskStatus).not.toHaveBeenCalled();
+    expect(worktreeMock).not.toHaveBeenCalled();
+    expect(autoCommitMock).not.toHaveBeenCalled();
+    expect(result.data.commitShas).toEqual([]);
+    expect(runnerMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'implementer',
+        cwd: '/tmp/kinkeeper',
+        outputMetadata: expect.objectContaining({
+          kind: 'implementation_steps',
+          planId: 'plan-1',
+        }),
+        codexOptions: expect.objectContaining({
+          sandboxMode: 'read-only',
+        }),
+        prompt: expect.stringContaining('产出可执行的详细实施步骤'),
+      }),
+    );
+  });
+
+  it('当实施步骤未确认时，期望拒绝进入编码和提交阶段', async () => {
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: stepsSnapshot,
+    });
+
+    const result = await runTaskImplementationAgent({
+      taskId: 'task-1',
+      cwd: '/tmp/kinkeeper',
+    });
+
+    expect(result.success).toBe(false);
+    expect(runnerMock).not.toHaveBeenCalled();
+    expect(worktreeMock).not.toHaveBeenCalled();
+    expect(autoCommitMock).not.toHaveBeenCalled();
+    expect(planningMocks.updateTaskStatus).not.toHaveBeenCalled();
+  });
+
+  it('当实施步骤已人工确认时，期望启动实现 Agent 并在完成后自动提交', async () => {
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: confirmedSnapshot,
+    });
+
     const result = await runTaskImplementationAgent({
       taskId: 'task-1',
       cwd: '/tmp/kinkeeper',
@@ -184,6 +281,10 @@ describe('task-implementation-agent', () => {
   });
 
   it('当实现 Agent 失败时，期望回到 planning_approved 以便重试', async () => {
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: confirmedSnapshot,
+    });
     runnerMock.mockResolvedValueOnce({
       success: false,
       error: '执行失败',
@@ -203,6 +304,10 @@ describe('task-implementation-agent', () => {
   });
 
   it('当 auto-commit 失败后，期望反馈错误给实现 Agent 修复并重试提交', async () => {
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: confirmedSnapshot,
+    });
     autoCommitMock
       .mockResolvedValueOnce({
         success: false,
@@ -242,6 +347,10 @@ describe('task-implementation-agent', () => {
   });
 
   it('当 Task worktree 准备失败时，期望拒绝启动实现', async () => {
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: confirmedSnapshot,
+    });
     worktreeMock.mockResolvedValueOnce({
       success: false,
       error: '创建 Task worktree 失败',
