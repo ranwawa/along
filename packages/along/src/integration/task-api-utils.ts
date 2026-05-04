@@ -101,12 +101,8 @@ export function readPositiveInt(
 }
 
 export function deriveTitle(body: string): string {
-  const firstLine = body
-    .split('\n')
-    .map((line) => line.trim())
-    .find(Boolean);
-  const title = firstLine || 'Untitled Task';
-  return title.length > 80 ? `${title.slice(0, 80)}...` : title;
+  const normalized = body.replace(/\s+/g, ' ').trim();
+  return [...(normalized || 'Untitled Task')].slice(0, 15).join('');
 }
 
 export function resolveTaskCwd(

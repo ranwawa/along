@@ -56,7 +56,6 @@ export interface RepositoryListResponse {
 }
 
 export interface DraftTaskInput {
-  title: string;
   body: string;
   repository: string;
 }
@@ -66,7 +65,6 @@ interface TaskApiError {
 }
 
 export const emptyDraft: DraftTaskInput = {
-  title: '',
   body: '',
   repository: '',
 };
