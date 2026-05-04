@@ -135,6 +135,33 @@ export interface TaskAgentProgressEventRecord {
   createdAt: string;
 }
 
+export type TaskAgentSessionEventSource =
+  | 'system'
+  | 'agent'
+  | 'tool'
+  | 'stdout'
+  | 'stderr';
+
+export type TaskAgentSessionEventKind =
+  | 'progress'
+  | 'message'
+  | 'output'
+  | 'error';
+
+export interface TaskAgentSessionEventRecord {
+  eventId: string;
+  runId: string;
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+  source: TaskAgentSessionEventSource;
+  kind: TaskAgentSessionEventKind;
+  content: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface TaskAgentManualResume {
   available: boolean;
   cwd?: string;
@@ -241,6 +268,7 @@ export interface TaskPlanningSnapshot {
   plans: TaskPlanRevisionRecord[];
   agentRuns: TaskAgentRunRecord[];
   agentProgressEvents: TaskAgentProgressEventRecord[];
+  agentSessionEvents: TaskAgentSessionEventRecord[];
   agentStages: TaskAgentStageRecord[];
   flow: TaskFlowSnapshot;
 }

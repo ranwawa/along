@@ -7,6 +7,7 @@ const planningMocks = vi.hoisted(() => ({
   createTaskAgentRun: vi.fn(),
   finishTaskAgentRun: vi.fn(),
   recordTaskAgentProgress: vi.fn(),
+  recordTaskAgentSessionEvent: vi.fn(),
   recordTaskAgentResult: vi.fn(),
   updateTaskAgentProviderSession: vi.fn(),
 }));
@@ -25,6 +26,7 @@ vi.mock('./task-planning', () => ({
   createTaskAgentRun: planningMocks.createTaskAgentRun,
   finishTaskAgentRun: planningMocks.finishTaskAgentRun,
   recordTaskAgentProgress: planningMocks.recordTaskAgentProgress,
+  recordTaskAgentSessionEvent: planningMocks.recordTaskAgentSessionEvent,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
   TASK_AGENT_PROGRESS_PHASE: {
     STARTING: 'starting',
@@ -138,6 +140,22 @@ describe('task-claude-runner', () => {
         provider: 'claude',
         phase: 'starting',
         summary: 'Agent 已启动，正在准备任务上下文。',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+    planningMocks.recordTaskAgentSessionEvent.mockReturnValue({
+      success: true,
+      data: {
+        eventId: 'sess-1',
+        runId: 'run-1',
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'planner',
+        provider: 'claude',
+        source: 'system',
+        kind: 'progress',
+        content: 'Agent 已启动，正在准备任务上下文。',
+        metadata: {},
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });

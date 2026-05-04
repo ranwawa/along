@@ -41,6 +41,7 @@ function makeSnapshot(
     plans: [],
     agentRuns: [],
     agentProgressEvents: [],
+    agentSessionEvents: [],
     agentStages: [],
     flow: {
       currentStageId: 'implementation',
@@ -111,6 +112,42 @@ describe('TaskProgressPanel progress event', () => {
     );
     expect(html).toContain('失败');
     expect(html).toContain('命令退出码 1');
+  });
+});
+
+describe('TaskProgressPanel session tail', () => {
+  it('渲染 Agent session 会话流', () => {
+    const html = renderPanel(
+      makeSnapshot({
+        agentRuns: [makeRunningRun()],
+        agentSessionEvents: [
+          {
+            eventId: 'sess-1',
+            runId: 'run-1',
+            taskId: 'task-1',
+            threadId: 'thread-1',
+            agentId: 'implementer',
+            provider: 'codex',
+            source: 'agent',
+            kind: 'output',
+            content: '正在修改 TaskProgressPanel。',
+            metadata: {},
+            createdAt: '2026-01-01T00:04:50.000Z',
+          },
+        ],
+      }),
+    );
+    expect(html).toContain('Agent 会话 Tail');
+    expect(html).toContain('正在修改 TaskProgressPanel');
+  });
+
+  it('运行中但无会话输出时渲染可观测提示', () => {
+    const html = renderPanel(
+      makeSnapshot({
+        agentRuns: [makeRunningRun()],
+      }),
+    );
+    expect(html).toContain('正在等待第一条会话输出');
   });
 });
 

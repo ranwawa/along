@@ -231,6 +231,33 @@ export interface TaskAgentProgressEventRecord {
   createdAt: string;
 }
 
+export type TaskAgentSessionEventSource =
+  | 'system'
+  | 'agent'
+  | 'tool'
+  | 'stdout'
+  | 'stderr';
+
+export type TaskAgentSessionEventKind =
+  | 'progress'
+  | 'message'
+  | 'output'
+  | 'error';
+
+export interface TaskAgentSessionEventRecord {
+  eventId: string;
+  runId: string;
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+  source: TaskAgentSessionEventSource;
+  kind: TaskAgentSessionEventKind;
+  content: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface TaskAgentStageRecord {
   stage: TaskAgentStage;
   agentId: string;
@@ -329,8 +356,13 @@ export interface TaskPlanningSnapshot {
   plans: TaskPlanRevisionRecord[];
   agentRuns: TaskAgentRunRecord[];
   agentProgressEvents: TaskAgentProgressEventRecord[];
+  agentSessionEvents: TaskAgentSessionEventRecord[];
   agentStages: TaskAgentStageRecord[];
   flow: TaskFlowSnapshot;
+}
+
+export interface ReadTaskPlanningSnapshotOptions {
+  includeSessionEvents?: boolean;
 }
 
 export interface CreatePlanningTaskInput {
@@ -401,6 +433,18 @@ export interface RecordTaskAgentProgressInput {
   phase: TaskAgentProgressPhase;
   summary: string;
   detail?: string;
+}
+
+export interface RecordTaskAgentSessionEventInput {
+  runId: string;
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+  source: TaskAgentSessionEventSource;
+  kind: TaskAgentSessionEventKind;
+  content: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RecoverInterruptedTaskAgentRunsOutput {
@@ -551,6 +595,20 @@ interface TaskAgentProgressEventRow {
   created_at: string;
 }
 
+interface TaskAgentSessionEventRow {
+  event_id: string;
+  run_id: string;
+  task_id: string;
+  thread_id: string;
+  agent_id: string;
+  provider: string;
+  source: TaskAgentSessionEventSource;
+  kind: TaskAgentSessionEventKind;
+  content: string;
+  metadata: string;
+  created_at: string;
+}
+
 interface TaskIdRow {
   task_id: string;
 }
@@ -587,6 +645,36 @@ function parseMetadata(
   } catch {
     return {};
   }
+}
+
+const SESSION_EVENT_CONTENT_LIMIT = 8000;
+const SECRET_VALUE = '[REDACTED]';
+
+function redactSensitiveContent(value: string): string {
+  return value
+    .replace(
+      /\b(?:ghp|gho|ghu|ghs|ghr|github_pat|glpat|xox[baprs])_[A-Za-z0-9_=-]{16,}\b/g,
+      SECRET_VALUE,
+    )
+    .replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, SECRET_VALUE)
+    .replace(
+      /\b((?:api[_-]?key|token|secret|password|authorization|bearer)\s*[:=]\s*["']?)([^\s"',;]+)/gi,
+      `$1${SECRET_VALUE}`,
+    )
+    .replace(
+      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)[A-Z0-9_]*\s*=\s*)([^\s]+)/g,
+      `$1${SECRET_VALUE}`,
+    );
+}
+
+function normalizeSessionEventContent(value: string): string {
+  const redacted = redactSensitiveContent(value.trim());
+  if (redacted.length <= SESSION_EVENT_CONTENT_LIMIT) return redacted;
+  const omitted = redacted.length - SESSION_EVENT_CONTENT_LIMIT;
+  return `${redacted.slice(
+    0,
+    SESSION_EVENT_CONTENT_LIMIT,
+  )}\n...[已截断 ${omitted} 字符]`;
 }
 
 function mapThread(row: TaskThreadRow): TaskThreadRecord {
@@ -712,6 +800,24 @@ function mapProgressEvent(
     phase: row.phase,
     summary: row.summary,
     detail: row.detail || undefined,
+    createdAt: row.created_at,
+  };
+}
+
+function mapSessionEvent(
+  row: TaskAgentSessionEventRow,
+): TaskAgentSessionEventRecord {
+  return {
+    eventId: row.event_id,
+    runId: row.run_id,
+    taskId: row.task_id,
+    threadId: row.thread_id,
+    agentId: row.agent_id,
+    provider: row.provider,
+    source: row.source,
+    kind: row.kind,
+    content: row.content,
+    metadata: parseMetadata(row.metadata),
     createdAt: row.created_at,
   };
 }
@@ -1735,6 +1841,7 @@ export function updatePlanningTaskTitle(
 
 export function readTaskPlanningSnapshot(
   taskId: string,
+  options: ReadTaskPlanningSnapshotOptions = {},
 ): Result<TaskPlanningSnapshot | null> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -1798,6 +1905,21 @@ export function readTaskPlanningSnapshot(
         'SELECT * FROM task_agent_progress_events WHERE thread_id = ? ORDER BY created_at ASC',
       )
       .all(threadRow.thread_id) as TaskAgentProgressEventRow[];
+    const sessionEventRows =
+      options.includeSessionEvents === false
+        ? []
+        : (db
+            .prepare(
+              `
+                SELECT * FROM (
+                  SELECT * FROM task_agent_session_events
+                  WHERE thread_id = ?
+                  ORDER BY created_at DESC
+                  LIMIT 200
+                ) ORDER BY created_at ASC
+              `,
+            )
+            .all(threadRow.thread_id) as TaskAgentSessionEventRow[]);
     const task = mapTask(taskRow);
     const thread = mapThread(threadRow);
     const currentPlan = currentPlanRow ? mapPlan(currentPlanRow) : null;
@@ -1807,6 +1929,7 @@ export function readTaskPlanningSnapshot(
     const agentBindings = bindingRows.map(mapBinding);
     const agentRuns = runRows.map(mapRun);
     const agentProgressEvents = progressRows.map(mapProgressEvent);
+    const agentSessionEvents = sessionEventRows.map(mapSessionEvent);
     const agentStages = buildTaskAgentStages(agentRuns, agentBindings, task);
 
     return success({
@@ -1818,6 +1941,7 @@ export function readTaskPlanningSnapshot(
       plans,
       agentRuns,
       agentProgressEvents,
+      agentSessionEvents,
       agentStages,
       flow: buildTaskFlowSnapshot({
         task,
@@ -1865,7 +1989,9 @@ export function listTaskPlanningSnapshots(
     const snapshots: TaskPlanningSnapshot[] = [];
 
     for (const row of rows) {
-      const snapshotRes = readTaskPlanningSnapshot(row.task_id);
+      const snapshotRes = readTaskPlanningSnapshot(row.task_id, {
+        includeSessionEvents: false,
+      });
       if (!snapshotRes.success) return snapshotRes;
       if (snapshotRes.data) snapshots.push(snapshotRes.data);
     }
@@ -2795,6 +2921,59 @@ export function recordTaskAgentProgress(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return failure(`记录 Agent Progress 失败: ${message}`);
+  }
+}
+
+export function recordTaskAgentSessionEvent(
+  input: RecordTaskAgentSessionEventInput,
+): Result<TaskAgentSessionEventRecord> {
+  const content = normalizeSessionEventContent(input.content);
+  if (!content) return failure('Agent Session 内容不能为空');
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const eventId = generateId('sess');
+  const createdAt = iso_timestamp();
+
+  try {
+    dbRes.data
+      .prepare(
+        `
+          INSERT INTO task_agent_session_events (
+            event_id, run_id, task_id, thread_id, agent_id, provider,
+            source, kind, content, metadata, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        eventId,
+        input.runId,
+        input.taskId,
+        input.threadId,
+        input.agentId,
+        input.provider,
+        input.source,
+        input.kind,
+        content,
+        JSON.stringify(input.metadata || {}),
+        createdAt,
+      );
+
+    return success({
+      eventId,
+      runId: input.runId,
+      taskId: input.taskId,
+      threadId: input.threadId,
+      agentId: input.agentId,
+      provider: input.provider,
+      source: input.source,
+      kind: input.kind,
+      content,
+      metadata: input.metadata || {},
+      createdAt,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`记录 Agent Session 事件失败: ${message}`);
   }
 }
 

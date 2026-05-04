@@ -50,6 +50,7 @@ function makeSnapshot(stage: TaskAgentStage): TaskPlanningSnapshot {
     plans: [],
     agentRuns: [],
     agentProgressEvents: [],
+    agentSessionEvents: [],
     agentStages: [
       {
         stage,

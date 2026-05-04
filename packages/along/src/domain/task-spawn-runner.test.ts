@@ -6,6 +6,7 @@ const planningMocks = vi.hoisted(() => ({
   createTaskAgentRun: vi.fn(),
   finishTaskAgentRun: vi.fn(),
   recordTaskAgentProgress: vi.fn(),
+  recordTaskAgentSessionEvent: vi.fn(),
   recordTaskAgentResult: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('./task-planning', () => ({
   createTaskAgentRun: planningMocks.createTaskAgentRun,
   finishTaskAgentRun: planningMocks.finishTaskAgentRun,
   recordTaskAgentProgress: planningMocks.recordTaskAgentProgress,
+  recordTaskAgentSessionEvent: planningMocks.recordTaskAgentSessionEvent,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
   TASK_AGENT_PROGRESS_PHASE: {
     STARTING: 'starting',
@@ -100,6 +102,22 @@ describe('task-spawn-runner', () => {
         provider: 'pi',
         phase: 'starting',
         summary: 'Agent 已启动，正在执行 PI。',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+    planningMocks.recordTaskAgentSessionEvent.mockReturnValue({
+      success: true,
+      data: {
+        eventId: 'sess-1',
+        runId: 'run-1',
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'implementer',
+        provider: 'pi',
+        source: 'system',
+        kind: 'progress',
+        content: 'Agent 已启动，正在执行 PI。',
+        metadata: {},
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });
