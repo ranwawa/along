@@ -18,6 +18,7 @@ vi.mock('./worktree-init', () => ({
 }));
 
 import {
+  defaultTaskWorktreeCommandRunner,
   prepareTaskWorktree,
   type TaskWorktreeCommandRunner,
 } from './task-worktree';
@@ -73,6 +74,18 @@ describe('task-worktree', () => {
       success: true,
       data: undefined,
     });
+  });
+
+  it('执行命令时保留 stdout 前导空格，避免破坏 git porcelain 输出', async () => {
+    const result = await defaultTaskWorktreeCommandRunner(
+      process.execPath,
+      ['-e', "process.stdout.write(' M src/app.ts\\n')"],
+      { cwd: process.cwd() },
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data).toBe(' M src/app.ts');
   });
 
   it('为 Task 创建独立 worktree，并把 branch/worktree 写回 Task', async () => {
