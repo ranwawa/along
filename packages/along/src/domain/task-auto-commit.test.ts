@@ -81,9 +81,13 @@ describe('task-auto-commit', () => {
 
   it('当工作区有变更时，期望暂存并提交，同时记录 commit sha', async () => {
     const calls: string[] = [];
+    let statusCount = 0;
     const runner: TaskWorktreeCommandRunner = async (command, args) => {
       calls.push(`${command} ${args.join(' ')}`);
-      if (args[0] === 'status') return ok(' M src/app.ts');
+      if (args[0] === 'status') {
+        statusCount += 1;
+        return statusCount === 1 ? ok(' M src/app.ts') : ok('');
+      }
       if (args[0] === 'rev-parse') return ok('abc123');
       return ok('');
     };
@@ -109,6 +113,34 @@ describe('task-auto-commit', () => {
       branchName: 'fix/demo-1',
       commitShas: ['abc123'],
     });
+  });
+
+  it('当 commit hook 写回格式化变更时，期望自动 amend 并保持工作区干净', async () => {
+    const calls: string[] = [];
+    let statusCount = 0;
+    const runner: TaskWorktreeCommandRunner = async (command, args) => {
+      calls.push(`${command} ${args.join(' ')}`);
+      if (args[0] === 'status') {
+        statusCount += 1;
+        return statusCount <= 2 ? ok(' M src/app.ts') : ok('');
+      }
+      if (args[0] === 'rev-parse') return ok('amended123');
+      return ok('');
+    };
+
+    const result = await runTaskAutoCommit({
+      snapshot,
+      worktreePath: '/tmp/worktree',
+      branchName: 'fix/demo-1',
+      defaultBranch: 'main',
+      commandRunner: runner,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data.commitShas).toEqual(['amended123']);
+    expect(result.data.changedFiles).toEqual(['src/app.ts']);
+    expect(calls).toContain('git commit --amend --no-edit');
   });
 
   it('当 commit hook 失败时，期望返回摘要并记录完整日志 artifact', async () => {

@@ -59,7 +59,9 @@ export async function defaultTaskWorktreeCommandRunner(
   });
   if (result.error) return failure(result.error.message);
   if (result.status !== 0) return failure(getErrorOutput(result));
-  return success(typeof result.stdout === 'string' ? result.stdout.trim() : '');
+  return success(
+    typeof result.stdout === 'string' ? result.stdout.trimEnd() : '',
+  );
 }
 
 function slugifyTitle(title: string): string {
@@ -184,93 +186,150 @@ async function isGitWorktree(
   return result.success && result.data.trim() === 'true';
 }
 
-export async function prepareTaskWorktree(
-  input: PrepareTaskWorktreeInput,
-): Promise<Result<PrepareTaskWorktreeOutput>> {
-  const { snapshot } = input;
-  const runner = input.commandRunner || defaultTaskWorktreeCommandRunner;
-  const readDefaultBranch = input.readDefaultBranch || getDefaultBranch;
+interface TaskWorktreeContext {
+  runner: TaskWorktreeCommandRunner;
+  snapshot: TaskPlanningSnapshot;
+  repoPath: string;
+  worktreePath: string;
+  branchName: string;
+  defaultBranch: string;
+}
 
+function getTaskDataDir(
+  snapshot: TaskPlanningSnapshot,
+  repoOwner: string,
+  repoName: string,
+) {
+  return snapshot.task.seq != null
+    ? config.getTaskDirBySeq(repoOwner, repoName, snapshot.task.seq)
+    : config.getTaskDir(repoOwner, repoName, snapshot.task.taskId);
+}
+
+async function resolveBranchName(
+  input: PrepareTaskWorktreeInput,
+  runner: TaskWorktreeCommandRunner,
+) {
+  return (
+    input.snapshot.task.branchName ||
+    generateTaskBranchName(
+      runner,
+      input.repoPath,
+      input.snapshot.task.taskId,
+      input.snapshot.task.title,
+      input.snapshot.task.seq,
+      input.snapshot.task.type,
+    )
+  );
+}
+
+async function resolveTaskWorktreeContext(
+  input: PrepareTaskWorktreeInput,
+): Promise<Result<TaskWorktreeContext>> {
+  const runner = input.commandRunner || defaultTaskWorktreeCommandRunner;
   const repositoryRes = await ensureTaskRepository(
-    snapshot,
+    input.snapshot,
     input.repoPath,
     runner,
   );
   if (!repositoryRes.success) {
     return failure(`${repositoryRes.error}，不能创建独立 worktree`);
   }
-  const { repoOwner, repoName } = repositoryRes.data;
 
+  const readDefaultBranch = input.readDefaultBranch || getDefaultBranch;
   const defaultBranchRes = await readDefaultBranch(input.repoPath);
   if (!defaultBranchRes.success) return defaultBranchRes;
-  const defaultBranch = defaultBranchRes.data;
 
-  const taskDir =
-    snapshot.task.seq != null
-      ? config.getTaskDirBySeq(repoOwner, repoName, snapshot.task.seq)
-      : config.getTaskDir(repoOwner, repoName, snapshot.task.taskId);
-  const worktreePath =
-    snapshot.task.worktreePath || path.join(taskDir, 'worktree');
-  const branchName =
-    snapshot.task.branchName ||
-    (await generateTaskBranchName(
-      runner,
-      input.repoPath,
-      snapshot.task.taskId,
-      snapshot.task.title,
-      snapshot.task.seq,
-      snapshot.task.type,
-    ));
+  const { repoOwner, repoName } = repositoryRes.data;
+  const taskDir = getTaskDataDir(input.snapshot, repoOwner, repoName);
+  return success({
+    runner,
+    snapshot: input.snapshot,
+    repoPath: input.repoPath,
+    worktreePath:
+      input.snapshot.task.worktreePath || path.join(taskDir, 'worktree'),
+    branchName: await resolveBranchName(input, runner),
+    defaultBranch: defaultBranchRes.data,
+  });
+}
 
-  fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
-
-  const fetchRes = await runGit(runner, input.repoPath, [
+async function syncDefaultBranch(context: TaskWorktreeContext) {
+  fs.mkdirSync(path.dirname(context.worktreePath), { recursive: true });
+  const fetchRes = await runGit(context.runner, context.repoPath, [
     'fetch',
     'origin',
-    defaultBranch,
+    context.defaultBranch,
   ]);
   if (!fetchRes.success) {
     return failure(`同步远端默认分支失败: ${fetchRes.error}`);
   }
+  await runGit(context.runner, context.repoPath, ['worktree', 'prune']);
+  return success(null);
+}
 
-  await runGit(runner, input.repoPath, ['worktree', 'prune']);
+async function createTaskWorktree(context: TaskWorktreeContext) {
+  const addArgs = context.snapshot.task.branchName
+    ? ['worktree', 'add', context.worktreePath, context.branchName]
+    : [
+        'worktree',
+        'add',
+        '-B',
+        context.branchName,
+        context.worktreePath,
+        `origin/${context.defaultBranch}`,
+      ];
+  const addRes = await runGit(context.runner, context.repoPath, addArgs);
+  return addRes.success
+    ? success(null)
+    : failure(`创建 Task worktree 失败: ${addRes.error}`);
+}
 
-  if (await isGitWorktree(runner, worktreePath)) {
-    const switchRes = await runGit(runner, worktreePath, [
+async function ensureTaskWorktreeReady(context: TaskWorktreeContext) {
+  if (await isGitWorktree(context.runner, context.worktreePath)) {
+    const switchRes = await runGit(context.runner, context.worktreePath, [
       'switch',
-      branchName,
+      context.branchName,
     ]);
-    if (!switchRes.success) {
-      return failure(`切换 Task worktree 分支失败: ${switchRes.error}`);
-    }
-  } else if (fs.existsSync(worktreePath)) {
-    return failure(
-      `Task worktree 路径已存在但不是 Git worktree: ${worktreePath}`,
-    );
-  } else {
-    const addArgs = snapshot.task.branchName
-      ? ['worktree', 'add', worktreePath, branchName]
-      : [
-          'worktree',
-          'add',
-          '-B',
-          branchName,
-          worktreePath,
-          `origin/${defaultBranch}`,
-        ];
-    const addRes = await runGit(runner, input.repoPath, addArgs);
-    if (!addRes.success) {
-      return failure(`创建 Task worktree 失败: ${addRes.error}`);
-    }
+    return switchRes.success
+      ? success(null)
+      : failure(`切换 Task worktree 分支失败: ${switchRes.error}`);
   }
 
-  const updateRes = updateTaskDelivery({
-    taskId: snapshot.task.taskId,
-    status: snapshot.task.status,
-    branchName,
-    worktreePath,
+  if (fs.existsSync(context.worktreePath)) {
+    return failure(
+      `Task worktree 路径已存在但不是 Git worktree: ${context.worktreePath}`,
+    );
+  }
+  return createTaskWorktree(context);
+}
+
+function recordTaskWorktree(context: TaskWorktreeContext) {
+  return updateTaskDelivery({
+    taskId: context.snapshot.task.taskId,
+    status: context.snapshot.task.status,
+    branchName: context.branchName,
+    worktreePath: context.worktreePath,
   });
+}
+
+export async function prepareTaskWorktree(
+  input: PrepareTaskWorktreeInput,
+): Promise<Result<PrepareTaskWorktreeOutput>> {
+  const contextRes = await resolveTaskWorktreeContext(input);
+  if (!contextRes.success) return contextRes;
+  const context = contextRes.data;
+
+  const syncRes = await syncDefaultBranch(context);
+  if (!syncRes.success) return syncRes;
+
+  const worktreeRes = await ensureTaskWorktreeReady(context);
+  if (!worktreeRes.success) return worktreeRes;
+
+  const updateRes = recordTaskWorktree(context);
   if (!updateRes.success) return updateRes;
 
-  return success({ worktreePath, branchName, defaultBranch });
+  return success({
+    worktreePath: context.worktreePath,
+    branchName: context.branchName,
+    defaultBranch: context.defaultBranch,
+  });
 }

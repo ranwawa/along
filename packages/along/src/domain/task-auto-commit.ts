@@ -1,5 +1,6 @@
 import type { Result } from '../core/result';
 import { success } from '../core/result';
+import { settlePostCommitChanges } from './task-auto-commit-settle';
 import type {
   RunTaskAutoCommitInput,
   TaskAutoCommitFailure,
@@ -177,7 +178,7 @@ async function stageAndCommitChanges(
   input: RunTaskAutoCommitInput,
   changedFiles: string[],
   commitMessage: string,
-): Promise<TaskAutoCommitFailure | null> {
+): Promise<TaskAutoCommitFailure | string[]> {
   const addRes = await runGit(input.commandRunner, input.worktreePath, [
     'add',
     '-A',
@@ -197,13 +198,24 @@ async function stageAndCommitChanges(
     '-m',
     commitMessage,
   ]);
-  if (commitRes.success) return null;
-  return failAutoCommit({
-    step: '提交失败',
-    command: `git commit -m "${commitMessage}"`,
-    error: commitRes.error,
+  if (!commitRes.success) {
+    return failAutoCommit({
+      step: '提交失败',
+      command: `git commit -m "${commitMessage}"`,
+      error: commitRes.error,
+      changedFiles,
+      autoCommitInput: input,
+    });
+  }
+
+  return settlePostCommitChanges({
     changedFiles,
-    autoCommitInput: input,
+    runGit: (args) => runGit(input.commandRunner, input.worktreePath, args),
+    fail: (failureInput) =>
+      failAutoCommit({
+        ...failureInput,
+        autoCommitInput: input,
+      }),
   });
 }
 
@@ -274,11 +286,11 @@ export async function runTaskAutoCommit(
     return reuseExistingCommit(input, changedFiles, commitMessage);
   }
 
-  const commitFailure = await stageAndCommitChanges(
+  const committedFiles = await stageAndCommitChanges(
     input,
     changedFiles,
     commitMessage,
   );
-  if (commitFailure) return commitFailure;
-  return recordNewCommit(input, changedFiles, commitMessage);
+  if ('success' in committedFiles) return committedFiles;
+  return recordNewCommit(input, committedFiles, commitMessage);
 }

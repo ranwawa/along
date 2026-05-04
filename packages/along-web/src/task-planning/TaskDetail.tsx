@@ -194,10 +194,7 @@ function NewTaskComposer({
   onCreateTask: (event: FormEvent) => void;
 }) {
   return (
-    <form
-      onSubmit={onCreateTask}
-      className="flex flex-col gap-3"
-    >
+    <form onSubmit={onCreateTask} className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-text-secondary">
           任务内容
