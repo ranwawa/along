@@ -1,18 +1,27 @@
-import { useState } from 'react';
-import type { TaskFlowAction, TaskFlowSnapshot } from '../types';
-import { formatTime, getFlowSeverityClass } from './format';
+import { useEffect, useState } from 'react';
+import type {
+  TaskFlowAction,
+  TaskFlowSnapshot,
+  TaskPlanRevisionRecord,
+} from '../types';
+import { formatTime } from './format';
 import { FlowStages } from './TaskFlowStageCard';
 
 export function TaskFlowPanel({
   flow,
+  currentPlan,
   busyAction,
   onAction,
 }: {
   flow: TaskFlowSnapshot;
+  currentPlan: TaskPlanRevisionRecord | null;
   busyAction: string | null;
   onAction: (action: TaskFlowAction) => void;
 }) {
-  const [openStageId, setOpenStageId] = useState<string | null>(null);
+  const [openStageId, setOpenStageId] = useState<string | null>(
+    flow.currentStageId,
+  );
+  const [isPlanOpen, setIsPlanOpen] = useState(false);
   const commandActions = flow.actions.filter(
     (action) =>
       !['submit_feedback', 'request_revision', 'request_changes'].includes(
@@ -20,36 +29,40 @@ export function TaskFlowPanel({
       ),
   );
 
+  useEffect(() => {
+    setOpenStageId(flow.currentStageId);
+  }, [flow.currentStageId]);
+
   return (
-    <section className="rounded-lg border border-border-color bg-black/25 p-4 md:p-5 flex flex-col gap-4">
+    <section className="flex flex-col gap-4">
       <FlowSummary flow={flow} />
       <FlowStages
         stages={flow.stages}
-        currentStageId={flow.currentStageId}
         commandActions={commandActions}
         busyAction={busyAction}
+        currentPlan={currentPlan}
         onAction={onAction}
+        onShowPlan={() => setIsPlanOpen(true)}
         openStageId={openStageId}
         onOpenStageChange={setOpenStageId}
       />
-      <FlowHistory flow={flow} />
+      <CurrentPlanDialog
+        plan={currentPlan}
+        open={isPlanOpen}
+        onClose={() => setIsPlanOpen(false)}
+      />
     </section>
   );
 }
 
 function FlowSummary({ flow }: { flow: TaskFlowSnapshot }) {
   return (
-    <div className="flex flex-col gap-3">
-      <div
-        className={`rounded-lg border px-4 py-3 ${getFlowSeverityClass(
-          flow.severity,
-        )}`}
-      >
-        <div className="text-xs text-text-muted mb-1">当前节奏</div>
-        <div className="text-base font-semibold">{flow.conclusion}</div>
+    <div className="flex flex-col gap-2">
+      <div className="text-sm font-semibold text-text-primary">
+        {flow.conclusion}
       </div>
       {flow.blockers.length > 0 && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs leading-5 text-amber-100">
+        <div className="text-xs leading-5 text-amber-100">
           {flow.blockers.map((blocker) => (
             <div key={blocker}>{blocker}</div>
           ))}
@@ -59,7 +72,42 @@ function FlowSummary({ flow }: { flow: TaskFlowSnapshot }) {
   );
 }
 
-function FlowHistory({ flow }: { flow: TaskFlowSnapshot }) {
+function CurrentPlanDialog({
+  plan,
+  open,
+  onClose,
+}: {
+  plan: TaskPlanRevisionRecord | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!open || !plan) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-lg border border-border-color bg-bg-secondary shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-border-color px-4 py-3">
+          <h3 className="text-sm font-semibold text-text-secondary">
+            当前计划 v{plan.version}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-border-color px-2 py-1 text-xs font-semibold text-text-secondary hover:bg-white/5"
+          >
+            关闭
+          </button>
+        </div>
+        <div className="min-h-0 overflow-auto p-4">
+          <div className="whitespace-pre-wrap break-words text-sm leading-6">
+            {plan.body}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FlowHistory({ flow }: { flow: TaskFlowSnapshot }) {
   return (
     <details className="rounded-lg border border-border-color bg-black/20">
       <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-text-secondary">

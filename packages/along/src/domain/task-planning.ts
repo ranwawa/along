@@ -1135,7 +1135,7 @@ function buildTaskFlowActions(input: {
       description: '确认交付结果并结束任务',
       enabled: canAcceptDelivery,
       disabledReason: '只有已交付任务可以验收完成',
-      stage: 'completed',
+      stage: 'delivery',
       variant: 'primary',
     }),
     buildTaskFlowAction({

@@ -1,48 +1,62 @@
-import type { TaskFlowAction, TaskFlowStage } from '../types';
-import {
-  getFlowActionClass,
-  getFlowStageDotClass,
-  getFlowStageStateClass,
-} from './format';
+import type {
+  TaskFlowAction,
+  TaskFlowStage,
+  TaskPlanRevisionRecord,
+} from '../types';
+import { getFlowActionClass, getFlowStageDotClass } from './format';
 
-function getStageActionScope(
+export function getStageActionScope(
   actions: TaskFlowAction[],
   stage: TaskFlowStage,
 ): TaskFlowAction[] {
   const stageActions = actions.filter((action) => action.stage === stage.id);
+  if (
+    stage.state === 'current' ||
+    stage.state === 'blocked' ||
+    stage.state === 'attention'
+  ) {
+    return stageActions;
+  }
   return stageActions.length > 0 ? stageActions : actions;
 }
 
 export function FlowStages({
   stages,
-  currentStageId,
   commandActions,
   busyAction,
+  currentPlan,
   onAction,
+  onShowPlan,
   openStageId,
   onOpenStageChange,
 }: {
   stages: TaskFlowStage[];
-  currentStageId: string;
   commandActions: TaskFlowAction[];
   busyAction: string | null;
+  currentPlan: TaskPlanRevisionRecord | null;
   onAction: (action: TaskFlowAction) => void;
+  onShowPlan: () => void;
   openStageId: string | null;
   onOpenStageChange: (stageId: string | null) => void;
 }) {
   return (
-    <div className="flex gap-3 overflow-x-auto pb-1">
+    <div className="flex flex-col gap-2">
       {stages.map((stage) => {
-        const isCurrent = stage.id === currentStageId;
+        const isCurrent =
+          stage.state === 'current' ||
+          stage.state === 'blocked' ||
+          stage.state === 'attention';
         return (
           <FlowStageItem
             key={stage.id}
             stage={stage}
             actions={commandActions}
             busyAction={busyAction}
+            currentPlan={currentPlan}
             isCurrent={isCurrent}
             isOpen={openStageId === stage.id}
             onAction={onAction}
+            onShowPlan={onShowPlan}
             onOpenChange={(isOpen) =>
               onOpenStageChange(isOpen ? stage.id : null)
             }
@@ -57,17 +71,21 @@ function FlowStageItem({
   stage,
   actions,
   busyAction,
+  currentPlan,
   isCurrent,
   isOpen,
   onAction,
+  onShowPlan,
   onOpenChange,
 }: {
   stage: TaskFlowStage;
   actions: TaskFlowAction[];
   busyAction: string | null;
+  currentPlan: TaskPlanRevisionRecord | null;
   isCurrent: boolean;
   isOpen: boolean;
   onAction: (action: TaskFlowAction) => void;
+  onShowPlan: () => void;
   onOpenChange: (isOpen: boolean) => void;
 }) {
   const scopedActions = getStageActionScope(actions, stage);
@@ -77,11 +95,7 @@ function FlowStageItem({
   );
 
   return (
-    <div
-      className={`group min-w-[180px] flex-1 rounded-lg border p-3 transition-colors ${getFlowStageStateClass(
-        stage.state,
-      )}`}
-    >
+    <div className="group border-l border-border-color pl-3">
       <FlowStageToggle
         stage={stage}
         isCurrent={isCurrent}
@@ -94,8 +108,10 @@ function FlowStageItem({
           enabledActions={enabledActions}
           disabledActions={disabledActions}
           busyAction={busyAction}
+          currentPlan={currentPlan}
           isOpen={isOpen}
           onAction={onAction}
+          onShowPlan={onShowPlan}
         />
       )}
     </div>
@@ -118,33 +134,46 @@ function FlowStageToggle({
       type="button"
       disabled={!isCurrent}
       onClick={() => onOpenChange(!isOpen)}
-      className="w-full text-left outline-none disabled:cursor-default"
+      className="w-full text-left outline-none disabled:cursor-default focus:ring-1 focus:ring-brand/60"
+      aria-expanded={isCurrent ? isOpen : undefined}
     >
-      <FlowStageSummary stage={stage} />
+      <FlowStageSummary stage={stage} isCurrent={isCurrent} />
     </button>
   );
 }
 
-function FlowStageSummary({ stage }: { stage: TaskFlowStage }) {
+function FlowStageSummary({
+  stage,
+  isCurrent,
+}: {
+  stage: TaskFlowStage;
+  isCurrent: boolean;
+}) {
   return (
-    <>
-      <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-start gap-2 py-1">
+      <div className="flex h-5 shrink-0 items-center">
         <span
           className={`h-2.5 w-2.5 rounded-full shrink-0 ${getFlowStageDotClass(
             stage.state,
           )}`}
         />
-        <span className="text-sm font-semibold">{stage.label}</span>
       </div>
-      <div className="mt-2 text-xs leading-5 text-text-secondary">
-        {stage.summary}
+      <div className="min-w-0 flex-1 text-sm leading-5">
+        <span
+          className={
+            isCurrent ? 'font-semibold text-text-primary' : 'text-text-muted'
+          }
+        >
+          {stage.label}
+        </span>
+        <span className="text-text-muted"> · {stage.summary}</span>
+        {stage.blocker && (
+          <div className="mt-1 text-xs leading-5 text-rose-200">
+            {stage.blocker}
+          </div>
+        )}
       </div>
-      {stage.blocker && (
-        <div className="mt-2 text-xs leading-5 text-rose-200">
-          {stage.blocker}
-        </div>
-      )}
-    </>
+    </div>
   );
 }
 
@@ -153,23 +182,32 @@ function FlowStageDetails({
   enabledActions,
   disabledActions,
   busyAction,
+  currentPlan,
   isOpen,
   onAction,
+  onShowPlan,
 }: {
   stage: TaskFlowStage;
   enabledActions: TaskFlowAction[];
   disabledActions: TaskFlowAction[];
   busyAction: string | null;
+  currentPlan: TaskPlanRevisionRecord | null;
   isOpen: boolean;
   onAction: (action: TaskFlowAction) => void;
+  onShowPlan: () => void;
 }) {
   return (
-    <div
-      className={`mt-3 rounded-md border border-white/10 bg-black/25 p-3 ${
-        isOpen ? 'block' : 'hidden group-hover:block group-focus-within:block'
-      }`}
-    >
+    <div className={`ml-4 pb-3 pt-1 ${isOpen ? 'block' : 'hidden'}`}>
       <FlowStageDetailText stage={stage} />
+      {stage.id === 'plan_confirmation' && currentPlan && (
+        <button
+          type="button"
+          onClick={onShowPlan}
+          className="mt-3 px-3 py-2 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 transition-colors"
+        >
+          查看计划 v{currentPlan.version}
+        </button>
+      )}
       <FlowStageActionList
         actions={enabledActions}
         busyAction={busyAction}
@@ -183,19 +221,14 @@ function FlowStageDetails({
 function FlowStageDetailText({ stage }: { stage: TaskFlowStage }) {
   return (
     <>
-      <div className="text-xs font-semibold text-text-secondary">
-        当前状态详情
-      </div>
       {stage.details.length > 0 ? (
-        <ul className="mt-2 flex flex-col gap-1 text-xs leading-5 text-text-secondary">
+        <ul className="flex flex-col gap-1 text-xs leading-5 text-text-secondary">
           {stage.details.map((detail) => (
             <li key={detail}>{detail}</li>
           ))}
         </ul>
       ) : (
-        <div className="mt-2 text-xs text-text-muted">
-          当前状态暂无更多详情。
-        </div>
+        <div className="text-xs text-text-muted">当前状态暂无更多详情。</div>
       )}
     </>
   );
