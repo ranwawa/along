@@ -1,6 +1,12 @@
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import { runTaskAgentTurn } from './task-agent-runtime';
+import { runTaskAutoCommit } from './task-auto-commit';
+import type { TaskAutoCommitFailure } from './task-auto-commit-types';
+import {
+  buildAutoCommitFixPrompt,
+  buildImplementationPrompt,
+} from './task-implementation-prompts';
 import {
   PLAN_STATUS,
   readTaskPlanningSnapshot,
@@ -10,6 +16,8 @@ import {
   updateTaskStatus,
 } from './task-planning';
 import {
+  defaultTaskWorktreeCommandRunner,
+  type PrepareTaskWorktreeOutput,
   prepareTaskWorktree,
   type TaskWorktreeCommandRunner,
 } from './task-worktree';
@@ -29,12 +37,22 @@ export interface RunTaskImplementationAgentOutput {
   snapshot: TaskPlanningSnapshot;
   approvedPlan: TaskPlanRevisionRecord;
   assistantText: string;
+  commitShas: string[];
 }
 
-function truncateText(value: string, maxLength = 5000): string {
-  const text = value.trim();
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}\n...（内容已截断）`;
+type AutoCommitAttemptResult =
+  | Result<RunTaskImplementationAgentOutput>
+  | {
+      success: false;
+      error: string;
+      snapshot: TaskPlanningSnapshot;
+      failure: TaskAutoCommitFailure;
+    };
+
+interface PreparedImplementationRun {
+  snapshot: TaskPlanningSnapshot;
+  approvedPlan: TaskPlanRevisionRecord;
+  worktree: PrepareTaskWorktreeOutput;
 }
 
 function findApprovedPlan(
@@ -50,56 +68,180 @@ function findApprovedPlan(
   );
 }
 
-function buildImplementationPrompt(
-  snapshot: TaskPlanningSnapshot,
-  approvedPlan: TaskPlanRevisionRecord,
-  worktreePath: string,
-): string {
-  const context = {
-    task: {
-      taskId: snapshot.task.taskId,
-      title: snapshot.task.title,
-      body: truncateText(snapshot.task.body, 4000),
-      repoOwner: snapshot.task.repoOwner,
-      repoName: snapshot.task.repoName,
-      sourceCwd: snapshot.task.cwd,
-      worktreePath,
-    },
-    approvedPlan: {
-      planId: approvedPlan.planId,
-      version: approvedPlan.version,
-      body: truncateText(approvedPlan.body, 8000),
-    },
-    recentArtifacts: snapshot.artifacts.slice(-30).map((artifact) => ({
-      artifactId: artifact.artifactId,
-      type: artifact.type,
-      role: artifact.role,
-      body: truncateText(artifact.body, 2500),
-      metadata: artifact.metadata,
-    })),
-  };
-
-  return [
-    '你是 Along 的 Implementation Agent。你的任务是在当前 Task 专属 worktree 中严格按已批准方案完成代码实现。',
-    '',
-    '要求：',
-    '1. 不重新制定计划，不扩大需求范围。',
-    '2. 修改代码前先检查当前 worktree 状态和相关代码。',
-    '3. 只修改完成已批准方案所必需的文件。',
-    '4. 需要测试时，优先运行相关的局部测试或类型检查。',
-    '5. 不要创建 PR，不要提交或推送代码；本阶段只完成工作区代码改动和必要验证。',
-    '6. 最终回复必须简短说明改了什么、验证了什么、还有什么风险。',
-    '',
-    '任务上下文：',
-    JSON.stringify(context, null, 2),
-  ].join('\n');
+async function readRequiredSnapshot(
+  taskId: string,
+  message: string,
+): Promise<Result<TaskPlanningSnapshot>> {
+  const snapshotRes = readTaskPlanningSnapshot(taskId);
+  if (!snapshotRes.success) return snapshotRes;
+  if (!snapshotRes.data) return failure(message);
+  return success(snapshotRes.data);
 }
 
-export async function runTaskImplementationAgent(
-  input: RunTaskImplementationAgentInput,
-): Promise<Result<RunTaskImplementationAgentOutput>> {
-  const snapshotRes = readTaskPlanningSnapshot(input.taskId);
+function rollbackToPlanningApproved<T>(taskId: string, result: Result<T>) {
+  const rollbackRes = updateTaskStatus(taskId, TASK_STATUS.PLANNING_APPROVED);
+  return rollbackRes.success ? result : failure<T>(rollbackRes.error);
+}
+
+async function runImplementationTurn(input: {
+  taskInput: RunTaskImplementationAgentInput;
+  snapshot: TaskPlanningSnapshot;
+  approvedPlan: TaskPlanRevisionRecord;
+  worktree: PrepareTaskWorktreeOutput;
+  agentId: string;
+}) {
+  return runTaskAgentTurn({
+    taskId: input.taskInput.taskId,
+    threadId: input.snapshot.thread.threadId,
+    agentId: input.agentId,
+    prompt: buildImplementationPrompt(
+      input.snapshot,
+      input.approvedPlan,
+      input.worktree.worktreePath,
+    ),
+    cwd: input.worktree.worktreePath,
+    editor: input.taskInput.editor,
+    model: input.taskInput.model,
+    personalityVersion: input.taskInput.personalityVersion,
+    inputArtifactIds: [
+      input.approvedPlan.artifactId,
+      ...input.snapshot.artifacts.map((artifact) => artifact.artifactId),
+    ],
+    options: {
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      maxTurns: 80,
+    },
+  });
+}
+
+async function runAutoCommitFixTurn(input: {
+  taskInput: RunTaskImplementationAgentInput;
+  snapshot: TaskPlanningSnapshot;
+  approvedPlan: TaskPlanRevisionRecord;
+  worktree: PrepareTaskWorktreeOutput;
+  agentId: string;
+  failure: TaskAutoCommitFailure;
+  attempt: number;
+  maxAttempts: number;
+}) {
+  return runTaskAgentTurn({
+    taskId: input.taskInput.taskId,
+    threadId: input.snapshot.thread.threadId,
+    agentId: input.agentId,
+    prompt: buildAutoCommitFixPrompt({
+      snapshot: input.snapshot,
+      approvedPlan: input.approvedPlan,
+      worktreePath: input.worktree.worktreePath,
+      failure: input.failure,
+      attempt: input.attempt,
+      maxAttempts: input.maxAttempts,
+    }),
+    cwd: input.worktree.worktreePath,
+    editor: input.taskInput.editor,
+    model: input.taskInput.model,
+    personalityVersion: input.taskInput.personalityVersion,
+    inputArtifactIds: [
+      input.approvedPlan.artifactId,
+      ...input.snapshot.artifacts.map((artifact) => artifact.artifactId),
+      ...(input.failure.failureArtifactId
+        ? [input.failure.failureArtifactId]
+        : []),
+    ],
+    options: {
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      maxTurns: 40,
+    },
+  });
+}
+
+async function runAutoCommitLoop(input: {
+  taskInput: RunTaskImplementationAgentInput;
+  approvedPlan: TaskPlanRevisionRecord;
+  worktree: PrepareTaskWorktreeOutput;
+  agentId: string;
+  commandRunner: TaskWorktreeCommandRunner;
+  assistantText: string;
+}): Promise<Result<RunTaskImplementationAgentOutput>> {
+  let assistantText = input.assistantText;
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptRes = await runAutoCommitAttempt(input, assistantText);
+    if (attemptRes.success) return attemptRes;
+    if (!('failure' in attemptRes)) return attemptRes;
+    if (attempt === maxAttempts) {
+      return rollbackToPlanningApproved(
+        input.taskInput.taskId,
+        failure(attemptRes.error),
+      );
+    }
+    const fixResult = await runAutoCommitFixTurn({
+      ...input,
+      snapshot: attemptRes.snapshot,
+      failure: attemptRes.failure,
+      attempt: attempt + 1,
+      maxAttempts,
+    });
+    if (!fixResult.success) {
+      return rollbackToPlanningApproved(input.taskInput.taskId, fixResult);
+    }
+    assistantText = fixResult.data.assistantText;
+  }
+  return failure('auto-commit 状态异常');
+}
+
+async function runAutoCommitAttempt(
+  input: {
+    taskInput: RunTaskImplementationAgentInput;
+    approvedPlan: TaskPlanRevisionRecord;
+    worktree: PrepareTaskWorktreeOutput;
+    commandRunner: TaskWorktreeCommandRunner;
+  },
+  assistantText: string,
+): Promise<AutoCommitAttemptResult> {
+  const snapshotRes = await readRequiredSnapshot(
+    input.taskInput.taskId,
+    `Task ${input.taskInput.taskId} 实现完成，但 auto-commit 前读取快照失败`,
+  );
   if (!snapshotRes.success) return snapshotRes;
+
+  const commitRes = await runTaskAutoCommit({
+    snapshot: snapshotRes.data,
+    worktreePath: input.worktree.worktreePath,
+    branchName: input.worktree.branchName,
+    defaultBranch: input.worktree.defaultBranch,
+    commandRunner: input.commandRunner,
+    assistantText,
+  });
+  if (!commitRes.success) {
+    return {
+      success: false,
+      error: `auto-commit 失败: ${commitRes.error}`,
+      snapshot: snapshotRes.data,
+      failure: commitRes,
+    };
+  }
+
+  const refreshed = await readRequiredSnapshot(
+    input.taskInput.taskId,
+    `Task ${input.taskInput.taskId} 已实现并提交，但读取快照失败`,
+  );
+  if (!refreshed.success) return refreshed;
+  return success({
+    snapshot: refreshed.data,
+    approvedPlan: input.approvedPlan,
+    assistantText,
+    commitShas: commitRes.data.commitShas,
+  });
+}
+
+async function prepareImplementationRun(
+  input: RunTaskImplementationAgentInput,
+  commandRunner: TaskWorktreeCommandRunner,
+): Promise<Result<PreparedImplementationRun>> {
+  const snapshotRes = readTaskPlanningSnapshot(input.taskId);
+  if (!snapshotRes.success) return failure(snapshotRes.error);
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
 
@@ -115,59 +257,43 @@ export async function runTaskImplementationAgent(
   const worktreeRes = await prepareTaskWorktree({
     snapshot,
     repoPath: input.cwd,
-    commandRunner: input.commandRunner,
+    commandRunner,
     readDefaultBranch: input.readDefaultBranch,
   });
-  if (!worktreeRes.success) return worktreeRes;
+  if (!worktreeRes.success) return failure(worktreeRes.error);
 
   const startedRes = updateTaskStatus(input.taskId, TASK_STATUS.IMPLEMENTING);
-  if (!startedRes.success) return startedRes;
+  if (!startedRes.success) return failure(startedRes.error);
+
+  return success({ snapshot, approvedPlan, worktree: worktreeRes.data });
+}
+
+export async function runTaskImplementationAgent(
+  input: RunTaskImplementationAgentInput,
+): Promise<Result<RunTaskImplementationAgentOutput>> {
+  const commandRunner = input.commandRunner || defaultTaskWorktreeCommandRunner;
+  const prepared = await prepareImplementationRun(input, commandRunner);
+  if (!prepared.success) return prepared;
 
   const agentId = input.agentId || 'implementer';
-  const result = await runTaskAgentTurn({
-    taskId: input.taskId,
-    threadId: snapshot.thread.threadId,
+  const result = await runImplementationTurn({
+    taskInput: input,
+    snapshot: prepared.data.snapshot,
+    approvedPlan: prepared.data.approvedPlan,
+    worktree: prepared.data.worktree,
     agentId,
-    prompt: buildImplementationPrompt(
-      snapshot,
-      approvedPlan,
-      worktreeRes.data.worktreePath,
-    ),
-    cwd: worktreeRes.data.worktreePath,
-    editor: input.editor,
-    model: input.model,
-    personalityVersion: input.personalityVersion,
-    inputArtifactIds: [
-      approvedPlan.artifactId,
-      ...snapshot.artifacts.map((artifact) => artifact.artifactId),
-    ],
-    options: {
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      maxTurns: 80,
-    },
   });
 
   if (!result.success) {
-    const rollbackRes = updateTaskStatus(
-      input.taskId,
-      TASK_STATUS.PLANNING_APPROVED,
-    );
-    return rollbackRes.success ? result : rollbackRes;
+    return rollbackToPlanningApproved(input.taskId, result);
   }
 
-  const doneRes = updateTaskStatus(input.taskId, TASK_STATUS.IMPLEMENTED);
-  if (!doneRes.success) return doneRes;
-
-  const refreshedSnapshotRes = readTaskPlanningSnapshot(input.taskId);
-  if (!refreshedSnapshotRes.success) return refreshedSnapshotRes;
-  if (!refreshedSnapshotRes.data) {
-    return failure(`Task ${input.taskId} 已实现，但读取快照失败`);
-  }
-
-  return success({
-    snapshot: refreshedSnapshotRes.data,
-    approvedPlan,
+  return runAutoCommitLoop({
+    taskInput: input,
+    approvedPlan: prepared.data.approvedPlan,
+    worktree: prepared.data.worktree,
+    agentId,
+    commandRunner,
     assistantText: result.data.assistantText,
   });
 }

@@ -10,7 +10,7 @@
 - Claude Code 的 `session_id` 只作为执行器会话，用于同一个 Agent 在同一个 Thread 中优先 resume。
 - 即使 Claude Code 原生 session 丢失，系统也能用 Along 自己保存的 Artifact 重建上下文继续。
 
-本轮不实现完整多 Agent、长期记忆和 Linear 集成。Task 在 Plan 批准后支持启动 implementation agent：按批准方案修改工作区代码并记录结果；实现完成后由 delivery 流程负责提交、推送并创建 PR。
+本轮不实现完整多 Agent、长期记忆和 Linear 集成。Task 在 Plan 批准后支持启动 implementation agent：按批准方案修改工作区代码并记录结果；实现完成后由 implementation 阶段的 auto-commit 子步骤提交本地变更，delivery 流程只负责基于已有本地 commit 推送并创建 PR。
 
 ## 2. 设计原则
 
@@ -290,7 +290,8 @@ Approve 后：
 - Web API 支持创建 Task、读取 Task、追加用户消息、批准 Plan、手动触发 planner。
 - Web API 支持批准后手动触发 implementation agent。
 - Implementation 开始前创建 Task 专属 Git worktree，并在该 worktree 内创建 Task 分支。
-- Delivery 流程在 Task worktree 内提交、rebase、推送并创建 PR。
+- Implementation 流程在 Task worktree 内完成代码修改，并由系统 auto-commit 子步骤提交本地变更。
+- Delivery 流程在 Task worktree 内确认已有本地 commit 后 rebase、推送并创建 PR。
 - webhook-server 复用现有 agent 队列，并按 `taskId` 串行化 Task planner。
 - 单元测试覆盖核心 planning 规则和 session binding。
 
@@ -355,4 +356,4 @@ POST /api/tasks/:taskId/implementation
 POST /api/tasks/:taskId/delivery
 ```
 
-`approve` 只批准当前 active Plan，且要求没有未处理 feedback round。`planner` 是给 Web UI 或排障使用的手动重跑入口，不要求用户记 CLI。`implementation` 会在 Task 已有批准方案后调度 implementation agent，并且只允许在 Task 专属 worktree 中修改代码。`delivery` 会在同一个 Task worktree 中提交、推送并创建 PR，PR body 使用 `along-task: <taskId>` 标记，不写 `fixes/closes/resolves #...`，避免触发 GitHub Issue session 生命周期逻辑。
+`approve` 只批准当前 active Plan，且要求没有未处理 feedback round。`planner` 是给 Web UI 或排障使用的手动重跑入口，不要求用户记 CLI。`implementation` 会在 Task 已有批准方案后调度 implementation agent，并且只允许在 Task 专属 worktree 中修改代码；agent 完成后系统会自动生成 Conventional Commit message、执行本地 commit，并在 hook/biome 失败时把裁剪后的错误摘要反馈给新的修复回合，完整日志记录为 artifact。`delivery` 会在同一个 Task worktree 中确认已有本地 commit 后推送并创建 PR，若仍存在未提交变更则中止，PR body 使用 `along-task: <taskId>` 标记，不写 `fixes/closes/resolves #...`，避免触发 GitHub Issue session 生命周期逻辑。

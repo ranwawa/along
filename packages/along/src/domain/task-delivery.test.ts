@@ -154,7 +154,14 @@ describe('task-delivery', () => {
     });
   });
 
-  it('当 Task 已实现且有变更时，期望提交推送并创建带 Task 标记的 PR', async () => {
+  it('当 Task 已实现且已有 commit 时，期望推送并创建带 Task 标记的 PR', async () => {
+    planningMocks.readTaskPlanningSnapshot.mockReturnValue({
+      success: true,
+      data: {
+        ...snapshot,
+        task: { ...snapshot.task, commitShas: ['abc123'] },
+      },
+    });
     const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
     let prBody = '';
     const runner: TaskDeliveryCommandRunner = async (
@@ -164,7 +171,10 @@ describe('task-delivery', () => {
     ) => {
       calls.push({ command, args, cwd: options.cwd });
       if (command === 'git' && args[0] === 'status') {
-        return ok(' M packages/client/src/pages/home/list.tsx');
+        return ok('');
+      }
+      if (command === 'git' && args[0] === 'diff') {
+        return ok('packages/client/src/pages/home/list.tsx');
       }
       if (command === 'git' && args[0] === 'rev-parse') {
         if (args.includes('--verify')) return err('not found');
@@ -216,6 +226,9 @@ describe('task-delivery', () => {
     expect(calls.map((call) => `${call.command} ${call.args[0]}`)).toContain(
       'gh pr',
     );
+    expect(calls.map((call) => `git ${call.args[0]}`)).not.toContain(
+      'git commit',
+    );
     expect(
       calls.find((call) => call.command === 'git' && call.args[0] === 'status'),
     ).toEqual(
@@ -228,9 +241,10 @@ describe('task-delivery', () => {
     expect(prBody).not.toMatch(/(?:fixes|closes|resolves)\s+#\d+/i);
   });
 
-  it('当没有可提交变更时，期望回到已实现状态并返回失败', async () => {
+  it('当没有已提交 commit 时，期望回到已实现状态并返回失败', async () => {
     const runner: TaskDeliveryCommandRunner = async (command, args) => {
       if (command === 'git' && args[0] === 'status') return ok('');
+      if (command === 'git' && args[0] === 'rev-list') return ok('');
       return ok('');
     };
 
@@ -259,6 +273,7 @@ describe('task-delivery', () => {
           repoOwner: undefined,
           repoName: undefined,
           seq: undefined,
+          commitShas: ['abc123'],
         },
       },
     });
@@ -269,7 +284,10 @@ describe('task-delivery', () => {
         return ok('https://github.com/ranwawa/kinkeeper.git');
       }
       if (command === 'git' && args[0] === 'status') {
-        return ok(' M packages/client/src/pages/home/list.tsx');
+        return ok('');
+      }
+      if (command === 'git' && args[0] === 'diff') {
+        return ok('packages/client/src/pages/home/list.tsx');
       }
       if (command === 'git' && args[0] === 'rev-parse') {
         if (args.includes('--verify')) return err('not found');
