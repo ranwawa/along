@@ -2,17 +2,23 @@ import { spawn } from 'node:child_process';
 import { config, type EditorConfig } from '../core/config';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
+import {
+  type TaskAgentProgressContext,
+  writeTaskAgentProgress,
+} from './task-agent-progress';
+import {
+  finishTaskAgentSuccess,
+  markTaskAgentFailed,
+  type StartedTaskAgentRun,
+  saveTaskAgentOutput,
+  startTaskAgentRun,
+  startTaskAgentRunHeartbeat,
+} from './task-agent-run-lifecycle';
 import type {
   RunTaskClaudeTurnInput,
   RunTaskClaudeTurnOutput,
 } from './task-claude-runner';
-import {
-  AGENT_RUN_STATUS,
-  createTaskAgentRun,
-  ensureTaskAgentBinding,
-  finishTaskAgentRun,
-  recordTaskAgentResult,
-} from './task-planning';
+import { TASK_AGENT_PROGRESS_PHASE } from './task-planning';
 
 export interface TaskAgentSpawnCommand {
   command: string;
@@ -136,93 +142,112 @@ export async function runTaskSpawnTurn(
 
   const editorRes = getEditor(input.editor);
   if (!editorRes.success) return editorRes;
+  const permissionRes = ensureEditorPermissions(editorRes.data, input.cwd);
+  if (!permissionRes.success) return permissionRes;
+
+  const startedRes = startTaskAgentRun(input, input.editor);
+  if (!startedRes.success) return startedRes;
+
+  const stopHeartbeat = startTaskAgentRunHeartbeat(
+    startedRes.data.progressContext,
+    `Agent 已启动，正在执行 ${editorRes.data.name}。`,
+    commandRes.data.cwd,
+  );
+  const runner = input.spawnRunner || defaultTaskAgentSpawnRunner;
   try {
-    editorRes.data.ensurePermissions?.(input.cwd, config.USER_ALONG_DIR);
+    return executeSpawnTurn(
+      input,
+      commandRes.data,
+      editorRes.data,
+      startedRes.data,
+      runner,
+    );
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+function ensureEditorPermissions(
+  editor: EditorConfig,
+  cwd: string,
+): Result<void> {
+  try {
+    editor.ensurePermissions?.(cwd, config.USER_ALONG_DIR);
+    return success(undefined);
   } catch (error: unknown) {
     return failure(
-      `准备 ${editorRes.data.name} 权限配置失败: ${getErrorMessage(error)}`,
+      `准备 ${editor.name} 权限配置失败: ${getErrorMessage(error)}`,
     );
   }
+}
 
-  const bindingRes = ensureTaskAgentBinding({
-    threadId: input.threadId,
-    agentId: input.agentId,
-    provider: input.editor,
-    cwd: input.cwd,
-    model: input.model,
-    personalityVersion: input.personalityVersion,
-  });
-  if (!bindingRes.success) return bindingRes;
-
-  const runRes = createTaskAgentRun({
-    taskId: input.taskId,
-    threadId: input.threadId,
-    agentId: input.agentId,
-    provider: input.editor,
-    providerSessionIdAtStart: bindingRes.data.providerSessionId,
-    inputArtifactIds: input.inputArtifactIds,
-  });
-  if (!runRes.success) return runRes;
-
-  const runner = input.spawnRunner || defaultTaskAgentSpawnRunner;
-  const executionRes = await runner(commandRes.data);
+async function executeSpawnTurn(
+  input: RunTaskSpawnTurnInput,
+  command: TaskAgentSpawnCommand,
+  editor: EditorConfig,
+  started: StartedTaskAgentRun,
+  runner: TaskAgentSpawnRunner,
+): Promise<Result<RunTaskClaudeTurnOutput>> {
+  writeTaskAgentProgress(
+    started.progressContext,
+    TASK_AGENT_PROGRESS_PHASE.TOOL,
+    '正在等待外部 Agent 命令返回。',
+  );
+  const executionRes = await runner(command);
   if (!executionRes.success) {
-    const failedRun = finishTaskAgentRun({
-      runId: runRes.data.runId,
-      status: AGENT_RUN_STATUS.FAILED,
-      error: executionRes.error,
-    });
-    if (!failedRun.success) return failedRun;
-    return failure(`${editorRes.data.name} 执行失败: ${executionRes.error}`);
+    return failSpawnTurn(
+      started.progressContext,
+      editor.name,
+      executionRes.error,
+    );
   }
+  return finishSpawnExecution(input, editor, started, executionRes.data);
+}
 
-  const execution = executionRes.data;
+function finishSpawnExecution(
+  input: RunTaskSpawnTurnInput,
+  editor: EditorConfig,
+  started: StartedTaskAgentRun,
+  execution: TaskAgentSpawnResult,
+): Result<RunTaskClaudeTurnOutput> {
   if (execution.exitCode !== 0) {
-    const error = summarizeFailure(execution);
-    const failedRun = finishTaskAgentRun({
-      runId: runRes.data.runId,
-      status: AGENT_RUN_STATUS.FAILED,
-      error,
-    });
-    if (!failedRun.success) return failedRun;
-    return failure(`${editorRes.data.name} 执行失败: ${error}`);
+    return failSpawnTurn(
+      started.progressContext,
+      editor.name,
+      summarizeFailure(execution),
+      '外部 Agent 命令执行失败。',
+    );
   }
-
   const assistantText = getAssistantText(execution);
-  const outputArtifactIds: string[] = [];
-  if (assistantText) {
-    const artifactRes = recordTaskAgentResult({
-      taskId: input.taskId,
-      threadId: input.threadId,
-      agentId: input.agentId,
-      provider: input.editor,
-      runId: runRes.data.runId,
-      body: assistantText,
-    });
-    if (!artifactRes.success) {
-      const failedRun = finishTaskAgentRun({
-        runId: runRes.data.runId,
-        status: AGENT_RUN_STATUS.FAILED,
-        error: artifactRes.error,
-      });
-      if (!failedRun.success) return failedRun;
-      return failure(artifactRes.error);
-    }
-    outputArtifactIds.push(artifactRes.data.artifactId);
-  }
-
-  const finishedRun = finishTaskAgentRun({
-    runId: runRes.data.runId,
-    status: AGENT_RUN_STATUS.SUCCEEDED,
-    outputArtifactIds,
-  });
+  const outputRes = saveTaskAgentOutput(
+    input,
+    input.editor,
+    assistantText,
+    started.progressContext,
+  );
+  if (!outputRes.success) return outputRes;
+  const finishedRun = finishTaskAgentSuccess(
+    started.progressContext,
+    outputRes.data,
+  );
   if (!finishedRun.success) return finishedRun;
-
   return success({
     run: finishedRun.data,
-    providerSessionId: bindingRes.data.providerSessionId,
-    usedResume: Boolean(bindingRes.data.providerSessionId),
+    providerSessionId: started.binding.providerSessionId,
+    usedResume: started.usedResume,
     assistantText,
-    outputArtifactIds,
+    outputArtifactIds: outputRes.data,
   });
+}
+
+function failSpawnTurn(
+  context: TaskAgentProgressContext,
+  editorName: string,
+  error: string,
+  summary = '外部 Agent 命令启动或执行失败。',
+): Result<never> {
+  const failedRes = markTaskAgentFailed(context, error, undefined, summary);
+  return failedRes.success
+    ? failure(`${editorName} 执行失败: ${error}`)
+    : failure(failedRes.error);
 }

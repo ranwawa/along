@@ -91,6 +91,17 @@ export interface TaskFeedbackRoundRecord {
 
 export type TaskAgentRunStatus = 'running' | 'succeeded' | 'failed';
 
+export type TaskAgentProgressPhase =
+  | 'starting'
+  | 'context'
+  | 'tool'
+  | 'waiting'
+  | 'verifying'
+  | 'finalizing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
 export type TaskAgentStage = 'planning' | 'implementation' | 'delivery';
 
 export type TaskAgentStageStatus = 'idle' | TaskAgentRunStatus;
@@ -109,6 +120,19 @@ export interface TaskAgentRunRecord {
   error?: string;
   startedAt: string;
   endedAt?: string;
+}
+
+export interface TaskAgentProgressEventRecord {
+  progressId: string;
+  runId: string;
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+  phase: TaskAgentProgressPhase;
+  summary: string;
+  detail?: string;
+  createdAt: string;
 }
 
 export interface TaskAgentManualResume {
@@ -215,6 +239,7 @@ export interface TaskPlanningSnapshot {
   artifacts: TaskArtifactRecord[];
   plans: TaskPlanRevisionRecord[];
   agentRuns: TaskAgentRunRecord[];
+  agentProgressEvents: TaskAgentProgressEventRecord[];
   agentStages: TaskAgentStageRecord[];
   flow: TaskFlowSnapshot;
 }
