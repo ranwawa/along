@@ -22,7 +22,6 @@ import {
 import { TaskFlowPanel } from './TaskFlowPanel';
 import { TaskProgressPanel } from './TaskProgressPanel';
 import { TaskRecordsPanel } from './TaskRecords';
-import { TaskStatusBadge } from './TaskStatusBadge';
 
 function CurrentPlanPanel({ selected }: { selected: TaskPlanningSnapshot }) {
   return (
@@ -149,7 +148,7 @@ function ExistingTaskComposer({
         event.preventDefault();
         onSubmitMessage();
       }}
-      className="rounded-lg border border-border-color bg-black/25 p-4 flex flex-col gap-3"
+      className="flex flex-col gap-3"
     >
       <div className="text-sm font-semibold text-text-secondary">继续输入</div>
       <textarea
@@ -197,11 +196,11 @@ function NewTaskComposer({
   return (
     <form
       onSubmit={onCreateTask}
-      className="rounded-lg border border-border-color bg-black/25 p-4 flex flex-col gap-3"
+      className="flex flex-col gap-3"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-text-secondary">
-          继续输入
+          任务内容
         </div>
         {selectedRepository && (
           <span className="text-xs text-text-muted truncate">
@@ -325,27 +324,22 @@ function NewTaskDetail({
   onScroll: (element: HTMLDivElement) => void;
 }) {
   return (
-    <>
-      <div className="shrink-0 p-4 md:p-6 border-b border-border-color flex flex-col gap-2">
-        <div className="text-xs text-text-muted">新任务会话</div>
-        <h2 className="text-lg md:text-xl font-semibold">新任务</h2>
-      </div>
+    <div className="flex-1 min-h-0 flex flex-col">
       <div
         ref={scrollRef}
         onScroll={(event) => onScroll(event.currentTarget)}
-        className="flex-1 min-h-0 overflow-auto p-4 md:p-6"
-      >
-        <TaskRecordsPanel artifacts={[]}>
-          <NewTaskComposer
-            draft={detail.draft}
-            selectedRepository={detail.selectedRepository}
-            busyAction={detail.busyAction}
-            onDraftChange={detail.onDraftChange}
-            onCreateTask={detail.onCreateTask}
-          />
-        </TaskRecordsPanel>
+        className="flex-1 min-h-0 overflow-auto"
+      />
+      <div className="shrink-0 border-t border-border-color bg-bg-secondary p-4 md:p-5">
+        <NewTaskComposer
+          draft={detail.draft}
+          selectedRepository={detail.selectedRepository}
+          busyAction={detail.busyAction}
+          onDraftChange={detail.onDraftChange}
+          onCreateTask={detail.onCreateTask}
+        />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -361,37 +355,7 @@ function SelectedTaskDetail({
   onScroll: (element: HTMLDivElement) => void;
 }) {
   return (
-    <>
-      <div className="shrink-0 p-4 md:p-6 border-b border-border-color flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <TaskStatusBadge snapshot={selected} />
-              {selected.task.type && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-500/15 text-violet-300 border border-violet-500/30">
-                  {selected.task.type}
-                </span>
-              )}
-              <span className="text-xs text-text-muted">
-                v{selected.currentPlan?.version || 0}
-              </span>
-            </div>
-            <h2 className="text-lg md:text-xl font-semibold truncate">
-              {selected.task.seq != null && (
-                <span className="text-text-muted mr-1">
-                  #{selected.task.seq}
-                </span>
-              )}
-              {selected.task.title}
-            </h2>
-          </div>
-          <div className="shrink-0 text-right text-xs text-text-muted">
-            <div>{formatTime(selected.task.updatedAt)}</div>
-            <div>{getTaskStatusLabel(selected.task.status)}</div>
-          </div>
-        </div>
-      </div>
-
+    <div className="flex-1 min-h-0 flex flex-col">
       <div
         ref={scrollRef}
         onScroll={(event) => onScroll(event.currentTarget)}
@@ -406,18 +370,19 @@ function SelectedTaskDetail({
           <CurrentPlanPanel selected={selected} />
           <TaskProgressPanel snapshot={selected} />
           <AgentStagesPanel stages={selected.agentStages || []} />
-          <TaskRecordsPanel artifacts={detail.sortedArtifacts}>
-            <ExistingTaskComposer
-              flow={selected.flow}
-              messageBody={detail.messageBody}
-              busyAction={detail.busyAction}
-              onMessageChange={detail.onMessageChange}
-              onSubmitMessage={detail.onSubmitMessage}
-            />
-          </TaskRecordsPanel>
+          <TaskRecordsPanel artifacts={detail.sortedArtifacts} />
         </div>
         <TaskInfoPanel selected={selected} />
       </div>
-    </>
+      <div className="shrink-0 border-t border-border-color bg-bg-secondary p-4 md:p-5">
+        <ExistingTaskComposer
+          flow={selected.flow}
+          messageBody={detail.messageBody}
+          busyAction={detail.busyAction}
+          onMessageChange={detail.onMessageChange}
+          onSubmitMessage={detail.onSubmitMessage}
+        />
+      </div>
+    </div>
   );
 }
