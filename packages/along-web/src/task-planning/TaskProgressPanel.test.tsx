@@ -86,13 +86,12 @@ describe('TaskProgressPanel empty', () => {
 });
 
 describe('TaskProgressPanel progress event', () => {
-  it('渲染实时进展和当前状态', () => {
+  it('渲染实时进展列表', () => {
     const html = renderPanel(
       makeSnapshot({
         agentProgressEvents: [makeProgressEvent({ detail: '运行局部测试。' })],
       }),
     );
-    expect(html).toContain('当前状态');
     expect(html).toContain('正在执行命令');
     expect(html).toContain('运行局部测试');
   });
