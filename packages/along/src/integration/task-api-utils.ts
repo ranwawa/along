@@ -4,7 +4,9 @@ import {
   readTaskAgentBinding,
   readTaskPlanningSnapshot,
   TASK_AGENT_STAGE,
+  TASK_EXECUTION_MODE,
   type TaskAgentStage,
+  type TaskExecutionMode,
   type TaskPlanningSnapshot,
 } from '../domain/task-planning';
 import type {
@@ -65,6 +67,24 @@ export function readBooleanField(
 ): boolean | undefined {
   const value = payload[key];
   return typeof value === 'boolean' ? value : undefined;
+}
+
+export function readTaskExecutionModeField(
+  payload: UnknownRecord,
+  key: string,
+): Result<TaskExecutionMode | undefined> {
+  const rawValue = payload[key];
+  const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+  if (value === undefined || value === null || value === '') {
+    return success(undefined);
+  }
+  if (
+    value === TASK_EXECUTION_MODE.MANUAL ||
+    value === TASK_EXECUTION_MODE.AUTONOMOUS
+  ) {
+    return success(value);
+  }
+  return failure('executionMode 必须是 manual 或 autonomous');
 }
 
 export function readTaskAgentStageField(

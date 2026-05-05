@@ -16,7 +16,7 @@ import { errorResponse } from './task-api-utils';
 export interface ScheduledTaskPlanningRun {
   taskId: string;
   cwd: string;
-  reason: 'task_created' | 'user_message' | 'manual';
+  reason: 'task_created' | 'user_message' | 'manual' | 'autonomous';
   agentId?: string;
   editor?: string;
   model?: string;
@@ -26,7 +26,7 @@ export interface ScheduledTaskPlanningRun {
 export interface ScheduledTaskImplementationRun {
   taskId: string;
   cwd: string;
-  reason: 'manual';
+  reason: 'manual' | 'autonomous';
   agentId?: string;
   editor?: string;
   model?: string;
@@ -36,7 +36,7 @@ export interface ScheduledTaskImplementationRun {
 export interface ScheduledTaskDeliveryRun {
   taskId: string;
   cwd: string;
-  reason: 'manual';
+  reason: 'manual' | 'autonomous';
 }
 
 export interface ScheduledTaskTitleSummaryRun {

@@ -7,6 +7,8 @@ export type TaskStatus =
   | 'delivered'
   | 'completed';
 
+export type TaskExecutionMode = 'manual' | 'autonomous';
+
 export type TaskThreadStatus =
   | 'drafting'
   | 'awaiting_approval'
@@ -37,6 +39,7 @@ export interface TaskItemRecord {
   prNumber?: number;
   seq?: number;
   type?: string;
+  executionMode: TaskExecutionMode;
   createdAt: string;
   updatedAt: string;
 }

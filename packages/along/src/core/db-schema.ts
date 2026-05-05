@@ -53,6 +53,7 @@ const TABLES = [
     status TEXT NOT NULL, active_thread_id TEXT, repo_owner TEXT, repo_name TEXT,
     cwd TEXT, worktree_path TEXT, branch_name TEXT, commit_shas TEXT DEFAULT '[]',
     pr_url TEXT, pr_number INTEGER, seq INTEGER, type TEXT,
+    execution_mode TEXT NOT NULL DEFAULT 'manual',
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );`,
   `CREATE TABLE IF NOT EXISTS task_threads (
@@ -168,6 +169,7 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE task_items ADD COLUMN pr_number INTEGER',
   'ALTER TABLE task_items ADD COLUMN seq INTEGER',
   'ALTER TABLE task_items ADD COLUMN type TEXT',
+  "ALTER TABLE task_items ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'manual'",
 ];
 
 function execRequired(db: Database, statements: string[]) {

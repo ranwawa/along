@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy webhook server predates current function-size rule.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy webhook server predates current file-size rule.
 /**
  * webhook-server.ts - 本地 webhook 接收服务器
  *
@@ -69,6 +71,10 @@ import {
   type ScheduledTaskPlanningRun,
   type ScheduledTaskTitleSummaryRun,
 } from '../integration/task-api';
+import {
+  continueAutonomousTaskAfterImplementation,
+  continueAutonomousTaskAfterPlanning,
+} from '../integration/task-autonomous-continuation';
 import {
   cleanupIssueSession,
   resolveCi,
@@ -460,6 +466,21 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
       logger.info(
         `[Task ${input.taskId}] planning 完成: ${result.data.action}`,
       );
+      const continuation = continueAutonomousTaskAfterPlanning({
+        taskId: input.taskId,
+        cwd: input.cwd,
+        plannerAction: result.data.action,
+        scheduleImplementation: enqueueTaskImplementationRun,
+      });
+      if (!continuation.success) {
+        logger.error(
+          `[Task ${input.taskId}] autonomous planning 推进失败: ${continuation.error}`,
+        );
+      } else if (continuation.data !== 'skipped') {
+        logger.info(
+          `[Task ${input.taskId}] autonomous planning 推进: ${continuation.data}`,
+        );
+      }
     });
   });
 }
@@ -485,6 +506,21 @@ function enqueueTaskImplementationRun(input: ScheduledTaskImplementationRun) {
         return;
       }
       logger.info(`[Task ${input.taskId}] implementation 完成`);
+      const continuation = continueAutonomousTaskAfterImplementation({
+        taskId: input.taskId,
+        cwd: input.cwd,
+        scheduleImplementation: enqueueTaskImplementationRun,
+        scheduleDelivery: enqueueTaskDeliveryRun,
+      });
+      if (!continuation.success) {
+        logger.error(
+          `[Task ${input.taskId}] autonomous implementation 推进失败: ${continuation.error}`,
+        );
+      } else if (continuation.data !== 'skipped') {
+        logger.info(
+          `[Task ${input.taskId}] autonomous implementation 推进: ${continuation.data}`,
+        );
+      }
     });
   });
 }

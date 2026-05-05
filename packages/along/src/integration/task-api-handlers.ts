@@ -29,6 +29,7 @@ import {
   readPositiveInt,
   readStringField,
   readTaskAgentStageField,
+  readTaskExecutionModeField,
   resolveTaskCwd,
   scheduleDeliveryIfNeeded,
   scheduleImplementationIfNeeded,
@@ -112,6 +113,8 @@ function createTaskFromPayload(
 ): Result<TaskPlanningSnapshot> {
   const cwdRes = resolveTaskCwd(payload, context);
   if (!cwdRes.success) return cwdRes;
+  const executionModeRes = readTaskExecutionModeField(payload, 'executionMode');
+  if (!executionModeRes.success) return executionModeRes;
   const repository = getTaskRepositoryFields(payload, context, cwdRes.data);
   return createPlanningTask({
     title: deriveTitle(taskBody),
@@ -120,6 +123,7 @@ function createTaskFromPayload(
     repoOwner: repository.repoOwner,
     repoName: repository.repoName,
     cwd: cwdRes.data,
+    executionMode: executionModeRes.data,
   });
 }
 

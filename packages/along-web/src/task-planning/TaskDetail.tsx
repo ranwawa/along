@@ -25,6 +25,8 @@ import { TaskRecordsPanel } from './TaskRecords';
 
 function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const executionMode =
+    selected.task.executionMode === 'autonomous' ? '全自动' : '人工确认';
   return (
     <aside className="min-w-0 rounded-lg border border-border-color bg-black/25">
       <button
@@ -72,6 +74,8 @@ function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
           <span>{getThreadStatusLabel(selected.thread.status)}</span>
           <span className="text-text-muted">Source</span>
           <span>{selected.task.source}</span>
+          <span className="text-text-muted">Mode</span>
+          <span>{executionMode}</span>
           <span className="text-text-muted">Status</span>
           <span>{getTaskStatusLabel(selected.task.status)}</span>
           {selected.task.branchName && (
@@ -201,6 +205,19 @@ function NewTaskComposer({
         rows={2}
         className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60"
       />
+      <label className="flex flex-col gap-1 text-xs text-text-muted">
+        执行模式
+        <select
+          value={draft.executionMode}
+          onChange={(event) =>
+            onDraftChange('executionMode', event.target.value)
+          }
+          className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm text-text-primary outline-none focus:ring-1 focus:ring-brand/60"
+        >
+          <option value="manual">人工确认</option>
+          <option value="autonomous">全自动</option>
+        </select>
+      </label>
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 text-xs text-text-muted">
           {selectedRepository ? '将创建到当前仓库。' : '请先选择仓库。'}
