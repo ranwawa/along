@@ -178,7 +178,7 @@ describe('task-planning-agent', () => {
     });
   });
 
-  it('Planner prompt 包含根因、架构、兼容性和计划粒度规则', async () => {
+  it('Planner prompt 包含价值判断、根因、架构、兼容性和可实施计划规则', async () => {
     const result = await runTaskPlanningAgent({
       taskId: 'task-1',
       cwd: '/tmp/project',
@@ -188,10 +188,20 @@ describe('task-planning-agent', () => {
     const callInput = runnerMock.mock.calls[0]?.[0] as
       | { prompt?: string }
       | undefined;
+    expect(callInput?.prompt).toContain('是否值得做');
+    expect(callInput?.prompt).toContain('有权拒绝');
     expect(callInput?.prompt).toContain('定位根因');
     expect(callInput?.prompt).toContain('业务语义和架构合理性');
     expect(callInput?.prompt).toContain('不要主动设计向下兼容');
-    expect(callInput?.prompt).toContain('不要写具体代码实现细节');
+    expect(callInput?.prompt).toContain('decision complete');
+    expect(callInput?.prompt).toContain('可直接交给 Implementation Agent 执行');
+    expect(callInput?.prompt).toContain(
+      '不要把“梳理、调研、明确现状、确认哪些节点”',
+    );
+    expect(callInput?.prompt).toContain('输出 planning_update 明确缺口');
+    expect(callInput?.prompt).toContain('不要写函数级实现');
+    expect(callInput?.prompt).toContain('模块级改动');
+    expect(callInput?.prompt).toContain('Mermaid 图表');
   });
 
   it('当 Agent 返回澄清消息时，期望发布 Planning Update', async () => {
