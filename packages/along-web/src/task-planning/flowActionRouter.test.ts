@@ -86,6 +86,7 @@ function makeSnapshot(stage: TaskAgentStage): TaskPlanningSnapshot {
 
 function makeInput(
   selected: TaskPlanningSnapshot,
+  overrides: Partial<UseTaskPlanningActionsInput> = {},
 ): UseTaskPlanningActionsInput {
   return {
     selected,
@@ -107,6 +108,7 @@ function makeInput(
     setError: makeDispatch(),
     loadRepositories: vi.fn(),
     loadSelectedTask: vi.fn(),
+    ...overrides,
   };
 }
 
@@ -147,12 +149,16 @@ describe('flowActionRouter', () => {
       variant: 'primary',
     };
 
-    runFlowAction(action, makeInput(makeSnapshot('implementation')), actions);
+    runFlowAction(
+      action,
+      makeInput(makeSnapshot('implementation'), { canImplement: true }),
+      actions,
+    );
 
     expect(actions.runSimpleAction).toHaveBeenCalledWith(
       'implementation',
       'implementation',
-      false,
+      true,
       { confirmImplementationSteps: true },
     );
   });
