@@ -5,6 +5,7 @@ type PlanningMock = ReturnType<typeof vi.fn>;
 export type PlanningMocks = {
   approveTaskImplementationSteps: PlanningMock;
   approveCurrentTaskPlan: PlanningMock;
+  closeTask: PlanningMock;
   completeDeliveredTask: PlanningMock;
   completeTaskAgentStageManually: PlanningMock;
   createPlanningTask: PlanningMock;
@@ -46,6 +47,7 @@ export function resetPlanningMocks(planningMocks: PlanningMocks) {
   mockTaskReads(planningMocks);
   mockTaskMessage(planningMocks);
   mockPlanApproval(planningMocks);
+  mockTaskClose(planningMocks);
   mockImplementationStepsApproval(planningMocks);
   mockManualComplete(planningMocks);
   mockDeliveredComplete(planningMocks);
@@ -121,6 +123,16 @@ function mockPlanApproval(planningMocks: PlanningMocks) {
       artifactId: 'art-plan',
       body: '## Plan',
       createdAt: '2026-01-01T00:00:01.000Z',
+    },
+  });
+}
+
+function mockTaskClose(planningMocks: PlanningMocks) {
+  planningMocks.closeTask.mockReturnValue({
+    success: true,
+    data: {
+      ...snapshot,
+      task: { ...snapshot.task, status: 'closed' },
     },
   });
 }

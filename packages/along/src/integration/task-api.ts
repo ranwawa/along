@@ -1,6 +1,7 @@
 import type { TaskPlanningSnapshot } from '../domain/task-planning';
 import {
   handleTaskApproveRequest,
+  handleTaskCloseRequest,
   handleTaskCompleteRequest,
   handleTaskCreateRequest,
   handleTaskDeliveryRequest,
@@ -64,6 +65,7 @@ type TaskActionHandler = (
 
 const ACTION_ROUTES: Record<string, TaskActionHandler> = {
   approve: (_req, taskId) => handleTaskApproveRequest(taskId),
+  close: (req, taskId) => handleTaskCloseRequest(req, taskId),
   complete: (_req, taskId) => handleTaskCompleteRequest(taskId),
   delivery: handleTaskDeliveryRequest,
   implementation: handleTaskImplementationRequest,

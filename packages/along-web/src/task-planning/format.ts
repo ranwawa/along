@@ -66,6 +66,8 @@ export function getTaskStatusLabel(status: TaskStatus): string {
       return '已交付';
     case 'completed':
       return '已完成';
+    case 'closed':
+      return '已关闭';
     default:
       return status;
   }
@@ -87,6 +89,8 @@ export function getTaskStatusClass(status: TaskStatus): string {
       return 'bg-teal-500/15 text-teal-300 border-teal-500/30';
     case 'completed':
       return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+    case 'closed':
+      return 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
     default:
       return 'bg-white/10 text-text-secondary border-border-color';
   }
@@ -102,6 +106,8 @@ export function getStageStatusLabel(status: TaskAgentStageStatus): string {
       return '已完成';
     case 'failed':
       return '失败';
+    case 'cancelled':
+      return '已取消';
     default:
       return status;
   }
@@ -115,6 +121,8 @@ export function getStageStatusClass(status: TaskAgentStageStatus): string {
       return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
     case 'failed':
       return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+    case 'cancelled':
+      return 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
     default:
       return 'bg-white/5 text-text-muted border-border-color';
   }
@@ -193,6 +201,8 @@ export function getArtifactLabel(type: TaskArtifactType): string {
       return '批准';
     case 'agent_result':
       return 'Agent';
+    case 'task_closed':
+      return '关闭';
     default:
       return type;
   }
@@ -210,6 +220,8 @@ export function getArtifactClass(type: TaskArtifactType): string {
       return 'border-emerald-500/25 bg-emerald-500/15';
     case 'agent_result':
       return 'border-white/10 bg-white/5';
+    case 'task_closed':
+      return 'border-zinc-500/25 bg-zinc-500/10';
     default:
       return 'border-border-color bg-white/5';
   }

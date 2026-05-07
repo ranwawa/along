@@ -5,7 +5,8 @@ export type TaskStatus =
   | 'implemented'
   | 'delivering'
   | 'delivered'
-  | 'completed';
+  | 'completed'
+  | 'closed';
 
 export type TaskExecutionMode = 'manual' | 'autonomous';
 
@@ -20,7 +21,8 @@ export type TaskArtifactType =
   | 'plan_revision'
   | 'planning_update'
   | 'approval'
-  | 'agent_result';
+  | 'agent_result'
+  | 'task_closed';
 
 export interface TaskItemRecord {
   taskId: string;
@@ -92,7 +94,11 @@ export interface TaskFeedbackRoundRecord {
   resolvedAt?: string;
 }
 
-export type TaskAgentRunStatus = 'running' | 'succeeded' | 'failed';
+export type TaskAgentRunStatus =
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
 
 export type TaskAgentProgressPhase =
   | 'starting'
@@ -209,7 +215,8 @@ export type TaskFlowActionId =
   | 'manual_complete'
   | 'start_delivery'
   | 'accept_delivery'
-  | 'request_changes';
+  | 'request_changes'
+  | 'close_task';
 
 export type TaskFlowEventType =
   | 'task_created'
@@ -221,8 +228,10 @@ export type TaskFlowEventType =
   | 'agent_run_started'
   | 'agent_run_succeeded'
   | 'agent_run_failed'
+  | 'agent_run_cancelled'
   | 'delivery_updated'
-  | 'task_completed';
+  | 'task_completed'
+  | 'task_closed';
 
 export interface TaskFlowAction {
   id: TaskFlowActionId;

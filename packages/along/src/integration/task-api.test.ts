@@ -11,6 +11,7 @@ import {
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
   approveTaskImplementationSteps: vi.fn(),
   approveCurrentTaskPlan: vi.fn(),
+  closeTask: vi.fn(),
   completeDeliveredTask: vi.fn(),
   completeTaskAgentStageManually: vi.fn(),
   createPlanningTask: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('../domain/task-planning', () => ({
   },
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
+  closeTask: planningMocks.closeTask,
   completeDeliveredTask: planningMocks.completeDeliveredTask,
   completeTaskAgentStageManually: planningMocks.completeTaskAgentStageManually,
   createPlanningTask: planningMocks.createPlanningTask,
@@ -227,6 +229,22 @@ it('当验收已交付 Task 时，期望返回完成后的 snapshot', async () =
   expect(response.status).toBe(200);
   expect(payload.taskId).toBe('task-1');
   expect(planningMocks.completeDeliveredTask).toHaveBeenCalledWith('task-1');
+});
+
+it('当关闭 Task 时，期望返回关闭后的 snapshot', async () => {
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/task-1/close', { reason: '不再继续' }),
+    new URL('http://localhost/api/tasks/task-1/close'),
+    { defaultCwd: '/tmp/default' },
+  );
+  const payload = (await response.json()) as {
+    taskId: string;
+    snapshot: typeof snapshot;
+  };
+
+  expect(response.status).toBe(200);
+  expect(payload.taskId).toBe('task-1');
+  expect(planningMocks.closeTask).toHaveBeenCalledWith('task-1', '不再继续');
 });
 
 it('当读取不存在的 Task 时，期望返回 404', async () => {

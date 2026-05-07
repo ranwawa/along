@@ -20,6 +20,7 @@ export const TASK_STATUS = {
   DELIVERING: 'delivering',
   DELIVERED: 'delivered',
   COMPLETED: 'completed',
+  CLOSED: 'closed',
 } as const;
 
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
@@ -54,6 +55,7 @@ export const ARTIFACT_TYPE = {
   PLANNING_UPDATE: 'planning_update',
   APPROVAL: 'approval',
   AGENT_RESULT: 'agent_result',
+  TASK_CLOSED: 'task_closed',
 } as const;
 
 export type ArtifactType = (typeof ARTIFACT_TYPE)[keyof typeof ARTIFACT_TYPE];
@@ -97,6 +99,7 @@ export const AGENT_RUN_STATUS = {
   RUNNING: 'running',
   SUCCEEDED: 'succeeded',
   FAILED: 'failed',
+  CANCELLED: 'cancelled',
 } as const;
 
 export type AgentRunStatus =
@@ -309,7 +312,8 @@ export type TaskFlowActionId =
   | 'manual_complete'
   | 'start_delivery'
   | 'accept_delivery'
-  | 'request_changes';
+  | 'request_changes'
+  | 'close_task';
 
 export type TaskFlowEventType =
   | 'task_created'
@@ -321,8 +325,10 @@ export type TaskFlowEventType =
   | 'agent_run_started'
   | 'agent_run_succeeded'
   | 'agent_run_failed'
+  | 'agent_run_cancelled'
   | 'delivery_updated'
-  | 'task_completed';
+  | 'task_completed'
+  | 'task_closed';
 
 export interface TaskFlowAction {
   id: TaskFlowActionId;
@@ -969,6 +975,7 @@ function getCurrentTaskFlowStageId(input: {
   openRound: TaskFeedbackRoundRecord | null;
   agentStages: TaskAgentStageRecord[];
 }): TaskFlowStageId {
+  if (input.task.status === TASK_STATUS.CLOSED) return 'completed';
   if (input.task.status === TASK_STATUS.COMPLETED) return 'completed';
   if (input.task.status === TASK_STATUS.DELIVERED) return 'delivery';
   if (input.openRound) return 'plan_discussion';
@@ -1042,6 +1049,12 @@ function buildTaskFlowConclusion(input: {
   failedStage?: TaskAgentStageRecord;
   runningStage?: TaskAgentStageRecord;
 }): Pick<TaskFlowSnapshot, 'conclusion' | 'severity'> {
+  if (input.task.status === TASK_STATUS.CLOSED) {
+    return {
+      conclusion: '任务已关闭，不再继续推进。',
+      severity: 'blocked',
+    };
+  }
   if (input.task.status === TASK_STATUS.COMPLETED) {
     return { conclusion: '任务已完成，关键产物已归档。', severity: 'success' };
   }
@@ -1145,6 +1158,8 @@ function buildTaskFlowActions(input: {
   artifacts: TaskArtifactRecord[];
   agentStages: TaskAgentStageRecord[];
 }): TaskFlowAction[] {
+  if (input.task.status === TASK_STATUS.CLOSED) return [];
+
   const failedStage = getLatestFailedAgentStage(input.agentStages);
   const implementationStage = getStageByAgentStage(
     input.agentStages,
@@ -1330,6 +1345,18 @@ function buildTaskFlowActions(input: {
       stage: 'delivery',
       variant: 'secondary',
     }),
+    ...(input.task.status === TASK_STATUS.COMPLETED
+      ? []
+      : [
+          buildTaskFlowAction({
+            id: 'close_task',
+            label: '关闭任务',
+            description: '终止当前 Task 流程并保留历史记录',
+            enabled: true,
+            stage: getCurrentTaskFlowStageId(input),
+            variant: 'danger',
+          }),
+        ]),
   ];
 }
 
@@ -1399,6 +1426,7 @@ function getTaskFlowStageSummary(input: {
       if (input.task.status === TASK_STATUS.DELIVERING) return '交付中';
       return '等待实现完成';
     case 'completed':
+      if (input.task.status === TASK_STATUS.CLOSED) return '任务已关闭';
       return input.task.status === TASK_STATUS.COMPLETED
         ? '任务已完成'
         : '等待验收';
@@ -1478,7 +1506,10 @@ function buildTaskFlowStages(input: {
   agentStages: TaskAgentStageRecord[];
 }): TaskFlowStage[] {
   const currentIndex = TASK_FLOW_STAGE_ORDER.indexOf(input.currentStageId);
-  const failedStage = getLatestFailedAgentStage(input.agentStages);
+  const failedStage =
+    input.task.status === TASK_STATUS.CLOSED
+      ? undefined
+      : getLatestFailedAgentStage(input.agentStages);
 
   return TASK_FLOW_STAGE_ORDER.map((stageId, index) => {
     let state: TaskFlowStageState =
@@ -1597,6 +1628,26 @@ function buildTaskFlowEvents(input: {
         occurredAt: artifact.createdAt,
       });
     }
+    if (artifact.type === ARTIFACT_TYPE.TASK_CLOSED) {
+      const previousStatus =
+        typeof artifact.metadata.previousStatus === 'string'
+          ? artifact.metadata.previousStatus
+          : undefined;
+      const reason =
+        typeof artifact.metadata.reason === 'string'
+          ? artifact.metadata.reason
+          : undefined;
+      events.push({
+        eventId: artifact.artifactId,
+        type: 'task_closed',
+        stage: 'completed',
+        title: '任务已关闭',
+        summary: [previousStatus ? `关闭前状态：${previousStatus}` : '', reason]
+          .filter(Boolean)
+          .join('；'),
+        occurredAt: artifact.createdAt,
+      });
+    }
   }
 
   for (const plan of input.plans) {
@@ -1628,19 +1679,15 @@ function buildTaskFlowEvents(input: {
     if (run.endedAt) {
       events.push({
         eventId: `${run.runId}:end`,
-        type:
-          run.status === AGENT_RUN_STATUS.FAILED
-            ? 'agent_run_failed'
-            : 'agent_run_succeeded',
+        type: getAgentRunEndEventType(run.status),
         stage,
-        title:
-          run.status === AGENT_RUN_STATUS.FAILED
-            ? `${run.agentId} 运行失败`
-            : `${run.agentId} 运行完成`,
+        title: getAgentRunEndEventTitle(run),
         summary:
           run.status === AGENT_RUN_STATUS.FAILED
             ? getAgentRunFailureSummary(run)
-            : undefined,
+            : run.status === AGENT_RUN_STATUS.CANCELLED
+              ? run.error || '任务关闭时已取消运行'
+              : undefined,
         occurredAt: run.endedAt,
       });
     }
@@ -1671,6 +1718,24 @@ function buildTaskFlowEvents(input: {
   );
 }
 
+function getAgentRunEndEventType(
+  status: AgentRunStatus,
+): Extract<
+  TaskFlowEventType,
+  'agent_run_failed' | 'agent_run_succeeded' | 'agent_run_cancelled'
+> {
+  if (status === AGENT_RUN_STATUS.FAILED) return 'agent_run_failed';
+  if (status === AGENT_RUN_STATUS.CANCELLED) return 'agent_run_cancelled';
+  return 'agent_run_succeeded';
+}
+
+function getAgentRunEndEventTitle(run: TaskAgentRunRecord): string {
+  if (run.status === AGENT_RUN_STATUS.FAILED) return `${run.agentId} 运行失败`;
+  if (run.status === AGENT_RUN_STATUS.CANCELLED)
+    return `${run.agentId} 运行已取消`;
+  return `${run.agentId} 运行完成`;
+}
+
 function buildTaskFlowSnapshot(input: {
   task: TaskItemRecord;
   thread: TaskThreadRecord;
@@ -1683,10 +1748,15 @@ function buildTaskFlowSnapshot(input: {
   agentStages: TaskAgentStageRecord[];
 }): TaskFlowSnapshot {
   const currentStageId = getCurrentTaskFlowStageId(input);
-  const failedStage = getLatestFailedAgentStage(input.agentStages);
-  const runningStage = input.agentStages.find(
-    (stage) => stage.status === AGENT_RUN_STATUS.RUNNING,
-  );
+  const isClosed = input.task.status === TASK_STATUS.CLOSED;
+  const failedStage = isClosed
+    ? undefined
+    : getLatestFailedAgentStage(input.agentStages);
+  const runningStage = isClosed
+    ? undefined
+    : input.agentStages.find(
+        (stage) => stage.status === AGENT_RUN_STATUS.RUNNING,
+      );
   const conclusion = buildTaskFlowConclusion({
     failedStage,
     runningStage,
@@ -1700,7 +1770,7 @@ function buildTaskFlowSnapshot(input: {
   if (!input.task.cwd && !input.task.worktreePath) {
     blockers.push('缺少工作目录，Agent 调度或人工接管可能无法定位仓库。');
   }
-  if (failedStage?.manualResume?.reason) {
+  if (!isClosed && failedStage?.manualResume?.reason) {
     blockers.push(failedStage.manualResume.reason);
   }
 
@@ -1834,6 +1904,126 @@ function insertArtifact(input: {
     metadata: input.metadata || {},
     createdAt: input.createdAt,
   };
+}
+
+function ensureTaskIsOpen(
+  snapshot: TaskPlanningSnapshot,
+  action: string,
+): Result<void> {
+  return snapshot.task.status === TASK_STATUS.CLOSED
+    ? failure(`Task 已关闭，不能${action}`)
+    : success(undefined);
+}
+
+function readTaskStatus(taskId: string): Result<TaskStatus | null> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const row = dbRes.data
+      .prepare('SELECT * FROM task_items WHERE task_id = ?')
+      .get(taskId) as TaskItemRow | null;
+    return success(row ? row.status : null);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`读取 Task 状态失败: ${message}`);
+  }
+}
+
+export function closeTask(
+  taskId: string,
+  reason?: string,
+): Result<TaskPlanningSnapshot> {
+  const snapshotRes = readTaskPlanningSnapshot(taskId);
+  if (!snapshotRes.success) return snapshotRes;
+  const snapshot = snapshotRes.data;
+  if (!snapshot) return failure(`Task 不存在: ${taskId}`);
+  if (snapshot.task.status === TASK_STATUS.COMPLETED) {
+    return failure('已完成 Task 不能关闭');
+  }
+  if (snapshot.task.status === TASK_STATUS.CLOSED) return success(snapshot);
+
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
+
+  try {
+    const now = iso_timestamp();
+    const closeReason = reason?.trim();
+    const runningRuns = snapshot.agentRuns.filter(
+      (run) => run.status === AGENT_RUN_STATUS.RUNNING,
+    );
+
+    const txn = db.transaction(() => {
+      insertArtifact({
+        taskId: snapshot.task.taskId,
+        threadId: snapshot.thread.threadId,
+        type: ARTIFACT_TYPE.TASK_CLOSED,
+        role: ARTIFACT_ROLE.SYSTEM,
+        body: closeReason
+          ? `任务已关闭：${closeReason}`
+          : '任务已关闭，不再继续推进。',
+        metadata: {
+          previousStatus: snapshot.task.status,
+          reason: closeReason || null,
+          closedAt: now,
+        },
+        createdAt: now,
+      });
+
+      if (snapshot.openRound) {
+        db.prepare(
+          `
+            UPDATE task_feedback_rounds
+            SET status = ?, resolved_at = ?
+            WHERE round_id = ?
+          `,
+        ).run(ROUND_STATUS.CLOSED, now, snapshot.openRound.roundId);
+      }
+
+      db.prepare(
+        `
+          UPDATE task_threads
+          SET open_round_id = NULL, updated_at = ?
+          WHERE thread_id = ?
+        `,
+      ).run(now, snapshot.thread.threadId);
+
+      for (const run of runningRuns) {
+        db.prepare(
+          `
+            UPDATE task_agent_runs
+            SET status = ?,
+                output_artifact_ids = ?,
+                error = ?,
+                ended_at = ?
+            WHERE run_id = ? AND status = ?
+          `,
+        ).run(
+          AGENT_RUN_STATUS.CANCELLED,
+          JSON.stringify(run.outputArtifactIds),
+          '任务已关闭，运行已取消。',
+          now,
+          run.runId,
+          AGENT_RUN_STATUS.RUNNING,
+        );
+      }
+
+      db.prepare(
+        'UPDATE task_items SET status = ?, updated_at = ? WHERE task_id = ?',
+      ).run(TASK_STATUS.CLOSED, now, snapshot.task.taskId);
+    });
+
+    txn();
+    const refreshedSnapshotRes = readTaskPlanningSnapshot(taskId);
+    if (!refreshedSnapshotRes.success) return refreshedSnapshotRes;
+    return refreshedSnapshotRes.data
+      ? success(refreshedSnapshotRes.data)
+      : failure(`Task ${taskId} 关闭后读取快照失败`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`关闭 Task 失败: ${message}`);
+  }
 }
 
 export function createPlanningTask(
@@ -2132,10 +2322,13 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
   const thread = threadRes.data;
   if (!thread)
     return failure(`Task 不存在或缺少 active thread: ${input.taskId}`);
+  const taskRow = db
+    .prepare('SELECT * FROM task_items WHERE task_id = ?')
+    .get(input.taskId) as TaskItemRow | null;
+  if (taskRow?.status === TASK_STATUS.CLOSED) {
+    return failure('Task 已关闭，不能继续讨论');
+  }
   if (thread.status === THREAD_STATUS.APPROVED) {
-    const taskRow = db
-      .prepare('SELECT * FROM task_items WHERE task_id = ?')
-      .get(input.taskId) as TaskItemRow | null;
     if (
       taskRow?.status !== TASK_STATUS.DELIVERED &&
       taskRow?.status !== TASK_STATUS.COMPLETED
@@ -2279,6 +2472,8 @@ export function publishTaskPlanRevision(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
+  const openRes = ensureTaskIsOpen(snapshot, '发布新版 Plan');
+  if (!openRes.success) return openRes;
   if (snapshot.thread.status === THREAD_STATUS.APPROVED) {
     return failure('当前 Planning 已批准，不能发布新版 Plan');
   }
@@ -2402,6 +2597,8 @@ export function publishPlanningUpdate(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
+  const openRes = ensureTaskIsOpen(snapshot, '发布 Update');
+  if (!openRes.success) return openRes;
   if (snapshot.thread.status === THREAD_STATUS.APPROVED) {
     return failure('当前 Planning 已批准，不能发布 Update');
   }
@@ -2483,6 +2680,11 @@ export function recordTaskAgentResult(
 ): Result<TaskArtifactRecord> {
   const body = input.body.trim();
   if (!body) return failure('Agent Result 内容不能为空');
+  const statusRes = readTaskStatus(input.taskId);
+  if (!statusRes.success) return statusRes;
+  if (statusRes.data === TASK_STATUS.CLOSED) {
+    return failure('Task 已关闭，不能记录 Agent Result');
+  }
 
   try {
     const artifact = insertArtifact({
@@ -2513,6 +2715,8 @@ export function approveCurrentTaskPlan(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
+  const openRes = ensureTaskIsOpen(snapshot, '批准计划');
+  if (!openRes.success) return openRes;
   if (!snapshot.currentPlan) return failure('当前没有可批准的正式 Plan');
   if (snapshot.openRound) {
     return failure(`当前仍有待处理反馈轮次: ${snapshot.openRound.roundId}`);
@@ -2580,6 +2784,8 @@ export function approveTaskImplementationSteps(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
+  const openRes = ensureTaskIsOpen(snapshot, '确认实施步骤');
+  if (!openRes.success) return openRes;
 
   const approvedPlan = snapshot.plans.find(
     (plan) =>
@@ -2642,6 +2848,8 @@ export function completeDeliveredTask(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
+  const openRes = ensureTaskIsOpen(snapshot, '验收完成');
+  if (!openRes.success) return openRes;
   if (snapshot.task.status === TASK_STATUS.COMPLETED) return success(snapshot);
   if (snapshot.task.status !== TASK_STATUS.DELIVERED) {
     return failure('只有已交付 Task 可以验收完成');
@@ -2814,6 +3022,16 @@ export function updateTaskStatus(
   if (!dbRes.success) return dbRes;
 
   try {
+    const taskRow = dbRes.data
+      .prepare('SELECT * FROM task_items WHERE task_id = ?')
+      .get(taskId) as TaskItemRow | null;
+    if (!taskRow) return failure(`Task 不存在: ${taskId}`);
+    if (
+      taskRow.status === TASK_STATUS.CLOSED &&
+      status !== TASK_STATUS.CLOSED
+    ) {
+      return failure('Task 已关闭，不能更新状态');
+    }
     const result = dbRes.data
       .prepare(
         'UPDATE task_items SET status = ?, updated_at = ? WHERE task_id = ?',
@@ -2835,6 +3053,16 @@ export function updateTaskDelivery(
   if (!dbRes.success) return dbRes;
 
   try {
+    const taskRow = dbRes.data
+      .prepare('SELECT * FROM task_items WHERE task_id = ?')
+      .get(input.taskId) as TaskItemRow | null;
+    if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
+    if (
+      taskRow.status === TASK_STATUS.CLOSED &&
+      input.status !== TASK_STATUS.CLOSED
+    ) {
+      return failure('Task 已关闭，不能更新交付信息');
+    }
     const result = dbRes.data
       .prepare(
         `
@@ -2931,6 +3159,8 @@ export function completeTaskAgentStageManually(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
+  const openRes = ensureTaskIsOpen(snapshot, '人工标记阶段完成');
+  if (!openRes.success) return openRes;
 
   const stageDefinition = getTaskAgentStageDefinition(input.stage);
   if (!stageDefinition) return failure(`未知 Task Agent 阶段: ${input.stage}`);
@@ -3164,6 +3394,13 @@ export function createTaskAgentRun(
   const inputArtifactIds = input.inputArtifactIds || [];
 
   try {
+    const taskRow = dbRes.data
+      .prepare('SELECT * FROM task_items WHERE task_id = ?')
+      .get(input.taskId) as TaskItemRow | null;
+    if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
+    if (taskRow.status === TASK_STATUS.CLOSED) {
+      return failure('Task 已关闭，不能创建 Agent Run');
+    }
     dbRes.data
       .prepare(
         `
@@ -3211,6 +3448,13 @@ export function finishTaskAgentRun(
   const endedAt = iso_timestamp();
 
   try {
+    const existingRow = dbRes.data
+      .prepare('SELECT * FROM task_agent_runs WHERE run_id = ?')
+      .get(input.runId) as TaskAgentRunRow | null;
+    if (!existingRow) return failure('结束 Agent Run 后读取失败');
+    if (existingRow.status !== AGENT_RUN_STATUS.RUNNING) {
+      return success(mapRun(existingRow));
+    }
     dbRes.data
       .prepare(
         `

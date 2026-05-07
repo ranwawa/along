@@ -1,3 +1,4 @@
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy API handler file keeps related route handlers together.
 import { consola } from 'consola';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
@@ -8,6 +9,7 @@ import {
 import {
   approveCurrentTaskPlan,
   approveTaskImplementationSteps,
+  closeTask,
   completeDeliveredTask,
   completeTaskAgentStageManually,
   createPlanningTask,
@@ -187,6 +189,22 @@ export function handleTaskApproveRequest(taskId: string): Response {
   });
 }
 
+export async function handleTaskCloseRequest(
+  req: Request,
+  taskId: string,
+): Promise<Response> {
+  const bodyRes = await readJsonObject(req);
+  if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
+
+  const existing = readTaskPlanningSnapshot(taskId);
+  if (!existing.success) return errorResponse(existing.error, 500);
+  if (!existing.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
+
+  const closeRes = closeTask(taskId, readStringField(bodyRes.data, 'reason'));
+  if (!closeRes.success) return errorResponse(closeRes.error, 409);
+  return jsonResponse({ taskId, snapshot: closeRes.data });
+}
+
 export async function handleTaskPlannerRequest(
   req: Request,
   taskId: string,
@@ -218,6 +236,9 @@ export async function handleTaskImplementationRequest(
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
+  if (snapshotRes.data.task.status === 'closed') {
+    return errorResponse('Task 已关闭，不能开始实现', 409);
+  }
   if (!snapshotRes.data.thread.approvedPlanId) {
     return errorResponse('当前 Task 没有已批准方案，不能开始实现', 409);
   }
@@ -270,6 +291,9 @@ export async function handleTaskDeliveryRequest(
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
+  if (snapshotRes.data.task.status === 'closed') {
+    return errorResponse('Task 已关闭，不能开始交付', 409);
+  }
   if (snapshotRes.data.task.status !== 'implemented') {
     return errorResponse('当前 Task 只有在已实现后才能交付', 409);
   }
@@ -315,6 +339,9 @@ function readExistingTaskError(taskId: string): Response | null {
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
+  if (snapshotRes.data.task.status === 'closed') {
+    return errorResponse('Task 已关闭，不能继续推进', 409);
+  }
   return null;
 }
 

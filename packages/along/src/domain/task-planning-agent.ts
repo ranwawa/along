@@ -15,6 +15,7 @@ import {
   publishPlanningUpdate,
   publishTaskPlanRevision,
   readTaskPlanningSnapshot,
+  TASK_STATUS,
   type TaskPlanningSnapshot,
 } from './task-planning';
 
@@ -148,6 +149,9 @@ export async function runTaskPlanningAgent(
   const snapshotRes = readRequiredSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
+  if (snapshot.task.status === TASK_STATUS.CLOSED) {
+    return failure('Task 已关闭，不能运行 Planner');
+  }
 
   const agentId = input.agentId || 'planner';
   const result = await runPlannerAgentTurn({
