@@ -5,6 +5,7 @@ import type {
   TaskPlanRevisionRecord,
 } from '../types';
 import { formatTime } from './format';
+import { MarkdownContent } from './MarkdownContent';
 import { FlowStages } from './TaskFlowStageCard';
 
 export function TaskFlowPanel({
@@ -72,7 +73,7 @@ function FlowSummary({ flow }: { flow: TaskFlowSnapshot }) {
   );
 }
 
-function CurrentPlanDialog({
+export function CurrentPlanDialog({
   plan,
   open,
   onClose,
@@ -98,9 +99,7 @@ function CurrentPlanDialog({
           </button>
         </div>
         <div className="min-h-0 overflow-auto p-4">
-          <div className="whitespace-pre-wrap break-words text-sm leading-6">
-            {plan.body}
-          </div>
+          <MarkdownContent value={plan.body} />
         </div>
       </div>
     </div>

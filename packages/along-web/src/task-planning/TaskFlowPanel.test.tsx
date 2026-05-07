@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { TaskFlowSnapshot, TaskPlanRevisionRecord } from '../types';
-import { TaskFlowPanel } from './TaskFlowPanel';
+import { CurrentPlanDialog, TaskFlowPanel } from './TaskFlowPanel';
 
 function makeFlow(overrides: Partial<TaskFlowSnapshot> = {}): TaskFlowSnapshot {
   return {
@@ -93,5 +93,19 @@ describe('TaskFlowPanel', () => {
 
     expect(html).toContain('查看计划 v1');
     expect(html).toContain('计划确认');
+  });
+
+  it('当前计划弹窗使用 Markdown 渲染计划正文', () => {
+    const html = renderToStaticMarkup(
+      <CurrentPlanDialog
+        plan={makePlan()}
+        open={true}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('当前计划 v1');
+    expect(html).toContain('<h2');
+    expect(html).toContain('方案');
   });
 });

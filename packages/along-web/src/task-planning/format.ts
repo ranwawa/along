@@ -189,7 +189,10 @@ export function getLatestFailedStage(
   );
 }
 
-export function getArtifactLabel(type: TaskArtifactType): string {
+export function getArtifactLabel(
+  type: TaskArtifactType,
+  metadata: Record<string, unknown> = {},
+): string {
   switch (type) {
     case 'user_message':
       return '用户';
@@ -200,7 +203,16 @@ export function getArtifactLabel(type: TaskArtifactType): string {
     case 'approval':
       return '批准';
     case 'agent_result':
-      return 'Agent';
+      switch (metadata.kind) {
+        case 'implementation_steps':
+          return '实施步骤';
+        case 'auto_commit':
+          return '自动提交';
+        case 'delivery':
+          return '交付结果';
+        default:
+          return 'Agent 结果';
+      }
     case 'task_closed':
       return '关闭';
     default:
