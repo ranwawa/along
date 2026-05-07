@@ -117,6 +117,30 @@ describe('TaskListPanel', () => {
     expect(html).not.toContain('#');
   });
 
+  it('按照传入的任务顺序渲染列表，最新序号显示在最上方', () => {
+    const html = renderPanel({
+      tasks: [
+        makeSnapshot({
+          task: makeTask({
+            taskId: 'task-20',
+            title: '最新任务',
+            seq: 20,
+          }),
+        }),
+        makeSnapshot({
+          task: makeTask({
+            taskId: 'task-8',
+            title: '较早任务',
+            seq: 8,
+          }),
+        }),
+      ],
+    });
+
+    expect(html.indexOf('#20')).toBeLessThan(html.indexOf('#8'));
+    expect(html.indexOf('最新任务')).toBeLessThan(html.indexOf('较早任务'));
+  });
+
   it('保留选中态、新任务入口、加载态和空态', () => {
     const selectedHtml = renderPanel({ selectedTaskId: 'task-1' });
     const loadingHtml = renderPanel({ tasks: [], loading: true });
