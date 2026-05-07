@@ -1,6 +1,54 @@
 import type { ReactNode } from 'react';
-import type { TaskArtifactRecord } from '../types';
+import type { TaskArtifactRecord, TaskAttachmentRecord } from '../types';
 import { formatTime, getArtifactClass, getArtifactLabel } from './format';
+
+function formatAttachmentSize(bytes: number): string {
+  return `${Math.round((bytes / 1024 / 1024) * 10) / 10}MB`;
+}
+
+function attachmentUrl(attachment: TaskAttachmentRecord): string {
+  return `/api/tasks/${attachment.taskId}/attachments/${attachment.attachmentId}`;
+}
+
+function ArtifactAttachments({
+  attachments,
+}: {
+  attachments: TaskAttachmentRecord[];
+}) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+      {attachments.map((attachment) => (
+        <a
+          key={attachment.attachmentId}
+          href={attachmentUrl(attachment)}
+          target="_blank"
+          rel="noreferrer"
+          className="group min-w-0 rounded-lg border border-border-color bg-black/20 p-2 hover:border-brand/60"
+        >
+          {attachment.missing ? (
+            <div className="flex aspect-square items-center justify-center rounded bg-black/30 text-xs text-status-error">
+              文件缺失
+            </div>
+          ) : (
+            <img
+              src={attachmentUrl(attachment)}
+              alt={attachment.originalName}
+              className="aspect-square w-full rounded object-cover"
+              loading="lazy"
+            />
+          )}
+          <div className="mt-1 truncate text-[11px] text-text-secondary">
+            {attachment.originalName}
+          </div>
+          <div className="text-[11px] text-text-muted">
+            {formatAttachmentSize(attachment.sizeBytes)}
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
 
 export function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
   return (
@@ -16,6 +64,7 @@ export function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
       <div className="text-sm whitespace-pre-wrap break-words leading-6">
         {artifact.body}
       </div>
+      <ArtifactAttachments attachments={artifact.attachments || []} />
     </div>
   );
 }

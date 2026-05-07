@@ -1,4 +1,3 @@
-import type { FormEvent } from 'react';
 import type {
   TaskAgentStageRecord,
   TaskFlowAction,
@@ -9,27 +8,17 @@ import type {
   UseTaskPlanningActionsInput,
 } from './actionTypes';
 import {
-  type CreateTaskResponse,
-  type DraftTaskInput,
-  emptyDraft,
   type ManualCompleteResponse,
-  mergeSnapshotIntoList,
   readJsonResponse,
   type SubmitTaskMessageResponse,
 } from './api';
 import { type FlowActionParts, runFlowAction } from './flowActionRouter';
-
-function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function applySnapshot(
-  snapshot: TaskPlanningSnapshot,
-  input: Pick<UseTaskPlanningActionsInput, 'setSelectedSnapshot' | 'setTasks'>,
-) {
-  input.setSelectedSnapshot(snapshot);
-  input.setTasks((previous) => mergeSnapshotIntoList(previous, snapshot));
-}
+import {
+  applySnapshot,
+  buildMultipartPayload,
+  getErrorMessage,
+} from './taskPlanningActionUtils';
+import { useDraftActions } from './useTaskDraftActions';
 
 async function runBusy(
   input: UseTaskPlanningActionsInput,
@@ -45,68 +34,6 @@ async function runBusy(
   } finally {
     input.setBusyAction(null);
   }
-}
-
-function buildCreatePayload(input: UseTaskPlanningActionsInput, body: string) {
-  const payload: Record<string, string | boolean> = { body, autoRun: true };
-  if (input.draft.executionMode === 'autonomous') {
-    payload.executionMode = 'autonomous';
-  }
-  if (input.selectedRepository) {
-    payload.owner = input.selectedRepository.owner;
-    payload.repo = input.selectedRepository.repo;
-  }
-  return payload;
-}
-
-async function postCreateTask(payload: Record<string, string | boolean>) {
-  const response = await fetch('/api/tasks', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return readJsonResponse<CreateTaskResponse>(response);
-}
-
-function useDraftActions(input: UseTaskPlanningActionsInput) {
-  const updateDraft = (key: keyof DraftTaskInput, value: string) => {
-    input.setDraft((previous) => {
-      if (key !== 'repository') return { ...previous, [key]: value };
-      return { ...emptyDraft, repository: value };
-    });
-    if (key === 'repository') {
-      input.setSelectedTaskId(null);
-      input.setSelectedSnapshot(null);
-      input.setMessageBody('');
-      input.setIsNewTaskOpen(false);
-    }
-  };
-  const openNewTask = () => {
-    input.setDraft((previous) => ({
-      ...emptyDraft,
-      repository: previous.repository,
-    }));
-    input.setSelectedTaskId(null);
-    input.setSelectedSnapshot(null);
-    input.setMessageBody('');
-    input.setIsNewTaskOpen(true);
-  };
-  const createTask = async (event: FormEvent) => {
-    event.preventDefault();
-    const body = input.draft.body.trim();
-    if (!body || input.busyAction) return;
-    await runBusy(input, 'create', async () => {
-      const result = await postCreateTask(buildCreatePayload(input, body));
-      input.setDraft((previous) => ({
-        ...emptyDraft,
-        repository: previous.repository,
-      }));
-      input.setIsNewTaskOpen(false);
-      input.setSelectedTaskId(result.taskId);
-      applySnapshot(result.snapshot, input);
-    });
-  };
-  return { createTask, openNewTask, updateDraft };
 }
 
 function useRepositoryActions(input: UseTaskPlanningActionsInput) {
@@ -135,6 +62,7 @@ function useSelectionActions(input: UseTaskPlanningActionsInput) {
     input.setSelectedTaskId(snapshot.task.taskId);
     input.setSelectedSnapshot(snapshot);
     input.setMessageBody('');
+    input.setMessageAttachments([]);
   };
   return { selectTask };
 }
@@ -169,21 +97,48 @@ function useMessageActions(
   api: ReturnType<typeof useSelectedTaskApi>,
 ) {
   const sendTaskMessage = async (body: string) => {
+    const attachments = input.messageAttachments;
     if (!input.selected || input.busyAction) return;
     await runBusy(input, 'message', async () => {
-      const result = await api.postSelected<SubmitTaskMessageResponse>(
-        'messages',
-        { body, autoRun: true },
-      );
+      const payload = { body, autoRun: true };
+      const result =
+        attachments.length > 0
+          ? await postSelectedMultipart<SubmitTaskMessageResponse>(
+              input,
+              'messages',
+              payload,
+              attachments,
+            )
+          : await api.postSelected<SubmitTaskMessageResponse>(
+              'messages',
+              payload,
+            );
       input.setMessageBody('');
+      input.setMessageAttachments([]);
       await api.updateFromOptionalSnapshot(result.snapshot);
     });
   };
   const submitMessageFromFlow = async () => {
     const body = input.messageBody.trim();
-    if (body) await sendTaskMessage(body);
+    if (body || input.messageAttachments.length > 0) {
+      await sendTaskMessage(body);
+    }
   };
   return { sendTaskMessage, submitMessageFromFlow };
+}
+
+async function postSelectedMultipart<T>(
+  input: UseTaskPlanningActionsInput,
+  path: string,
+  payload: Record<string, string | boolean>,
+  attachments: File[],
+): Promise<T> {
+  if (!input.selected) throw new Error('未选择 Task');
+  const response = await fetch(selectedTaskApiPath(input, path), {
+    method: 'POST',
+    body: buildMultipartPayload(payload, attachments),
+  });
+  return readJsonResponse<T>(response);
 }
 
 function useSimpleFlowActions(
@@ -290,7 +245,7 @@ function useFlowActions(input: UseTaskPlanningActionsInput) {
 
 export function useTaskPlanningActions(input: UseTaskPlanningActionsInput) {
   return {
-    ...useDraftActions(input),
+    ...useDraftActions(input, runBusy),
     ...useRepositoryActions(input),
     ...useSelectionActions(input),
     ...useFlowActions(input),

@@ -59,6 +59,7 @@ export interface DraftTaskInput {
   body: string;
   repository: string;
   executionMode: TaskExecutionMode;
+  attachments: File[];
 }
 
 interface TaskApiError {
@@ -69,6 +70,7 @@ export const emptyDraft: DraftTaskInput = {
   body: '',
   repository: '',
   executionMode: 'manual',
+  attachments: [],
 };
 
 function parseTaskSeq(snapshot: TaskPlanningSnapshot): number | null {

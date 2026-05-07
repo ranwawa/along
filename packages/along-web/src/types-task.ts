@@ -22,6 +22,21 @@ export type TaskArtifactType =
   | 'approval'
   | 'agent_result';
 
+export interface TaskAttachmentRecord {
+  attachmentId: string;
+  taskId: string;
+  threadId: string;
+  artifactId: string;
+  kind: 'image';
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  relativePath: string;
+  createdAt: string;
+  missing?: boolean;
+}
+
 export interface TaskItemRecord {
   taskId: string;
   title: string;
@@ -64,6 +79,7 @@ export interface TaskArtifactRecord {
   role: 'user' | 'agent' | 'system';
   body: string;
   metadata: Record<string, unknown>;
+  attachments: TaskAttachmentRecord[];
   createdAt: string;
 }
 

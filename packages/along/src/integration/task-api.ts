@@ -1,6 +1,7 @@
 import type { TaskPlanningSnapshot } from '../domain/task-planning';
 import {
   handleTaskApproveRequest,
+  handleTaskAttachmentRequest,
   handleTaskCompleteRequest,
   handleTaskCreateRequest,
   handleTaskDeliveryRequest,
@@ -42,6 +43,7 @@ export interface ScheduledTaskDeliveryRun {
 export interface ScheduledTaskTitleSummaryRun {
   taskId: string;
   body: string;
+  attachmentCount?: number;
 }
 
 export interface TaskApiContext {
@@ -88,8 +90,12 @@ export async function handleTaskApiRequest(
   const parts = url.pathname.split('/').filter(Boolean);
   const taskId = parts[2];
   const action = parts[3];
+  const attachmentId = parts[4];
   if (!taskId) return errorResponse('缺少 taskId', 404);
   if (!action && req.method === 'GET') return handleTaskGetRequest(taskId);
+  if (action === 'attachments' && attachmentId && req.method === 'GET') {
+    return handleTaskAttachmentRequest(taskId, attachmentId);
+  }
 
   return handleTaskActionRequest(req, taskId, action, context);
 }

@@ -71,6 +71,16 @@ const TABLES = [
     FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
     FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
   );`,
+  `CREATE TABLE IF NOT EXISTS task_attachments (
+    attachment_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL, thread_id TEXT NOT NULL, artifact_id TEXT NOT NULL,
+    kind TEXT NOT NULL, original_name TEXT NOT NULL, mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, relative_path TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
+    FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE,
+    FOREIGN KEY(artifact_id) REFERENCES task_artifacts(artifact_id) ON DELETE CASCADE
+  );`,
   `CREATE TABLE IF NOT EXISTS task_plan_revisions (
     plan_id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL, thread_id TEXT NOT NULL, version INTEGER NOT NULL,
@@ -140,6 +150,8 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_task_items_status ON task_items(status, updated_at)',
   'CREATE INDEX IF NOT EXISTS idx_task_threads_task ON task_threads(task_id, purpose, status)',
   'CREATE INDEX IF NOT EXISTS idx_task_artifacts_thread ON task_artifacts(thread_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_task_attachments_artifact ON task_attachments(artifact_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id, attachment_id)',
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_plan_revisions_active_thread ON task_plan_revisions(thread_id) WHERE status = 'active'",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_feedback_rounds_open_thread ON task_feedback_rounds(thread_id) WHERE status IN ('open','processing','stale_partial')",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_agent_runs_active ON task_agent_runs(thread_id, agent_id, provider) WHERE status = 'running'",

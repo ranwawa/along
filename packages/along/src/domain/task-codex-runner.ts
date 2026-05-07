@@ -4,7 +4,6 @@ import { failure, success } from '../core/result';
 import {
   type TaskAgentProgressContext,
   writeTaskAgentProgress,
-  writeTaskAgentSessionEvent,
 } from './task-agent-progress';
 import {
   finishTaskAgentSuccess,
@@ -18,6 +17,7 @@ import type {
   RunTaskClaudeTurnInput,
   RunTaskClaudeTurnOutput,
 } from './task-claude-runner';
+import { writeCodexTurnSessionEvents } from './task-codex-session-events';
 import {
   buildThreadOptions,
   createDefaultCodexClient,
@@ -31,6 +31,11 @@ import {
   TASK_AGENT_PROGRESS_PHASE,
   updateTaskAgentProviderSession,
 } from './task-planning';
+import {
+  buildLocalImagePromptInput,
+  type LocalImagePromptItem,
+  resolveAndRecordInputImages,
+} from './task-runner-images';
 
 const PROVIDER = 'codex';
 
@@ -40,10 +45,14 @@ export interface TaskCodexTurn {
   usage: unknown;
 }
 
+export type TaskCodexInputItem =
+  | { type: 'text'; text: string }
+  | { type: 'local_image'; path: string };
+
 export interface TaskCodexThread {
   readonly id: string | null;
   run(
-    input: string,
+    input: string | TaskCodexInputItem[],
     options?: { outputSchema?: unknown; signal?: AbortSignal },
   ): Promise<TaskCodexTurn>;
 }
@@ -87,17 +96,14 @@ async function runStartedCodexTurn(
   const outputSchema = getCodexOutputSchema(input);
   let thread: TaskCodexThread | undefined;
   let latestThreadId = binding.providerSessionId;
-  const stopHeartbeat = startTaskAgentRunHeartbeat(
-    progressContext,
-    usedResume
-      ? 'Agent 已启动，正在恢复 Codex thread。'
-      : 'Agent 已启动，正在创建 Codex thread。',
-    input.cwd,
-  );
+  const stopHeartbeat = startCodexHeartbeat(started, input.cwd);
 
   try {
+    const promptRes = await prepareCodexPrompt(input, prompt, progressContext);
+    if (!promptRes.success)
+      return failCodexTurn(progressContext, promptRes.error, latestThreadId);
     thread = openCodexThread(input, progressContext, binding.providerSessionId);
-    const turn = await runCodexPrompt(thread, prompt, outputSchema);
+    const turn = await runCodexPrompt(thread, promptRes.data, outputSchema);
     latestThreadId = thread.id || binding.providerSessionId;
     writeCodexTurnSessionEvents(progressContext, turn);
     return completeCodexTurn(
@@ -115,24 +121,30 @@ async function runStartedCodexTurn(
   }
 }
 
-function writeCodexTurnSessionEvents(
+function startCodexHeartbeat(started: StartedTaskAgentRun, cwd: string) {
+  return startTaskAgentRunHeartbeat(
+    started.progressContext,
+    started.usedResume
+      ? 'Agent 已启动，正在恢复 Codex thread。'
+      : 'Agent 已启动，正在创建 Codex thread。',
+    cwd,
+  );
+}
+
+async function prepareCodexPrompt(
+  input: RunTaskCodexTurnInput,
+  prompt: string,
   context: TaskAgentProgressContext,
-  turn: TaskCodexTurn,
-) {
-  if (turn.finalResponse.trim()) {
-    writeTaskAgentSessionEvent(context, 'agent', 'output', turn.finalResponse, {
-      type: 'final_response',
-    });
-  }
-  if (turn.items.length > 0) {
-    writeTaskAgentSessionEvent(
-      context,
-      'tool',
-      'message',
-      `Codex 返回 ${turn.items.length} 条会话 item。`,
-      { type: 'items', count: turn.items.length },
-    );
-  }
+): Promise<Result<string | LocalImagePromptItem[]>> {
+  const imagesRes = await resolveAndRecordInputImages({
+    taskId: input.taskId,
+    inputArtifactIds: input.inputArtifactIds,
+    context,
+    summary: '本轮传入 {count} 张用户上传图片。',
+  });
+  return imagesRes.success
+    ? success(buildLocalImagePromptInput(prompt, imagesRes.data))
+    : failure(imagesRes.error);
 }
 
 function failCodexTurn(
@@ -184,7 +196,7 @@ function openCodexThread(
 
 async function runCodexPrompt(
   thread: TaskCodexThread,
-  prompt: string,
+  prompt: string | TaskCodexInputItem[],
   outputSchema: unknown,
 ): Promise<TaskCodexTurn> {
   const timeoutMs = readCodexTurnTimeoutMs();
@@ -207,7 +219,7 @@ async function runCodexPrompt(
 
 async function runCodexThreadWithTimeout(
   thread: TaskCodexThread,
-  prompt: string,
+  prompt: string | TaskCodexInputItem[],
   outputSchema: unknown,
   abortController: AbortController,
   timeout: ReturnType<typeof setTimeout>,

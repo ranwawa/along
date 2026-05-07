@@ -13,13 +13,10 @@ import type {
 } from '../types';
 import { AgentStagesPanel } from './AgentStagesPanel';
 import type { DraftTaskInput, RepositoryOption } from './api';
-import {
-  formatTime,
-  getFlowActionClass,
-  getTaskStatusLabel,
-  getThreadStatusLabel,
-} from './format';
+import { ExistingTaskComposer } from './ExistingTaskComposer';
+import { formatTime, getTaskStatusLabel, getThreadStatusLabel } from './format';
 import { FlowHistory, TaskFlowPanel } from './TaskFlowPanel';
+import { ImageAttachmentPicker } from './TaskImageAttachments';
 import { TaskProgressPanel } from './TaskProgressPanel';
 import { TaskRecordsPanel } from './TaskRecords';
 
@@ -113,86 +110,19 @@ function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
   );
 }
 
-function getMessageActions(flow: TaskPlanningSnapshot['flow']) {
-  const submitFeedbackAction = flow.actions.find(
-    (action) => action.id === 'submit_feedback',
-  );
-  const requestRevisionAction = flow.actions.find(
-    (action) => action.id === 'request_revision',
-  );
-  const requestChangesAction = flow.actions.find(
-    (action) => action.id === 'request_changes',
-  );
-  return requestChangesAction?.enabled
-    ? [requestChangesAction]
-    : [submitFeedbackAction, requestRevisionAction].filter(
-        (action): action is TaskFlowAction => Boolean(action),
-      );
-}
-
-function ExistingTaskComposer({
-  flow,
-  messageBody,
-  busyAction,
-  onMessageChange,
-  onSubmitMessage,
-}: {
-  flow: TaskPlanningSnapshot['flow'];
-  messageBody: string;
-  busyAction: string | null;
-  onMessageChange: (value: string) => void;
-  onSubmitMessage: () => void;
-}) {
-  const messageActions = getMessageActions(flow);
-  const canSubmitMessage = messageActions.some((action) => action.enabled);
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmitMessage();
-      }}
-      className="flex flex-col gap-3"
-    >
-      <textarea
-        value={messageBody}
-        onChange={(event) => onMessageChange(event.target.value)}
-        placeholder="补充反馈、继续提问或说明交付后的修改要求"
-        rows={2}
-        disabled={!canSubmitMessage}
-        className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
-      />
-      <div className="flex flex-wrap gap-2">
-        {messageActions.map((action) => (
-          <button
-            key={action.id}
-            type="submit"
-            disabled={
-              !action.enabled || !messageBody.trim() || Boolean(busyAction)
-            }
-            title={!action.enabled ? action.disabledReason : action.description}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getFlowActionClass(
-              action,
-            )}`}
-          >
-            {busyAction === 'message' ? '发送中' : action.label}
-          </button>
-        ))}
-      </div>
-    </form>
-  );
-}
-
 function NewTaskComposer({
   draft,
   selectedRepository,
   busyAction,
   onDraftChange,
+  onDraftAttachmentsChange,
   onCreateTask,
 }: {
   draft: DraftTaskInput;
   selectedRepository?: RepositoryOption;
   busyAction: string | null;
   onDraftChange: (key: keyof DraftTaskInput, value: string) => void;
+  onDraftAttachmentsChange: (files: File[]) => void;
   onCreateTask: (event: FormEvent) => void;
 }) {
   return (
@@ -204,6 +134,10 @@ function NewTaskComposer({
         placeholder="输入任务目标或问题"
         rows={2}
         className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60"
+      />
+      <ImageAttachmentPicker
+        attachments={draft.attachments}
+        onChange={onDraftAttachmentsChange}
       />
       <label className="flex flex-col gap-1 text-xs text-text-muted">
         执行模式
@@ -225,7 +159,9 @@ function NewTaskComposer({
         <button
           type="submit"
           disabled={
-            !selectedRepository || !draft.body.trim() || busyAction === 'create'
+            !selectedRepository ||
+            (!draft.body.trim() && draft.attachments.length === 0) ||
+            busyAction === 'create'
           }
           className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold bg-brand text-white border border-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
@@ -248,10 +184,13 @@ type TaskDetailProps = {
   selectedRepository?: RepositoryOption;
   sortedArtifacts: TaskArtifactRecord[];
   messageBody: string;
+  messageAttachments: File[];
   busyAction: string | null;
   onDraftChange: (key: keyof DraftTaskInput, value: string) => void;
+  onDraftAttachmentsChange: (files: File[]) => void;
   onCreateTask: (event: FormEvent) => void;
   onMessageChange: (value: string) => void;
+  onMessageAttachmentsChange: (files: File[]) => void;
   onSubmitMessage: () => void;
   onAction: (action: TaskFlowAction) => void;
 };
@@ -340,6 +279,7 @@ function NewTaskDetail({
           selectedRepository={detail.selectedRepository}
           busyAction={detail.busyAction}
           onDraftChange={detail.onDraftChange}
+          onDraftAttachmentsChange={detail.onDraftAttachmentsChange}
           onCreateTask={detail.onCreateTask}
         />
       </div>
@@ -376,8 +316,10 @@ function SelectedTaskDetail({
           <ExistingTaskComposer
             flow={selected.flow}
             messageBody={detail.messageBody}
+            attachments={detail.messageAttachments}
             busyAction={detail.busyAction}
             onMessageChange={detail.onMessageChange}
+            onAttachmentsChange={detail.onMessageAttachmentsChange}
             onSubmitMessage={detail.onSubmitMessage}
           />
         </div>

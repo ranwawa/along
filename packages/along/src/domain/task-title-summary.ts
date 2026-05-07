@@ -25,6 +25,7 @@ const SYSTEM_PROMPT = `你是 Along 的任务标题总结 Agent。
 export interface TaskTitleSummaryInput {
   taskId: string;
   body: string;
+  attachmentCount?: number;
 }
 
 interface ResolvedTitleProvider {
@@ -151,7 +152,10 @@ export async function generateTaskTitle(body: string): Promise<Result<string>> {
 export async function runTaskTitleSummary(
   input: TaskTitleSummaryInput,
 ): Promise<Result<TaskPlanningSnapshot | null>> {
-  const titleRes = await generateTaskTitle(input.body);
+  const body = input.attachmentCount
+    ? `${input.body}\n\n[用户上传图片数量：${input.attachmentCount}]`
+    : input.body;
+  const titleRes = await generateTaskTitle(body);
   if (!titleRes.success) return titleRes;
 
   const updateRes = updatePlanningTaskTitle({

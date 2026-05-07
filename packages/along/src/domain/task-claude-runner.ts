@@ -19,6 +19,10 @@ import {
   startTaskAgentRunHeartbeat,
 } from './task-agent-run-lifecycle';
 import {
+  buildClaudePrompt,
+  type ClaudePrompt,
+} from './task-claude-image-prompt';
+import {
   getAssistantMessageText,
   getResultError,
   getResultStructuredOutput,
@@ -31,6 +35,7 @@ import {
   type TaskAgentRunRecord,
   updateTaskAgentProviderSession,
 } from './task-planning';
+import { resolveAndRecordInputImages } from './task-runner-images';
 
 const PROVIDER = 'claude';
 
@@ -93,17 +98,19 @@ async function runStartedClaudeTurn(
   prompt: string,
   started: StartedTaskAgentRun,
 ): Promise<Result<RunTaskClaudeTurnOutput>> {
-  const stopHeartbeat = startTaskAgentRunHeartbeat(
-    started.progressContext,
-    started.usedResume
-      ? 'Agent 已启动，正在恢复上次会话。'
-      : 'Agent 已启动，正在准备任务上下文。',
-    input.cwd,
-  );
+  const stopHeartbeat = startClaudeHeartbeat(started, input.cwd);
 
   try {
+    const promptRes = await prepareClaudePrompt(input, prompt, started);
+    if (!promptRes.success) {
+      return failClaudeTurn(
+        started.progressContext,
+        promptRes.error,
+        started.binding.providerSessionId,
+      );
+    }
     const conversation = query({
-      prompt,
+      prompt: promptRes.data,
       options: buildOptions(input, started.binding.providerSessionId),
     });
     const stateRes = await collectClaudeConversation(
@@ -122,6 +129,32 @@ async function runStartedClaudeTurn(
   } finally {
     stopHeartbeat();
   }
+}
+
+function startClaudeHeartbeat(started: StartedTaskAgentRun, cwd: string) {
+  return startTaskAgentRunHeartbeat(
+    started.progressContext,
+    started.usedResume
+      ? 'Agent 已启动，正在恢复上次会话。'
+      : 'Agent 已启动，正在准备任务上下文。',
+    cwd,
+  );
+}
+
+async function prepareClaudePrompt(
+  input: RunTaskClaudeTurnInput,
+  prompt: string,
+  started: StartedTaskAgentRun,
+): Promise<Result<ClaudePrompt>> {
+  const imagesRes = await resolveAndRecordInputImages({
+    taskId: input.taskId,
+    inputArtifactIds: input.inputArtifactIds,
+    context: started.progressContext,
+    summary: '本轮传入 {count} 张用户上传图片。',
+  });
+  return imagesRes.success
+    ? success(buildClaudePrompt(prompt, imagesRes.data))
+    : failure(imagesRes.error);
 }
 
 async function collectClaudeConversation(

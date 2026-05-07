@@ -11,6 +11,9 @@ const planningMocks = vi.hoisted(() => ({
   recordTaskAgentResult: vi.fn(),
   updateTaskAgentProviderSession: vi.fn(),
 }));
+const attachmentMocks = vi.hoisted(() => ({
+  resolveInputImageAttachments: vi.fn(),
+}));
 
 vi.mock('./task-planning', () => ({
   AGENT_RUN_STATUS: {
@@ -38,11 +41,19 @@ vi.mock('./task-planning', () => ({
   updateTaskAgentProviderSession: planningMocks.updateTaskAgentProviderSession,
 }));
 
+vi.mock('./task-attachment-read', () => ({
+  resolveInputImageAttachments: attachmentMocks.resolveInputImageAttachments,
+}));
+
 import { runTaskCodexTurn } from './task-codex-runner';
 
 describe('task-codex-runner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    attachmentMocks.resolveInputImageAttachments.mockReturnValue({
+      success: true,
+      data: [],
+    });
     planningMocks.ensureTaskAgentBinding.mockReturnValue({
       success: true,
       data: {
@@ -128,6 +139,60 @@ describe('task-codex-runner', () => {
       success: true,
       data: undefined,
     });
+  });
+
+  it('当输入 artifact 包含图片时，期望 Codex 收到 text 和 local_image', async () => {
+    attachmentMocks.resolveInputImageAttachments.mockReturnValueOnce({
+      success: true,
+      data: [
+        {
+          attachmentId: 'att-1',
+          originalName: 'screen.png',
+          mimeType: 'image/png',
+          absolutePath: '/tmp/screen.png',
+        },
+      ],
+    });
+    const thread = {
+      id: 'codex-thread-1',
+      run: vi.fn().mockResolvedValue({
+        finalResponse: '完成',
+        items: [],
+        usage: null,
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '看图生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+      inputArtifactIds: ['art-user'],
+    });
+
+    expect(result.success).toBe(true);
+    expect(thread.run).toHaveBeenCalledWith(
+      [
+        { type: 'text', text: '看图生成计划' },
+        { type: 'local_image', path: '/tmp/screen.png' },
+      ],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          type: 'input_images',
+          count: 1,
+          files: ['screen.png'],
+        }),
+      }),
+    );
   });
 
   it('使用 Codex SDK 新建 thread 并保存结构化输出', async () => {

@@ -9,6 +9,9 @@ const planningMocks = vi.hoisted(() => ({
   recordTaskAgentSessionEvent: vi.fn(),
   recordTaskAgentResult: vi.fn(),
 }));
+const attachmentMocks = vi.hoisted(() => ({
+  resolveInputImageAttachments: vi.fn(),
+}));
 
 vi.mock('./task-planning', () => ({
   AGENT_RUN_STATUS: {
@@ -35,11 +38,19 @@ vi.mock('./task-planning', () => ({
   },
 }));
 
+vi.mock('./task-attachment-read', () => ({
+  resolveInputImageAttachments: attachmentMocks.resolveInputImageAttachments,
+}));
+
 import { buildTaskSpawnCommand, runTaskSpawnTurn } from './task-spawn-runner';
 
 describe('task-spawn-runner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    attachmentMocks.resolveInputImageAttachments.mockReturnValue({
+      success: true,
+      data: [],
+    });
     planningMocks.ensureTaskAgentBinding.mockReturnValue({
       success: true,
       data: {
@@ -121,6 +132,46 @@ describe('task-spawn-runner', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });
+  });
+
+  it('当输入 artifact 包含图片时，期望外部 CLI prompt 包含图片路径', async () => {
+    attachmentMocks.resolveInputImageAttachments.mockReturnValueOnce({
+      success: true,
+      data: [
+        {
+          attachmentId: 'att-1',
+          originalName: 'screen.png',
+          mimeType: 'image/png',
+          absolutePath: '/tmp/screen.png',
+        },
+      ],
+    });
+    const spawnRunner = vi.fn().mockResolvedValue({
+      success: true,
+      data: { exitCode: 0, stdout: '完成', stderr: '' },
+    });
+
+    const result = await runTaskSpawnTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'implementer',
+      editor: 'pi',
+      prompt: '实现批准方案',
+      cwd: '/tmp/project',
+      inputArtifactIds: ['art-user'],
+      spawnRunner,
+    });
+
+    expect(result.success).toBe(true);
+    expect(spawnRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: expect.arrayContaining([
+          expect.stringContaining(
+            '用户上传图片路径：\n1. screen.png: /tmp/screen.png',
+          ),
+        ]),
+      }),
+    );
   });
 
   it('为 PI 构造非交互命令', () => {
