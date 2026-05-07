@@ -1,6 +1,5 @@
 import type { TaskPlanningSnapshot } from '../types';
 import type { DraftTaskInput, RepositoryOption } from './api';
-import { formatTime, getLatestFailedStage } from './format';
 import { TaskStatusBadge } from './TaskStatusBadge';
 
 export function RepositorySelector({
@@ -97,33 +96,19 @@ export function TaskListPanel({
         ) : tasks.length === 0 ? (
           <div className="p-5 text-text-muted text-sm">暂无任务。</div>
         ) : (
-          tasks.map((snapshot) => {
-            const failedStage = getLatestFailedStage(snapshot);
-            return (
-              <button
-                type="button"
-                key={snapshot.task.taskId}
-                onClick={() => onSelect(snapshot)}
-                className={`w-full text-left px-4 md:px-5 py-4 border-b border-white/5 hover:bg-white/5 transition-colors ${
-                  selectedTaskId === snapshot.task.taskId
-                    ? 'bg-white/10'
-                    : 'bg-transparent'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <TaskStatusBadge snapshot={snapshot} />
-                    {failedStage && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border bg-rose-500/15 text-rose-300 border-rose-500/30">
-                        {failedStage.label}失败
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-text-muted shrink-0">
-                    {formatTime(snapshot.task.updatedAt)}
-                  </span>
-                </div>
-                <div className="font-medium text-sm truncate">
+          tasks.map((snapshot) => (
+            <button
+              type="button"
+              key={snapshot.task.taskId}
+              onClick={() => onSelect(snapshot)}
+              className={`w-full text-left px-4 md:px-5 py-2.5 border-b border-white/5 hover:bg-white/5 transition-colors ${
+                selectedTaskId === snapshot.task.taskId
+                  ? 'bg-white/10'
+                  : 'bg-transparent'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3 min-w-0">
+                <div className="min-w-0 flex-1 font-medium text-sm truncate">
                   {snapshot.task.seq != null && (
                     <span className="text-text-muted mr-1">
                       #{snapshot.task.seq}
@@ -131,12 +116,12 @@ export function TaskListPanel({
                   )}
                   {snapshot.task.title}
                 </div>
-                <div className="text-xs text-text-muted truncate mt-1">
-                  {failedStage?.latestRun?.error || snapshot.task.body}
+                <div className="shrink-0 whitespace-nowrap">
+                  <TaskStatusBadge snapshot={snapshot} />
                 </div>
-              </button>
-            );
-          })
+              </div>
+            </button>
+          ))
         )}
       </div>
     </>
