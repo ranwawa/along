@@ -4,14 +4,34 @@ import type { Result } from '../core/result';
 const planningMocks = vi.hoisted(() => ({
   recordTaskAgentResult: vi.fn(),
   updateTaskDelivery: vi.fn(),
+  updateTaskWorkflowState: vi.fn(),
+}));
+const mockTaskConstants = vi.hoisted(() => ({
+  TASK_LIFECYCLE: {
+    READY: 'ready',
+  },
+  TASK_STATUS: {
+    IMPLEMENTING: 'implementing',
+  },
+  THREAD_STATUS: {
+    APPROVED: 'approved',
+    COMPLETED: 'completed',
+  },
+  THREAD_PURPOSE: {
+    PLANNING: 'planning',
+  },
+  WORKFLOW_KIND: {
+    IMPLEMENTATION: 'implementation',
+  },
 }));
 
 vi.mock('./task-planning', () => ({
-  TASK_STATUS: {
-    IMPLEMENTED: 'implemented',
-  },
+  TASK_LIFECYCLE: mockTaskConstants.TASK_LIFECYCLE,
+  THREAD_STATUS: mockTaskConstants.THREAD_STATUS,
+  WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
   updateTaskDelivery: planningMocks.updateTaskDelivery,
+  updateTaskWorkflowState: planningMocks.updateTaskWorkflowState,
 }));
 
 import { runTaskAutoCommit } from './task-auto-commit';
@@ -23,7 +43,7 @@ const snapshot = {
     title: '移动演示数据按钮',
     body: '删除下方的演示数据按钮应该位于礼薄列表上方。',
     source: 'web',
-    status: 'implementing',
+    status: mockTaskConstants.TASK_STATUS.IMPLEMENTING,
     activeThreadId: 'thread-1',
     repoOwner: 'ranwawa',
     repoName: 'along',
@@ -36,8 +56,8 @@ const snapshot = {
   thread: {
     threadId: 'thread-1',
     taskId: 'task-1',
-    purpose: 'planning',
-    status: 'approved',
+    purpose: mockTaskConstants.THREAD_PURPOSE.PLANNING,
+    status: mockTaskConstants.THREAD_STATUS.APPROVED,
     currentPlanId: 'plan-1',
     approvedPlanId: 'plan-1',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -61,6 +81,10 @@ describe('task-auto-commit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     planningMocks.updateTaskDelivery.mockReturnValue({
+      success: true,
+      data: undefined,
+    });
+    planningMocks.updateTaskWorkflowState.mockReturnValue({
       success: true,
       data: undefined,
     });
@@ -108,10 +132,15 @@ describe('task-auto-commit', () => {
     expect(calls).toContain('git commit -m fix(task): 完成移动演示数据按钮');
     expect(planningMocks.updateTaskDelivery).toHaveBeenCalledWith({
       taskId: 'task-1',
-      status: 'implemented',
       worktreePath: '/tmp/worktree',
       branchName: 'fix/demo-1',
       commitShas: ['abc123'],
+    });
+    expect(planningMocks.updateTaskWorkflowState).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: mockTaskConstants.THREAD_STATUS.COMPLETED,
     });
   });
 

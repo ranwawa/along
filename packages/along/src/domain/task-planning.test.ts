@@ -220,13 +220,14 @@ const mockDbState = vi.hoisted(() => {
             title,
             body,
             source,
-            status,
             activeThreadId,
             repoOwner,
             repoName,
             cwd,
             seq,
             executionMode,
+            lifecycle,
+            currentWorkflowKind,
             createdAt,
             updatedAt,
           ] = args;
@@ -235,7 +236,6 @@ const mockDbState = vi.hoisted(() => {
             title,
             body,
             source,
-            status,
             active_thread_id: activeThreadId,
             repo_owner: repoOwner,
             repo_name: repoName,
@@ -248,6 +248,8 @@ const mockDbState = vi.hoisted(() => {
             seq,
             type: null,
             execution_mode: executionMode,
+            lifecycle,
+            current_workflow_kind: currentWorkflowKind,
             created_at: createdAt,
             updated_at: updatedAt,
           });
@@ -316,6 +318,76 @@ const mockDbState = vi.hoisted(() => {
         }
 
         if (
+          normalized.includes(
+            'UPDATE task_items SET lifecycle = ?, current_workflow_kind = ?, updated_at = ?',
+          )
+        ) {
+          const [lifecycle, currentWorkflowKind, updatedAt, taskId] = args;
+          const row = findTask(String(taskId));
+          if (row) {
+            row.lifecycle = lifecycle;
+            row.current_workflow_kind = currentWorkflowKind;
+            row.updated_at = updatedAt;
+          }
+          return { changes: row ? 1 : 0 };
+        }
+
+        if (
+          normalized.includes(
+            'UPDATE task_items SET current_workflow_kind = ?, lifecycle = ?, updated_at = ?',
+          )
+        ) {
+          const [currentWorkflowKind, lifecycle, updatedAt, taskId] = args;
+          const row = findTask(String(taskId));
+          if (row) {
+            row.current_workflow_kind = currentWorkflowKind;
+            row.lifecycle = lifecycle;
+            row.updated_at = updatedAt;
+          }
+          return { changes: row ? 1 : 0 };
+        }
+
+        if (
+          normalized.includes(
+            'UPDATE task_items SET lifecycle = ?, updated_at = ?',
+          )
+        ) {
+          const [lifecycle, updatedAt, taskId] = args;
+          const row = findTask(String(taskId));
+          if (row) {
+            row.lifecycle = lifecycle;
+            row.updated_at = updatedAt;
+          }
+          return { changes: row ? 1 : 0 };
+        }
+
+        if (
+          normalized.includes(
+            'UPDATE task_items SET branch_name = COALESCE(?, branch_name)',
+          )
+        ) {
+          const [
+            branchName,
+            worktreePath,
+            commitShas,
+            prUrl,
+            prNumber,
+            updatedAt,
+            taskId,
+          ] = args;
+          const row = findTask(String(taskId));
+          if (row) {
+            row.branch_name = branchName || row.branch_name;
+            row.worktree_path = worktreePath || row.worktree_path;
+            row.commit_shas = commitShas || row.commit_shas;
+            row.pr_url = prUrl || row.pr_url;
+            row.pr_number = prNumber || row.pr_number;
+            row.updated_at = updatedAt;
+          }
+          return { changes: row ? 1 : 0 };
+        }
+
+        if (
           normalized ===
           'UPDATE task_threads SET open_round_id = NULL, updated_at = ? WHERE thread_id = ?'
         ) {
@@ -378,6 +450,20 @@ const mockDbState = vi.hoisted(() => {
           if (row) {
             row.feedback_artifact_ids = ids;
             row.status = status;
+          }
+          return { changes: row ? 1 : 0 };
+        }
+
+        if (
+          normalized.includes(
+            'UPDATE task_threads SET status = ?, updated_at = ? WHERE task_id = ?',
+          )
+        ) {
+          const [status, updatedAt, taskId] = args;
+          const row = activeThread(String(taskId));
+          if (row) {
+            row.status = status;
+            row.updated_at = updatedAt;
           }
           return { changes: row ? 1 : 0 };
         }
@@ -532,20 +618,6 @@ const mockDbState = vi.hoisted(() => {
           if (row) {
             row.status = status;
             row.approved_plan_id = planId;
-            row.updated_at = updatedAt;
-          }
-          return { changes: row ? 1 : 0 };
-        }
-
-        if (
-          normalized.includes(
-            'UPDATE task_items SET status = ?, updated_at = ?',
-          )
-        ) {
-          const [status, updatedAt, taskId] = args;
-          const row = findTask(String(taskId));
-          if (row) {
-            row.status = status;
             row.updated_at = updatedAt;
           }
           return { changes: row ? 1 : 0 };
@@ -778,10 +850,15 @@ import {
   recoverInterruptedTaskAgentRuns,
   submitTaskMessage,
   TASK_AGENT_PROGRESS_PHASE,
+  TASK_LIFECYCLE,
   TASK_STATUS,
+  type TaskStatus,
   THREAD_STATUS,
   updateTaskAgentProviderSession,
+  updateTaskDelivery,
   updateTaskStatus,
+  updateTaskWorkflowState,
+  WORKFLOW_KIND,
 } from './task-planning';
 
 function createTaskWithPlan() {
@@ -801,6 +878,72 @@ function createTaskWithPlan() {
   if (!plan.success) throw new Error(plan.error);
 
   return { taskId: created.data.task.taskId, plan: plan.data };
+}
+
+function moveTaskToCompatStatus(taskId: string, status: TaskStatus) {
+  if (status === TASK_STATUS.PLANNING) {
+    return updateTaskWorkflowState({
+      taskId,
+      lifecycle: TASK_LIFECYCLE.OPEN,
+      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
+      threadStatus: THREAD_STATUS.DRAFTING,
+    });
+  }
+  if (status === TASK_STATUS.PLANNING_APPROVED) {
+    return updateTaskWorkflowState({
+      taskId,
+      lifecycle: TASK_LIFECYCLE.READY,
+      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
+      threadStatus: THREAD_STATUS.APPROVED,
+    });
+  }
+  if (status === TASK_STATUS.IMPLEMENTING) {
+    return updateTaskWorkflowState({
+      taskId,
+      lifecycle: TASK_LIFECYCLE.RUNNING,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: THREAD_STATUS.IMPLEMENTING,
+    });
+  }
+  if (status === TASK_STATUS.IMPLEMENTED) {
+    return updateTaskWorkflowState({
+      taskId,
+      lifecycle: TASK_LIFECYCLE.READY,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: THREAD_STATUS.COMPLETED,
+    });
+  }
+  if (status === TASK_STATUS.DELIVERING) {
+    return updateTaskWorkflowState({
+      taskId,
+      lifecycle: TASK_LIFECYCLE.RUNNING,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: THREAD_STATUS.VERIFYING,
+    });
+  }
+  if (status === TASK_STATUS.DELIVERED) {
+    const delivery = updateTaskDelivery({
+      taskId,
+      prUrl: 'https://github.com/ranwawa/along/pull/1',
+      prNumber: 1,
+    });
+    if (!delivery.success) return delivery;
+    return updateTaskWorkflowState({
+      taskId,
+      lifecycle: TASK_LIFECYCLE.READY,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: THREAD_STATUS.COMPLETED,
+    });
+  }
+  if (status === TASK_STATUS.COMPLETED) {
+    return updateTaskWorkflowState({
+      taskId,
+      lifecycle: TASK_LIFECYCLE.COMPLETED,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: THREAD_STATUS.COMPLETED,
+    });
+  }
+  throw new Error(`unsupported compat status in test: ${status}`);
 }
 
 describe('task-planning', () => {
@@ -955,7 +1098,7 @@ describe('task-planning', () => {
     const approve = approveCurrentTaskPlan(taskId);
     expect(approve.success).toBe(true);
 
-    const delivered = updateTaskStatus(taskId, TASK_STATUS.DELIVERED);
+    const delivered = moveTaskToCompatStatus(taskId, TASK_STATUS.DELIVERED);
     expect(delivered.success).toBe(true);
     if (!delivered.success) throw new Error(delivered.error);
     const deliveredSnapshot = readTaskPlanningSnapshot(taskId);
@@ -990,9 +1133,11 @@ describe('task-planning', () => {
     TASK_STATUS.DELIVERED,
   ])('当 %s 状态关闭任务时，期望进入 closed 并记录关闭事件', (status) => {
     const { taskId } = createTaskWithPlan();
-    const approve = approveCurrentTaskPlan(taskId);
-    expect(approve.success).toBe(true);
-    const statusRes = updateTaskStatus(taskId, status);
+    if (status !== TASK_STATUS.PLANNING) {
+      const approve = approveCurrentTaskPlan(taskId);
+      expect(approve.success).toBe(true);
+    }
+    const statusRes = moveTaskToCompatStatus(taskId, status);
     expect(statusRes.success).toBe(true);
 
     const closed = closeTask(taskId, '无需继续');
@@ -1007,7 +1152,9 @@ describe('task-planning', () => {
       type: 'task_closed',
       role: 'system',
       metadata: expect.objectContaining({
-        previousStatus: status,
+        previousLifecycle: expect.any(String),
+        previousWorkflowKind: expect.any(String),
+        previousThreadStatus: expect.any(String),
         reason: '无需继续',
       }),
     });
@@ -1015,7 +1162,7 @@ describe('task-planning', () => {
       closed.data.flow.events.find((event) => event.type === 'task_closed'),
     ).toMatchObject({
       title: '任务已关闭',
-      summary: expect.stringContaining(`关闭前状态：${status}`),
+      summary: expect.stringContaining('关闭前生命周期：'),
     });
   });
 
@@ -1023,7 +1170,7 @@ describe('task-planning', () => {
     const { taskId } = createTaskWithPlan();
     const approve = approveCurrentTaskPlan(taskId);
     expect(approve.success).toBe(true);
-    const delivered = updateTaskStatus(taskId, TASK_STATUS.DELIVERED);
+    const delivered = moveTaskToCompatStatus(taskId, TASK_STATUS.DELIVERED);
     expect(delivered.success).toBe(true);
     const completed = completeDeliveredTask(taskId);
     expect(completed.success).toBe(true);
@@ -1410,7 +1557,10 @@ describe('task-planning', () => {
     const approved = approveCurrentTaskPlan(taskId);
     expect(approved.success).toBe(true);
 
-    const implementing = updateTaskStatus(taskId, TASK_STATUS.IMPLEMENTING);
+    const implementing = moveTaskToCompatStatus(
+      taskId,
+      TASK_STATUS.IMPLEMENTING,
+    );
     expect(implementing.success).toBe(true);
 
     const snapshot = readTaskPlanningSnapshot(taskId);

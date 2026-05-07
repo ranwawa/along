@@ -305,7 +305,6 @@ async function ensureTaskWorktreeReady(context: TaskWorktreeContext) {
 function recordTaskWorktree(context: TaskWorktreeContext) {
   return updateTaskDelivery({
     taskId: context.snapshot.task.taskId,
-    status: context.snapshot.task.status,
     branchName: context.branchName,
     worktreePath: context.worktreePath,
   });

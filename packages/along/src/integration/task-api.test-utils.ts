@@ -2,6 +2,36 @@ import { expect, vi } from 'vitest';
 
 type PlanningMock = ReturnType<typeof vi.fn>;
 
+export const TEST_TASK_STATUS = {
+  PLANNING: 'planning',
+  IMPLEMENTED: 'implemented',
+  COMPLETED: 'completed',
+  CLOSED: 'closed',
+} as const;
+
+export const TEST_TASK_LIFECYCLE = {
+  OPEN: 'open',
+  READY: 'ready',
+} as const;
+
+export const TEST_WORKFLOW_KIND = {
+  IMPLEMENTATION: 'implementation',
+  PLANNING: 'planning',
+} as const;
+
+export const TEST_THREAD_PURPOSE = {
+  PLANNING: 'planning',
+} as const;
+
+export const TEST_THREAD_STATUS = {
+  DRAFTING: 'drafting',
+  APPROVED: 'approved',
+} as const;
+
+export const TEST_PLAN_STATUS = {
+  APPROVED: 'approved',
+} as const;
+
 export type PlanningMocks = {
   approveTaskImplementationSteps: PlanningMock;
   approveCurrentTaskPlan: PlanningMock;
@@ -22,7 +52,9 @@ export const snapshot = {
     title: '实现 Task API',
     body: '通过 Web API 创建 planning task。',
     source: 'web',
-    status: 'planning',
+    status: TEST_TASK_STATUS.PLANNING,
+    lifecycle: TEST_TASK_LIFECYCLE.OPEN,
+    currentWorkflowKind: TEST_WORKFLOW_KIND.PLANNING,
     activeThreadId: 'thread-1',
     commitShas: [],
     executionMode: 'manual',
@@ -32,8 +64,8 @@ export const snapshot = {
   thread: {
     threadId: 'thread-1',
     taskId: 'task-1',
-    purpose: 'planning',
-    status: 'drafting',
+    purpose: TEST_THREAD_PURPOSE.PLANNING,
+    status: TEST_THREAD_STATUS.DRAFTING,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
@@ -124,7 +156,7 @@ function mockPlanApproval(planningMocks: PlanningMocks) {
       taskId: 'task-1',
       threadId: 'thread-1',
       version: 1,
-      status: 'approved',
+      status: TEST_THREAD_STATUS.APPROVED,
       artifactId: 'art-plan',
       body: '## Plan',
       createdAt: '2026-01-01T00:00:01.000Z',
@@ -137,7 +169,7 @@ function mockTaskClose(planningMocks: PlanningMocks) {
     success: true,
     data: {
       ...snapshot,
-      task: { ...snapshot.task, status: 'closed' },
+      task: { ...snapshot.task, status: TEST_TASK_STATUS.CLOSED },
     },
   });
 }
@@ -147,7 +179,7 @@ function mockManualComplete(planningMocks: PlanningMocks) {
     success: true,
     data: {
       ...snapshot,
-      task: { ...snapshot.task, status: 'implemented' },
+      task: { ...snapshot.task, status: TEST_TASK_STATUS.IMPLEMENTED },
     },
   });
 }
@@ -157,7 +189,7 @@ function mockDeliveredComplete(planningMocks: PlanningMocks) {
     success: true,
     data: {
       ...snapshot,
-      task: { ...snapshot.task, status: 'completed' },
+      task: { ...snapshot.task, status: TEST_TASK_STATUS.COMPLETED },
     },
   });
 }

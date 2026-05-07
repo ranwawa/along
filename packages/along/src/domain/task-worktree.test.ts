@@ -7,6 +7,17 @@ const planningMocks = vi.hoisted(() => ({
   updateTaskDelivery: vi.fn(),
   updateTaskRepository: vi.fn(),
 }));
+const mockTaskConstants = vi.hoisted(() => ({
+  TASK_STATUS: {
+    PLANNING_APPROVED: 'planning_approved',
+  },
+  THREAD_PURPOSE: {
+    PLANNING: 'planning',
+  },
+  THREAD_STATUS: {
+    APPROVED: 'approved',
+  },
+}));
 
 vi.mock('./task-planning', () => ({
   updateTaskDelivery: planningMocks.updateTaskDelivery,
@@ -37,7 +48,7 @@ const snapshot = {
     title: '移动演示数据按钮',
     body: '删除下方的演示数据按钮应该位于礼薄列表上方。',
     source: 'web',
-    status: 'planning_approved',
+    status: mockTaskConstants.TASK_STATUS.PLANNING_APPROVED,
     activeThreadId: 'thread-1',
     repoOwner: 'ranwawa',
     repoName: 'kinkeeper',
@@ -51,8 +62,8 @@ const snapshot = {
   thread: {
     threadId: 'thread-1',
     taskId: 'task_123456789abc',
-    purpose: 'planning',
-    status: 'approved',
+    purpose: mockTaskConstants.THREAD_PURPOSE.PLANNING,
+    status: mockTaskConstants.THREAD_STATUS.APPROVED,
     approvedPlanId: 'plan-1',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
@@ -136,7 +147,6 @@ describe('task-worktree', () => {
     });
     expect(planningMocks.updateTaskDelivery).toHaveBeenCalledWith({
       taskId: 'task_123456789abc',
-      status: 'planning_approved',
       branchName: result.data.branchName,
       worktreePath,
     });

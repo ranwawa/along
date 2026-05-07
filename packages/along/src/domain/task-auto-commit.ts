@@ -14,8 +14,11 @@ import {
 } from './task-auto-commit-utils';
 import {
   recordTaskAgentResult,
-  TASK_STATUS,
+  TASK_LIFECYCLE,
+  THREAD_STATUS,
   updateTaskDelivery,
+  updateTaskWorkflowState,
+  WORKFLOW_KIND,
 } from './task-planning';
 import type { TaskWorktreeCommandRunner } from './task-worktree';
 
@@ -92,12 +95,18 @@ function updateCommitMetadata(
   input: RunTaskAutoCommitInput,
   commitShas: string[],
 ) {
-  return updateTaskDelivery({
+  const deliveryRes = updateTaskDelivery({
     taskId: input.snapshot.task.taskId,
-    status: TASK_STATUS.IMPLEMENTED,
     worktreePath: input.worktreePath,
     branchName: input.branchName,
     commitShas,
+  });
+  if (!deliveryRes.success) return deliveryRes;
+  return updateTaskWorkflowState({
+    taskId: input.snapshot.task.taskId,
+    lifecycle: TASK_LIFECYCLE.READY,
+    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+    threadStatus: THREAD_STATUS.COMPLETED,
   });
 }
 

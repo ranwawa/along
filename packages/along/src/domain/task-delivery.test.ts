@@ -9,26 +9,48 @@ const planningMocks = vi.hoisted(() => ({
   recordTaskAgentResult: vi.fn(),
   updateTaskDelivery: vi.fn(),
   updateTaskRepository: vi.fn(),
+  updateTaskWorkflowState: vi.fn(),
 }));
-
-vi.mock('./task-planning', () => ({
+const mockTaskConstants = vi.hoisted(() => ({
   AGENT_RUN_STATUS: {
     RUNNING: 'running',
     SUCCEEDED: 'succeeded',
     FAILED: 'failed',
     CANCELLED: 'cancelled',
   },
+  TASK_LIFECYCLE: {
+    CANCELLED: 'cancelled',
+    READY: 'ready',
+    RUNNING: 'running',
+  },
   TASK_STATUS: {
     IMPLEMENTED: 'implemented',
-    DELIVERING: 'delivering',
-    DELIVERED: 'delivered',
   },
+  THREAD_STATUS: {
+    APPROVED: 'approved',
+    COMPLETED: 'completed',
+    VERIFYING: 'verifying',
+  },
+  THREAD_PURPOSE: {
+    PLANNING: 'planning',
+  },
+  WORKFLOW_KIND: {
+    IMPLEMENTATION: 'implementation',
+  },
+}));
+
+vi.mock('./task-planning', () => ({
+  AGENT_RUN_STATUS: mockTaskConstants.AGENT_RUN_STATUS,
+  TASK_LIFECYCLE: mockTaskConstants.TASK_LIFECYCLE,
+  THREAD_STATUS: mockTaskConstants.THREAD_STATUS,
+  WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   createTaskAgentRun: planningMocks.createTaskAgentRun,
   finishTaskAgentRun: planningMocks.finishTaskAgentRun,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
   updateTaskDelivery: planningMocks.updateTaskDelivery,
   updateTaskRepository: planningMocks.updateTaskRepository,
+  updateTaskWorkflowState: planningMocks.updateTaskWorkflowState,
 }));
 
 vi.mock('../integration/github-client', () => ({
@@ -50,7 +72,9 @@ const snapshot = {
     title: '移动演示数据按钮',
     body: '删除下方的演示数据按钮应该位于礼薄列表上方。',
     source: 'web',
-    status: 'implemented',
+    status: mockTaskConstants.TASK_STATUS.IMPLEMENTED,
+    lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+    currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
     activeThreadId: 'thread-1',
     repoOwner: 'ranwawa',
     repoName: 'kinkeeper',
@@ -64,8 +88,8 @@ const snapshot = {
   thread: {
     threadId: 'thread-1',
     taskId: 'task_123456789abc',
-    purpose: 'planning',
-    status: 'approved',
+    purpose: mockTaskConstants.THREAD_PURPOSE.PLANNING,
+    status: mockTaskConstants.THREAD_STATUS.APPROVED,
     currentPlanId: 'plan-1',
     approvedPlanId: 'plan-1',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -80,7 +104,7 @@ const snapshot = {
       taskId: 'task_123456789abc',
       threadId: 'thread-1',
       version: 1,
-      status: 'approved',
+      status: mockTaskConstants.THREAD_STATUS.APPROVED,
       artifactId: 'art-plan',
       body: '## 方案\n\n移动按钮。',
       createdAt: '2026-01-01T00:00:01.000Z',
@@ -111,6 +135,10 @@ describe('task-delivery', () => {
       success: true,
       data: undefined,
     });
+    planningMocks.updateTaskWorkflowState.mockReturnValue({
+      success: true,
+      data: undefined,
+    });
     planningMocks.createTaskAgentRun.mockReturnValue({
       success: true,
       data: {
@@ -119,7 +147,7 @@ describe('task-delivery', () => {
         threadId: 'thread-1',
         agentId: 'delivery',
         provider: 'system',
-        status: 'running',
+        status: mockTaskConstants.AGENT_RUN_STATUS.RUNNING,
         inputArtifactIds: ['art-plan'],
         outputArtifactIds: [],
         startedAt: '2026-01-01T00:00:01.000Z',
@@ -202,7 +230,6 @@ describe('task-delivery', () => {
     expect(result.data.prNumber).toBe(42);
     expect(planningMocks.updateTaskDelivery).toHaveBeenNthCalledWith(1, {
       taskId: 'task_123456789abc',
-      status: 'implemented',
       branchName: expect.stringMatching(/^fix\/.*-42/),
       worktreePath: expect.stringContaining(
         '/ranwawa/kinkeeper/tasks/42/worktree',
@@ -210,7 +237,6 @@ describe('task-delivery', () => {
     });
     expect(planningMocks.updateTaskDelivery).toHaveBeenNthCalledWith(2, {
       taskId: 'task_123456789abc',
-      status: 'delivering',
       branchName: expect.stringMatching(/^fix\/.*-42/),
       worktreePath: expect.stringContaining(
         '/ranwawa/kinkeeper/tasks/42/worktree',
@@ -218,11 +244,22 @@ describe('task-delivery', () => {
     });
     expect(planningMocks.updateTaskDelivery).toHaveBeenLastCalledWith({
       taskId: 'task_123456789abc',
-      status: 'delivered',
       branchName: expect.stringMatching(/^fix\/.*-42/),
       commitShas: ['abc123'],
       prUrl: 'https://github.com/ranwawa/kinkeeper/pull/42',
       prNumber: 42,
+    });
+    expect(planningMocks.updateTaskWorkflowState).toHaveBeenCalledWith({
+      taskId: 'task_123456789abc',
+      lifecycle: mockTaskConstants.TASK_LIFECYCLE.RUNNING,
+      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: mockTaskConstants.THREAD_STATUS.VERIFYING,
+    });
+    expect(planningMocks.updateTaskWorkflowState).toHaveBeenLastCalledWith({
+      taskId: 'task_123456789abc',
+      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: mockTaskConstants.THREAD_STATUS.COMPLETED,
     });
     expect(calls.map((call) => `${call.command} ${call.args[0]}`)).toContain(
       'gh pr',
@@ -258,9 +295,11 @@ describe('task-delivery', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(planningMocks.updateTaskDelivery).toHaveBeenLastCalledWith({
+    expect(planningMocks.updateTaskWorkflowState).toHaveBeenLastCalledWith({
       taskId: 'task_123456789abc',
-      status: 'implemented',
+      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: mockTaskConstants.THREAD_STATUS.COMPLETED,
     });
   });
 

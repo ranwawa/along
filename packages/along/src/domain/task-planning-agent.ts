@@ -15,7 +15,7 @@ import {
   publishPlanningUpdate,
   publishTaskPlanRevision,
   readTaskPlanningSnapshot,
-  TASK_STATUS,
+  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
 } from './task-planning';
 
@@ -149,7 +149,7 @@ export async function runTaskPlanningAgent(
   const snapshotRes = readRequiredSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
-  if (snapshot.task.status === TASK_STATUS.CLOSED) {
+  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return failure('Task 已关闭，不能运行 Planner');
   }
 

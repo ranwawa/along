@@ -8,8 +8,8 @@ const planningMocks = vi.hoisted(() => ({
 const runnerMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./task-planning', () => ({
-  TASK_STATUS: {
-    CLOSED: 'closed',
+  TASK_LIFECYCLE: {
+    CANCELLED: 'cancelled',
   },
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   publishTaskPlanRevision: planningMocks.publishTaskPlanRevision,
@@ -32,6 +32,8 @@ const baseSnapshot = {
     body: '需要不依赖 GitHub Issue 完成 planning。',
     source: 'test',
     status: 'planning',
+    lifecycle: 'open',
+    currentWorkflowKind: 'planning',
     activeThreadId: 'thread-1',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',

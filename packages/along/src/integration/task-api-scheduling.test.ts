@@ -7,6 +7,11 @@ import {
   type PlanningMocks,
   resetPlanningMocks,
   snapshot,
+  TEST_PLAN_STATUS,
+  TEST_TASK_LIFECYCLE,
+  TEST_TASK_STATUS,
+  TEST_THREAD_STATUS,
+  TEST_WORKFLOW_KIND,
 } from './task-api.test-utils';
 
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
@@ -22,17 +27,38 @@ const planningMocks: PlanningMocks = vi.hoisted(() => ({
   requestTaskPlan: vi.fn(),
   submitTaskMessage: vi.fn(),
 }));
-
-vi.mock('../domain/task-planning', () => ({
-  TASK_EXECUTION_MODE: {
-    MANUAL: 'manual',
-    AUTONOMOUS: 'autonomous',
-  },
+const mockTaskConstants = vi.hoisted(() => ({
   TASK_AGENT_STAGE: {
     PLANNING: 'planning',
     IMPLEMENTATION: 'implementation',
     DELIVERY: 'delivery',
   },
+  TASK_EXECUTION_MODE: {
+    MANUAL: 'manual',
+    AUTONOMOUS: 'autonomous',
+  },
+  TASK_LIFECYCLE: {
+    CANCELLED: 'cancelled',
+    READY: 'ready',
+  },
+  TASK_STATUS: {
+    IMPLEMENTED: 'implemented',
+    PLANNING_APPROVED: 'planning_approved',
+  },
+  THREAD_STATUS: {
+    APPROVED: 'approved',
+  },
+  WORKFLOW_KIND: {
+    IMPLEMENTATION: 'implementation',
+    PLANNING: 'planning',
+  },
+}));
+
+vi.mock('../domain/task-planning', () => ({
+  TASK_AGENT_STAGE: mockTaskConstants.TASK_AGENT_STAGE,
+  TASK_EXECUTION_MODE: mockTaskConstants.TASK_EXECUTION_MODE,
+  TASK_LIFECYCLE: mockTaskConstants.TASK_LIFECYCLE,
+  WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
   closeTask: planningMocks.closeTask,
@@ -101,7 +127,10 @@ it('当 Task 方案已批准时，期望可以调度 implementation', async () =
   const scheduled: unknown[] = [];
   planningMocks.readTaskPlanningSnapshot.mockReturnValue({
     success: true,
-    data: approvedSnapshot('/tmp/project', 'planning_approved'),
+    data: approvedSnapshot(
+      '/tmp/project',
+      mockTaskConstants.TASK_STATUS.PLANNING_APPROVED,
+    ),
   });
 
   const response = await handleTaskApiRequest(
@@ -121,9 +150,13 @@ it('当实施步骤已产出但未确认时，期望拒绝直接调度编码', a
   const scheduled: unknown[] = [];
   planningMocks.readTaskPlanningSnapshot.mockReturnValue({
     success: true,
-    data: approvedSnapshot('/tmp/project', 'planning_approved', {
-      withSteps: true,
-    }),
+    data: approvedSnapshot(
+      '/tmp/project',
+      mockTaskConstants.TASK_STATUS.PLANNING_APPROVED,
+      {
+        withSteps: true,
+      },
+    ),
   });
 
   const response = await handleTaskApiRequest(
@@ -145,9 +178,13 @@ it('当实施步骤已产出且请求显式确认时，期望记录确认并调�
   const scheduled: unknown[] = [];
   planningMocks.readTaskPlanningSnapshot.mockReturnValue({
     success: true,
-    data: approvedSnapshot('/tmp/project', 'planning_approved', {
-      withSteps: true,
-    }),
+    data: approvedSnapshot(
+      '/tmp/project',
+      mockTaskConstants.TASK_STATUS.PLANNING_APPROVED,
+      {
+        withSteps: true,
+      },
+    ),
   });
 
   const response = await handleTaskApiRequest(
@@ -172,7 +209,10 @@ it('当 Task 已实现时，期望可以调度 delivery', async () => {
   const scheduled: unknown[] = [];
   planningMocks.readTaskPlanningSnapshot.mockReturnValue({
     success: true,
-    data: approvedSnapshot('/tmp/project', 'implemented'),
+    data: approvedSnapshot(
+      '/tmp/project',
+      mockTaskConstants.TASK_STATUS.IMPLEMENTED,
+    ),
   });
 
   const response = await handleTaskApiRequest(
@@ -216,6 +256,11 @@ function approvedSnapshot(
     task: {
       ...snapshot.task,
       status,
+      lifecycle: TEST_TASK_LIFECYCLE.READY,
+      currentWorkflowKind:
+        status === TEST_TASK_STATUS.IMPLEMENTED
+          ? TEST_WORKFLOW_KIND.IMPLEMENTATION
+          : TEST_WORKFLOW_KIND.PLANNING,
       cwd,
       repoOwner: 'ranwawa',
       repoName: 'along',
@@ -223,7 +268,7 @@ function approvedSnapshot(
     artifacts,
     thread: {
       ...snapshot.thread,
-      status: 'approved',
+      status: TEST_PLAN_STATUS.APPROVED,
       currentPlanId: 'plan-1',
       approvedPlanId: 'plan-1',
     },
@@ -232,7 +277,7 @@ function approvedSnapshot(
       taskId: 'task-1',
       threadId: 'thread-1',
       version: 1,
-      status: 'approved',
+      status: TEST_THREAD_STATUS.APPROVED,
       artifactId: 'art-plan',
       body: '## Plan',
       createdAt: '2026-01-01T00:00:01.000Z',
@@ -243,7 +288,7 @@ function approvedSnapshot(
         taskId: 'task-1',
         threadId: 'thread-1',
         version: 1,
-        status: 'approved',
+        status: TEST_PLAN_STATUS.APPROVED,
         artifactId: 'art-plan',
         body: '## Plan',
         createdAt: '2026-01-01T00:00:01.000Z',

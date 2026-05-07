@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { TaskPlanningSnapshot } from '../domain/task-planning';
+import { WORKFLOW_KIND } from '../domain/task-workflow-state';
 
 export const PLANNER_OUTPUT_SCHEMA = z.object({
   action: z.enum(['plan_revision', 'planning_update']),
@@ -89,7 +90,9 @@ function buildSnapshotSummary(snapshot: TaskPlanningSnapshot): string {
       title: snapshot.task.title,
       body: truncateText(snapshot.task.body, 4000),
       source: snapshot.task.source,
-      status: snapshot.task.status,
+      lifecycle: snapshot.task.lifecycle,
+      currentWorkflowKind: snapshot.task.currentWorkflowKind,
+      display: snapshot.display,
     },
     thread: {
       threadId: snapshot.thread.threadId,
@@ -154,7 +157,7 @@ function buildPlannerPromptRules(): string[] {
 export function buildPlannerPrompt(snapshot: TaskPlanningSnapshot): string {
   const hasCurrentPlan = Boolean(snapshot.currentPlan);
   const hasOpenRound = Boolean(snapshot.openRound);
-  const isAsk = snapshot.task.currentWorkflowKind === 'ask';
+  const isAsk = snapshot.task.currentWorkflowKind === WORKFLOW_KIND.ASK;
 
   return [
     ...buildPlannerPromptIntro(isAsk),
