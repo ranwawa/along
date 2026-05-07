@@ -23,6 +23,7 @@ export interface UseTaskPlanningActionsInput {
   selectedRepository?: RepositoryOption;
   draft: DraftTaskInput;
   messageBody: string;
+  messageAttachments: File[];
   busyAction: string | null;
   repositoriesRefreshing: boolean;
   canApprove: boolean;
@@ -36,6 +37,7 @@ export interface UseTaskPlanningActionsInput {
     React.SetStateAction<TaskPlanningSnapshot | null>
   >;
   setMessageBody: React.Dispatch<React.SetStateAction<string>>;
+  setMessageAttachments: React.Dispatch<React.SetStateAction<File[]>>;
   setBusyAction: React.Dispatch<React.SetStateAction<string | null>>;
   setRepositoriesRefreshing: React.Dispatch<React.SetStateAction<boolean>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;

@@ -1,7 +1,7 @@
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy API handler file keeps related route handlers together.
-import { consola } from 'consola';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
+import type { TaskAttachmentUploadInput } from '../domain/task-attachments';
 import {
   areImplementationStepsApproved,
   findImplementationStepsArtifact,
@@ -18,8 +18,9 @@ import {
   submitTaskMessage,
   type TaskPlanningSnapshot,
 } from '../domain/task-planning';
-import { runTaskTitleSummary } from '../domain/task-title-summary';
 import type { TaskApiContext } from './task-api';
+import { readTaskAttachmentResponse } from './task-api-attachments';
+import { scheduleTitleSummary } from './task-api-title-summary';
 import {
   deriveTitle,
   errorResponse,
@@ -32,18 +33,13 @@ import {
   readStringField,
   readTaskAgentStageField,
   readTaskExecutionModeField,
+  readTaskRequestPayload,
   resolveTaskCwd,
   scheduleDeliveryIfNeeded,
   scheduleImplementationIfNeeded,
   schedulePlannerIfNeeded,
   type UnknownRecord,
 } from './task-api-utils';
-
-const logger = consola.withTag('task-api');
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function handleTaskListRequest(url: URL): Response {
   const limit = readPositiveInt(url.searchParams.get('limit'), 100);
@@ -59,59 +55,51 @@ export async function handleTaskCreateRequest(
   req: Request,
   context: TaskApiContext,
 ): Promise<Response> {
-  const bodyRes = await readJsonObject(req);
+  const bodyRes = await readTaskRequestPayload(req);
   if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
 
-  const taskBody = readStringField(bodyRes.data, 'body');
+  const taskBody =
+    readStringField(bodyRes.data.payload, 'body') ||
+    (bodyRes.data.attachments.length > 0 ? '（用户上传了图片）' : undefined);
   if (!taskBody) return errorResponse('Task 内容不能为空', 400);
 
-  const createRes = createTaskFromPayload(bodyRes.data, context, taskBody);
+  const createRes = createTaskFromPayload(
+    bodyRes.data.payload,
+    context,
+    taskBody,
+    bodyRes.data.attachments,
+  );
   if (!createRes.success) return errorResponse(createRes.error, 400);
 
   scheduleTitleSummary(context, {
     taskId: createRes.data.task.taskId,
     body: taskBody,
+    ...(bodyRes.data.attachments.length
+      ? { attachmentCount: bodyRes.data.attachments.length }
+      : {}),
   });
 
-  const scheduledRes = schedulePlannerIfNeeded(bodyRes.data, context, {
+  const scheduledRes = schedulePlannerIfNeeded(bodyRes.data.payload, context, {
     taskId: createRes.data.task.taskId,
     reason: 'task_created',
   });
   if (!scheduledRes.success) return errorResponse(scheduledRes.error, 400);
 
   return jsonResponse(
-    buildScheduledPayload(createRes.data.task.taskId, scheduledRes.data, {
+    {
+      taskId: createRes.data.task.taskId,
+      scheduled: scheduledRes.data,
       snapshot: createRes.data,
-    }),
+    },
     scheduledRes.data ? 202 : 201,
   );
-}
-
-function scheduleTitleSummary(
-  context: TaskApiContext,
-  input: { taskId: string; body: string },
-) {
-  if (context.scheduleTitleSummary) {
-    context.scheduleTitleSummary(input);
-    return;
-  }
-  void runTaskTitleSummary(input)
-    .then((result) => {
-      if (!result.success) {
-        logger.warn(`[Task ${input.taskId}] 标题自动总结失败: ${result.error}`);
-      }
-    })
-    .catch((error: unknown) => {
-      logger.error(
-        `[Task ${input.taskId}] 标题自动总结异常: ${getErrorMessage(error)}`,
-      );
-    });
 }
 
 function createTaskFromPayload(
   payload: UnknownRecord,
   context: TaskApiContext,
   taskBody: string,
+  attachments: TaskAttachmentUploadInput[] = [],
 ): Result<TaskPlanningSnapshot> {
   const cwdRes = resolveTaskCwd(payload, context);
   if (!cwdRes.success) return cwdRes;
@@ -126,6 +114,7 @@ function createTaskFromPayload(
     repoName: repository.repoName,
     cwd: cwdRes.data,
     executionMode: executionModeRes.data,
+    ...(attachments.length ? { attachments } : {}),
   });
 }
 
@@ -141,22 +130,37 @@ export async function handleTaskMessageRequest(
   taskId: string,
   context: TaskApiContext,
 ): Promise<Response> {
-  const bodyRes = await readJsonObject(req);
+  const bodyRes = await readTaskRequestPayload(req);
   if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
 
-  const message = readStringField(bodyRes.data, 'body');
+  const message =
+    readStringField(bodyRes.data.payload, 'body') ||
+    (bodyRes.data.attachments.length > 0 ? '（用户上传了图片）' : undefined);
   if (!message) return errorResponse('用户消息不能为空', 400);
 
-  const submitRes = submitTaskMessage({ taskId, body: message });
+  const submitRes = submitTaskMessage({
+    taskId,
+    body: message,
+    ...(bodyRes.data.attachments.length
+      ? { attachments: bodyRes.data.attachments }
+      : {}),
+  });
   if (!submitRes.success) return errorResponse(submitRes.error, 409);
 
-  const scheduledRes = schedulePlannerIfNeeded(bodyRes.data, context, {
+  const scheduledRes = schedulePlannerIfNeeded(bodyRes.data.payload, context, {
     taskId,
     reason: 'user_message',
   });
   if (!scheduledRes.success) return errorResponse(scheduledRes.error, 400);
 
   return readSnapshotForMessage(taskId, scheduledRes.data, submitRes.data);
+}
+
+export function handleTaskAttachmentRequest(
+  taskId: string,
+  attachmentId: string,
+): Response | Promise<Response> {
+  return readTaskAttachmentResponse(taskId, attachmentId);
 }
 
 function readSnapshotForMessage(
@@ -167,10 +171,12 @@ function readSnapshotForMessage(
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   return jsonResponse(
-    buildScheduledPayload(taskId, scheduled, {
+    {
+      taskId,
+      scheduled,
       submitted,
       snapshot: snapshotRes.data,
-    }),
+    },
     scheduled ? 202 : 200,
   );
 }
@@ -353,12 +359,4 @@ function scheduledResponse(
   if (!scheduledRes.success) return errorResponse(scheduledRes.error, 400);
   if (!scheduledRes.data) return errorResponse(disabledMessage, 503);
   return jsonResponse({ taskId, scheduled: true }, 202);
-}
-
-function buildScheduledPayload(
-  taskId: string,
-  scheduled: boolean,
-  extra: UnknownRecord,
-) {
-  return { taskId, scheduled, ...extra };
 }

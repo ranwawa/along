@@ -1,5 +1,6 @@
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
+import type { TaskAttachmentUploadInput } from '../domain/task-attachments';
 import {
   readTaskAgentBinding,
   readTaskPlanningSnapshot,
@@ -17,6 +18,11 @@ import type {
 } from './task-api';
 
 export type UnknownRecord = Record<string, unknown>;
+
+export interface ParsedTaskRequest {
+  payload: UnknownRecord;
+  attachments: TaskAttachmentUploadInput[];
+}
 
 const JSON_HEADERS = {
   'Content-Type': 'application/json',
@@ -66,7 +72,49 @@ export function readBooleanField(
   key: string,
 ): boolean | undefined {
   const value = payload[key];
-  return typeof value === 'boolean' ? value : undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
+
+export async function readTaskRequestPayload(
+  req: Request,
+): Promise<Result<ParsedTaskRequest>> {
+  const contentType = req.headers.get('content-type') || '';
+  if (contentType.toLowerCase().startsWith('multipart/form-data')) {
+    return readMultipartTaskRequest(req);
+  }
+  const jsonRes = await readJsonObject(req);
+  if (!jsonRes.success) return failure(jsonRes.error);
+  return success({ payload: jsonRes.data, attachments: [] });
+}
+
+async function readMultipartTaskRequest(
+  req: Request,
+): Promise<Result<ParsedTaskRequest>> {
+  try {
+    const form = await req.formData();
+    const payload: UnknownRecord = {};
+    const attachments: TaskAttachmentUploadInput[] = [];
+    for (const [key, value] of form.entries()) {
+      if (key === 'attachments') {
+        if (value instanceof File) {
+          attachments.push({
+            originalName: value.name,
+            mimeType: value.type,
+            bytes: new Uint8Array(await value.arrayBuffer()),
+          });
+        }
+        continue;
+      }
+      if (typeof value === 'string') payload[key] = value;
+    }
+    return success({ payload, attachments });
+  } catch {
+    return failure('请求体必须是合法 multipart/form-data');
+  }
 }
 
 export function readTaskExecutionModeField(

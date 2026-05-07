@@ -26,6 +26,7 @@ function usePlanningBaseState() {
   const taskState = useTaskState();
   const repositoryState = useRepositories();
   const [messageBody, setMessageBody] = useState('');
+  const [messageAttachments, setMessageAttachments] = useState<File[]>([]);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [repositoriesRefreshing, setRepositoriesRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +35,8 @@ function usePlanningBaseState() {
     repositoryState,
     messageBody,
     setMessageBody,
+    messageAttachments,
+    setMessageAttachments,
     busyAction,
     setBusyAction,
     repositoriesRefreshing,
@@ -123,6 +126,7 @@ function usePlanningActions(
     selectedRepository: derived.selectedRepository,
     draft: base.repositoryState.draft,
     messageBody: base.messageBody,
+    messageAttachments: base.messageAttachments,
     busyAction: base.busyAction,
     repositoriesRefreshing: base.repositoriesRefreshing,
     ...flowFlags,
@@ -132,6 +136,7 @@ function usePlanningActions(
     setIsNewTaskOpen: base.taskState.setIsNewTaskOpen,
     setSelectedSnapshot: base.taskState.setSelectedSnapshot,
     setMessageBody: base.setMessageBody,
+    setMessageAttachments: base.setMessageAttachments,
     setBusyAction: base.setBusyAction,
     setRepositoriesRefreshing: base.setRepositoriesRefreshing,
     setError: base.setError,
@@ -151,11 +156,13 @@ export function useTaskPlanningController() {
     ...base.repositoryState,
     ...derived,
     messageBody: base.messageBody,
+    messageAttachments: base.messageAttachments,
     loading: loadState.loading,
     busyAction: base.busyAction,
     repositoriesRefreshing: base.repositoriesRefreshing,
     error: base.error,
     setMessageBody: base.setMessageBody,
+    setMessageAttachments: base.setMessageAttachments,
     ...actions,
   };
 }

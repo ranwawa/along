@@ -6,6 +6,15 @@ import { getDb } from '../core/db';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
+  cleanupPreparedTaskAttachments,
+  mapTaskAttachment,
+  type PreparedTaskAttachment,
+  prepareTaskImageAttachments,
+  type TaskAttachmentRecord,
+  type TaskAttachmentRow,
+  type TaskAttachmentUploadInput,
+} from './task-attachments';
+import {
   areImplementationStepsApproved,
   findImplementationStepsApprovalArtifact,
   findImplementationStepsArtifact,
@@ -181,6 +190,7 @@ export interface TaskArtifactRecord {
   role: ArtifactRole;
   body: string;
   metadata: Record<string, unknown>;
+  attachments: TaskAttachmentRecord[];
   createdAt: string;
 }
 
@@ -396,6 +406,7 @@ export interface CreatePlanningTaskInput {
   repoName?: string;
   cwd?: string;
   executionMode?: TaskExecutionMode;
+  attachments?: TaskAttachmentUploadInput[];
 }
 
 export interface UpdatePlanningTaskTitleInput {
@@ -406,6 +417,7 @@ export interface UpdatePlanningTaskTitleInput {
 export interface SubmitTaskMessageInput {
   taskId: string;
   body: string;
+  attachments?: TaskAttachmentUploadInput[];
 }
 
 export interface PublishTaskPlanInput {
@@ -734,6 +746,7 @@ function mapArtifact(row: TaskArtifactRow): TaskArtifactRecord {
     role: row.role,
     body: row.body,
     metadata: parseMetadata(row.metadata),
+    attachments: [],
     createdAt: row.created_at,
   };
 }
@@ -1902,8 +1915,43 @@ function insertArtifact(input: {
     role: input.role,
     body: input.body,
     metadata: input.metadata || {},
+    attachments: [],
     createdAt: input.createdAt,
   };
+}
+
+function insertTaskAttachmentRows(input: {
+  taskId: string;
+  threadId: string;
+  artifactId: string;
+  attachments: PreparedTaskAttachment[];
+  createdAt: string;
+}) {
+  const dbRes = getDb();
+  if (!dbRes.success) throw new Error(dbRes.error);
+  const statement = dbRes.data.prepare(
+    `
+      INSERT INTO task_attachments (
+        attachment_id, task_id, thread_id, artifact_id, kind, original_name,
+        mime_type, size_bytes, sha256, relative_path, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+  );
+  for (const attachment of input.attachments) {
+    statement.run(
+      attachment.attachmentId,
+      input.taskId,
+      input.threadId,
+      input.artifactId,
+      attachment.kind,
+      attachment.originalName,
+      attachment.mimeType,
+      attachment.sizeBytes,
+      attachment.sha256,
+      attachment.relativePath,
+      input.createdAt,
+    );
+  }
 }
 
 function ensureTaskIsOpen(
@@ -2030,17 +2078,29 @@ export function createPlanningTask(
   input: CreatePlanningTaskInput,
 ): Result<TaskPlanningSnapshot> {
   const title = input.title.trim();
-  const body = input.body.trim();
+  const body =
+    input.body.trim() ||
+    (input.attachments?.length ? '（用户上传了图片）' : '');
   if (!title) return failure('Task 标题不能为空');
   if (!body) return failure('Task 内容不能为空');
 
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
   const db = dbRes.data;
+  const taskId = generateId('task');
+  const threadId = generateId('thread');
+  const preparedAttachmentsRes = prepareTaskImageAttachments({
+    task: {
+      taskId,
+      repoOwner: input.repoOwner,
+      repoName: input.repoName,
+    },
+    uploads: input.attachments,
+  });
+  if (!preparedAttachmentsRes.success) return preparedAttachmentsRes;
+  const preparedAttachments = preparedAttachmentsRes.data;
 
   try {
-    const taskId = generateId('task');
-    const threadId = generateId('thread');
     const now = iso_timestamp();
 
     const txn = db.transaction(() => {
@@ -2094,7 +2154,7 @@ export function createPlanningTask(
         now,
       );
 
-      insertArtifact({
+      const artifact = insertArtifact({
         taskId,
         threadId,
         type: ARTIFACT_TYPE.USER_MESSAGE,
@@ -2105,7 +2165,15 @@ export function createPlanningTask(
           repoOwner: input.repoOwner,
           repoName: input.repoName,
           cwd: input.cwd,
+          attachmentCount: preparedAttachments.length,
         },
+        createdAt: now,
+      });
+      insertTaskAttachmentRows({
+        taskId,
+        threadId,
+        artifactId: artifact.artifactId,
+        attachments: preparedAttachments,
         createdAt: now,
       });
     });
@@ -2116,6 +2184,7 @@ export function createPlanningTask(
       ? success(snapshot.data)
       : failure('创建 Task 后读取快照失败');
   } catch (error: unknown) {
+    cleanupPreparedTaskAttachments(preparedAttachments);
     const message = error instanceof Error ? error.message : String(error);
     return failure(`创建 Task 失败: ${message}`);
   }
@@ -2228,7 +2297,19 @@ export function readTaskPlanningSnapshot(
     const thread = mapThread(threadRow);
     const currentPlan = currentPlanRow ? mapPlan(currentPlanRow) : null;
     const openRound = openRoundRow ? mapRound(openRoundRow) : null;
-    const artifacts = artifactRows.map(mapArtifact);
+    const attachmentRows = db
+      .prepare(
+        'SELECT * FROM task_attachments WHERE thread_id = ? ORDER BY created_at ASC',
+      )
+      .all(threadRow.thread_id) as TaskAttachmentRow[];
+    const attachmentsByArtifact = groupAttachmentsByArtifact(
+      attachmentRows,
+      task,
+    );
+    const artifacts = artifactRows.map((row) => ({
+      ...mapArtifact(row),
+      attachments: attachmentsByArtifact.get(row.artifact_id) || [],
+    }));
     const plans = planRows.map(mapPlan);
     const agentBindings = bindingRows.map(mapBinding);
     const agentRuns = runRows.map(mapRun);
@@ -2263,6 +2344,19 @@ export function readTaskPlanningSnapshot(
     const message = error instanceof Error ? error.message : String(error);
     return failure(`读取 Task Planning 快照失败: ${message}`);
   }
+}
+
+function groupAttachmentsByArtifact(
+  rows: TaskAttachmentRow[],
+  task: TaskItemRecord,
+): Map<string, TaskAttachmentRecord[]> {
+  const grouped = new Map<string, TaskAttachmentRecord[]>();
+  for (const row of rows) {
+    const existing = grouped.get(row.artifact_id) || [];
+    existing.push(mapTaskAttachment(row, task));
+    grouped.set(row.artifact_id, existing);
+  }
+  return grouped;
 }
 
 export function listTaskPlanningSnapshots(
@@ -2314,7 +2408,9 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
   const db = dbRes.data;
-  const body = input.body.trim();
+  const body =
+    input.body.trim() ||
+    (input.attachments?.length ? '（用户上传了图片）' : '');
   if (!body) return failure('用户消息不能为空');
 
   const threadRes = getActiveThreadRow(input.taskId);
@@ -2325,7 +2421,8 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
   const taskRow = db
     .prepare('SELECT * FROM task_items WHERE task_id = ?')
     .get(input.taskId) as TaskItemRow | null;
-  if (taskRow?.status === TASK_STATUS.CLOSED) {
+  if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
+  if (taskRow.status === TASK_STATUS.CLOSED) {
     return failure('Task 已关闭，不能继续讨论');
   }
   if (thread.status === THREAD_STATUS.APPROVED) {
@@ -2336,6 +2433,16 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
       return failure('当前 Planning 已批准，不能继续提交反馈');
     }
   }
+  const preparedAttachmentsRes = prepareTaskImageAttachments({
+    task: {
+      taskId: thread.task_id,
+      repoOwner: taskRow.repo_owner || undefined,
+      repoName: taskRow.repo_name || undefined,
+    },
+    uploads: input.attachments,
+  });
+  if (!preparedAttachmentsRes.success) return preparedAttachmentsRes;
+  const preparedAttachments = preparedAttachmentsRes.data;
 
   try {
     const now = iso_timestamp();
@@ -2350,8 +2457,22 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
         role: ARTIFACT_ROLE.USER,
         body,
         metadata: thread.current_plan_id
-          ? { kind: 'planning_feedback', basedOnPlanId: thread.current_plan_id }
-          : { kind: 'additional_context' },
+          ? {
+              kind: 'planning_feedback',
+              basedOnPlanId: thread.current_plan_id,
+              attachmentCount: preparedAttachments.length,
+            }
+          : {
+              kind: 'additional_context',
+              attachmentCount: preparedAttachments.length,
+            },
+        createdAt: now,
+      });
+      insertTaskAttachmentRows({
+        taskId: thread.task_id,
+        threadId: thread.thread_id,
+        artifactId: createdArtifact.artifactId,
+        attachments: preparedAttachments,
         createdAt: now,
       });
 
@@ -2454,6 +2575,7 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
     if (!createdArtifact) return failure('提交消息后缺少 artifact');
     return success({ artifact: createdArtifact, round: roundResult });
   } catch (error: unknown) {
+    cleanupPreparedTaskAttachments(preparedAttachments);
     const message = error instanceof Error ? error.message : String(error);
     return failure(`提交 Task 消息失败: ${message}`);
   }

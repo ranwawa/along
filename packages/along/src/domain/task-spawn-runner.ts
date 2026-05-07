@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { config, type EditorConfig } from '../core/config';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
@@ -20,25 +19,20 @@ import type {
   RunTaskClaudeTurnOutput,
 } from './task-claude-runner';
 import { TASK_AGENT_PROGRESS_PHASE } from './task-planning';
+import {
+  appendImagePathsToPrompt,
+  resolveAndRecordInputImages,
+} from './task-runner-images';
+import {
+  buildTaskSpawnCommand,
+  defaultTaskAgentSpawnRunner,
+  getTaskAgentEditor,
+  type TaskAgentSpawnCommand,
+  type TaskAgentSpawnResult,
+  type TaskAgentSpawnRunner,
+} from './task-spawn-command';
 
-export interface TaskAgentSpawnCommand {
-  command: string;
-  args: string[];
-  cwd: string;
-  stdin?: string;
-  onStdout?: (chunk: string) => void;
-  onStderr?: (chunk: string) => void;
-}
-
-export interface TaskAgentSpawnResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-export type TaskAgentSpawnRunner = (
-  command: TaskAgentSpawnCommand,
-) => Promise<Result<TaskAgentSpawnResult>>;
+export { buildTaskSpawnCommand } from './task-spawn-command';
 
 export interface RunTaskSpawnTurnInput extends RunTaskClaudeTurnInput {
   editor: string;
@@ -47,81 +41,6 @@ export interface RunTaskSpawnTurnInput extends RunTaskClaudeTurnInput {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function getEditor(editorId: string): Result<EditorConfig> {
-  const editor = config.EDITORS.find((item) => item.id === editorId);
-  return editor
-    ? success(editor)
-    : failure(`未知 Task agent editor: ${editorId}`);
-}
-
-function pushModel(args: string[], flag: string, model?: string) {
-  if (!model) return;
-  args.push(flag, model);
-}
-
-export function buildTaskSpawnCommand(
-  input: RunTaskSpawnTurnInput,
-): Result<TaskAgentSpawnCommand> {
-  const editorRes = getEditor(input.editor);
-  if (!editorRes.success) return editorRes;
-
-  switch (editorRes.data.id) {
-    case 'opencode': {
-      const args = ['run'];
-      pushModel(args, '--model', input.model);
-      if (input.personalityVersion) {
-        args.push('--agent', input.personalityVersion);
-      }
-      args.push(input.prompt);
-      return success({ command: 'opencode', args, cwd: input.cwd });
-    }
-    case 'pi': {
-      const args = ['--print'];
-      pushModel(args, '--model', input.model);
-      args.push(input.prompt);
-      return success({ command: 'pi', args, cwd: input.cwd });
-    }
-    default:
-      return failure(
-        `Task agent editor "${editorRes.data.id}" 暂未实现 CLI runner`,
-      );
-  }
-}
-
-export async function defaultTaskAgentSpawnRunner(
-  command: TaskAgentSpawnCommand,
-): Promise<Result<TaskAgentSpawnResult>> {
-  return new Promise((resolve) => {
-    const proc = spawn(command.command, command.args, {
-      cwd: command.cwd,
-      env: process.env,
-    });
-
-    let stdout = '';
-    let stderr = '';
-    proc.stdout?.setEncoding('utf-8');
-    proc.stderr?.setEncoding('utf-8');
-    proc.stdout?.on('data', (chunk) => {
-      stdout += chunk;
-      command.onStdout?.(chunk);
-    });
-    proc.stderr?.on('data', (chunk) => {
-      stderr += chunk;
-      command.onStderr?.(chunk);
-    });
-    proc.on('error', (error) => {
-      resolve(failure(getErrorMessage(error)));
-    });
-    proc.on('close', (exitCode) => {
-      resolve(success({ exitCode: exitCode ?? 1, stdout, stderr }));
-    });
-    proc.stdin?.on('error', () => {});
-
-    if (command.stdin !== undefined) proc.stdin.end(command.stdin);
-    else proc.stdin.end();
-  });
 }
 
 function summarizeFailure(output: TaskAgentSpawnResult): string {
@@ -142,36 +61,82 @@ export async function runTaskSpawnTurn(
   const prompt = input.prompt.trim();
   if (!prompt) return failure('Task agent prompt 不能为空');
 
-  const commandRes = buildTaskSpawnCommand({ ...input, prompt });
-  if (!commandRes.success) return commandRes;
-
-  const editorRes = getEditor(input.editor);
+  const editorRes = getTaskAgentEditor(input.editor);
   if (!editorRes.success) return editorRes;
   const permissionRes = ensureEditorPermissions(editorRes.data, input.cwd);
   if (!permissionRes.success) return permissionRes;
 
   const startedRes = startTaskAgentRun(input, input.editor);
   if (!startedRes.success) return startedRes;
-
-  const stopHeartbeat = startTaskAgentRunHeartbeat(
-    startedRes.data.progressContext,
-    `Agent 已启动，正在执行 ${editorRes.data.name}。`,
-    commandRes.data.cwd,
-  );
+  const commandRes = await prepareSpawnCommand(input, prompt, startedRes.data);
+  if (!commandRes.success) {
+    return failSpawnTurn(
+      startedRes.data.progressContext,
+      editorRes.data.name,
+      commandRes.error,
+    );
+  }
   const runner = input.spawnRunner || defaultTaskAgentSpawnRunner;
+  return runPreparedSpawnCommand(
+    input,
+    commandRes.data,
+    editorRes.data,
+    startedRes.data,
+    runner,
+  );
+}
+
+function runPreparedSpawnCommand(
+  input: RunTaskSpawnTurnInput,
+  command: TaskAgentSpawnCommand,
+  editor: EditorConfig,
+  started: StartedTaskAgentRun,
+  runner: TaskAgentSpawnRunner,
+) {
+  const stopHeartbeat = startSpawnHeartbeat(started, editor.name, command.cwd);
   try {
     const streamState = { seen: false };
     return executeSpawnTurn(
       input,
-      commandRes.data,
-      editorRes.data,
-      startedRes.data,
+      command,
+      editor,
+      started,
       runner,
       streamState,
     );
   } finally {
     stopHeartbeat();
   }
+}
+
+async function prepareSpawnCommand(
+  input: RunTaskSpawnTurnInput,
+  prompt: string,
+  started: StartedTaskAgentRun,
+): Promise<Result<TaskAgentSpawnCommand>> {
+  const imagesRes = await resolveAndRecordInputImages({
+    taskId: input.taskId,
+    inputArtifactIds: input.inputArtifactIds,
+    context: started.progressContext,
+    summary: '本轮传入 {count} 张用户上传图片路径。',
+  });
+  if (!imagesRes.success) return failure(imagesRes.error);
+  return buildTaskSpawnCommand({
+    ...input,
+    prompt: appendImagePathsToPrompt(prompt, imagesRes.data),
+  });
+}
+
+function startSpawnHeartbeat(
+  started: StartedTaskAgentRun,
+  editorName: string,
+  cwd: string,
+) {
+  return startTaskAgentRunHeartbeat(
+    started.progressContext,
+    `Agent 已启动，正在执行 ${editorName}。`,
+    cwd,
+  );
 }
 
 function ensureEditorPermissions(

@@ -1,7 +1,13 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner tests use large shared mock setup.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const queryMock = vi.hoisted(() => vi.fn());
+const attachmentMocks = vi.hoisted(() => ({
+  resolveInputImageAttachments: vi.fn(),
+}));
 const planningMocks = vi.hoisted(() => ({
   ensureTaskAgentBinding: vi.fn(),
   createTaskAgentRun: vi.fn(),
@@ -14,6 +20,10 @@ const planningMocks = vi.hoisted(() => ({
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: queryMock,
+}));
+
+vi.mock('./task-attachment-read', () => ({
+  resolveInputImageAttachments: attachmentMocks.resolveInputImageAttachments,
 }));
 
 vi.mock('./task-planning', () => ({
@@ -75,6 +85,10 @@ function errorConversation(sessionId: string) {
 describe('task-claude-runner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    attachmentMocks.resolveInputImageAttachments.mockReturnValue({
+      success: true,
+      data: [],
+    });
     planningMocks.ensureTaskAgentBinding.mockReturnValue({
       success: true,
       data: {
@@ -165,6 +179,59 @@ describe('task-claude-runner', () => {
       data: undefined,
     });
     queryMock.mockReturnValue(successfulConversation('session-2'));
+  });
+
+  it('当输入 artifact 包含图片时，期望 Claude 收到图文 SDKUserMessage', async () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), 'along-claude-'));
+    const imagePath = path.join(tempDir, 'screen.png');
+    writeFileSync(imagePath, 'fake-image');
+    attachmentMocks.resolveInputImageAttachments.mockReturnValueOnce({
+      success: true,
+      data: [
+        {
+          attachmentId: 'att-1',
+          originalName: 'screen.png',
+          mimeType: 'image/png',
+          absolutePath: imagePath,
+        },
+      ],
+    });
+
+    try {
+      const result = await runTaskClaudeTurn({
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'planner',
+        prompt: '看图生成计划',
+        cwd: '/tmp/project',
+        inputArtifactIds: ['art-user'],
+      });
+
+      expect(result.success).toBe(true);
+      const prompt = queryMock.mock.calls[0]?.[0]?.prompt;
+      const messages = [];
+      for await (const message of prompt) messages.push(message);
+      expect(messages[0]).toMatchObject({
+        type: 'user',
+        parent_tool_use_id: null,
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: '看图生成计划' },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/png',
+                data: Buffer.from('fake-image').toString('base64'),
+              },
+            },
+          ],
+        },
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('当存在 provider session 时，期望下一轮 Claude 调用使用 resume', async () => {

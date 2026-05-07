@@ -115,6 +115,49 @@ it('当创建 Task 指定全自动模式时，期望 executionMode 传给创建�
   );
 });
 
+it('当 multipart 创建 Task 带图片时，期望附件传给创建层且仍调度 planner', async () => {
+  const scheduled: unknown[] = [];
+  const form = new FormData();
+  form.append('body', '请看截图处理这个问题。');
+  form.append('owner', 'ranwawa');
+  form.append('repo', 'along');
+  form.append(
+    'attachments',
+    new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'screen.png', {
+      type: 'image/png',
+    }),
+  );
+
+  const response = await handleTaskApiRequest(
+    new Request('http://localhost/api/tasks', {
+      method: 'POST',
+      body: form,
+    }),
+    new URL('http://localhost/api/tasks'),
+    {
+      defaultCwd: '/tmp/default',
+      resolveRepoPath: () => '/tmp/along',
+      schedulePlanner: (input) => scheduled.push(input),
+      scheduleTitleSummary: () => {},
+    },
+  );
+
+  expect(response.status).toBe(202);
+  expect(planningMocks.createPlanningTask).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: '请看截图处理这个问题。',
+      attachments: [
+        expect.objectContaining({
+          originalName: 'screen.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+        }),
+      ],
+    }),
+  );
+  expectScheduledRunner(scheduled, '/tmp/along', 'task_created');
+});
+
 it('当创建 Task 指定非法执行模式时，期望返回 400', async () => {
   const response = await handleTaskApiRequest(
     jsonRequest('/api/tasks', {
@@ -172,6 +215,40 @@ it('当追加用户消息时，期望记录消息并调度同一个 Task planner
     body: '继续讨论这个方案。',
   });
   expectScheduledRunner(scheduled, '/tmp/project', 'user_message');
+});
+
+it('当 multipart 追加用户消息带图片时，期望附件传给消息层', async () => {
+  const form = new FormData();
+  form.append('body', '补一张截图。');
+  form.append('autoRun', 'false');
+  form.append(
+    'attachments',
+    new File([new Uint8Array([0xff, 0xd8, 0xff])], 'error.jpg', {
+      type: 'image/jpeg',
+    }),
+  );
+
+  const response = await handleTaskApiRequest(
+    new Request('http://localhost/api/tasks/task-1/messages', {
+      method: 'POST',
+      body: form,
+    }),
+    new URL('http://localhost/api/tasks/task-1/messages'),
+    { defaultCwd: '/tmp/default', schedulePlanner: () => {} },
+  );
+
+  expect(response.status).toBe(200);
+  expect(planningMocks.submitTaskMessage).toHaveBeenCalledWith({
+    taskId: 'task-1',
+    body: '补一张截图。',
+    attachments: [
+      expect.objectContaining({
+        originalName: 'error.jpg',
+        mimeType: 'image/jpeg',
+        bytes: new Uint8Array([0xff, 0xd8, 0xff]),
+      }),
+    ],
+  });
 });
 
 it('当批准 Task Plan 时，期望不再调度 planner', async () => {

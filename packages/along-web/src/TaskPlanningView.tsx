@@ -46,10 +46,15 @@ function TaskPlanningMain({
         selectedRepository={taskPlanning.selectedRepository}
         sortedArtifacts={taskPlanning.sortedArtifacts}
         messageBody={taskPlanning.messageBody}
+        messageAttachments={taskPlanning.messageAttachments}
         busyAction={taskPlanning.busyAction}
         onDraftChange={taskPlanning.updateDraft}
+        onDraftAttachmentsChange={(attachments) =>
+          taskPlanning.setDraft((previous) => ({ ...previous, attachments }))
+        }
         onCreateTask={taskPlanning.createTask}
         onMessageChange={taskPlanning.setMessageBody}
+        onMessageAttachmentsChange={taskPlanning.setMessageAttachments}
         onSubmitMessage={taskPlanning.submitMessageFromFlow}
         onAction={taskPlanning.handleFlowAction}
       />
