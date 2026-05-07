@@ -71,16 +71,54 @@ export const emptyDraft: DraftTaskInput = {
   executionMode: 'manual',
 };
 
+function parseTaskSeq(snapshot: TaskPlanningSnapshot): number | null {
+  const seq: unknown = snapshot.task.seq;
+  if (typeof seq === 'number') {
+    return Number.isFinite(seq) ? seq : null;
+  }
+  if (typeof seq === 'string') {
+    const trimmed = seq.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+export function sortTaskSnapshotsBySeqDesc(
+  snapshots: TaskPlanningSnapshot[],
+): TaskPlanningSnapshot[] {
+  return snapshots
+    .map((snapshot, index) => ({
+      index,
+      seq: parseTaskSeq(snapshot),
+      snapshot,
+    }))
+    .sort((left, right) => {
+      if (left.seq != null && right.seq != null) {
+        const seqDiff = right.seq - left.seq;
+        return seqDiff === 0 ? left.index - right.index : seqDiff;
+      }
+      if (left.seq != null) return -1;
+      if (right.seq != null) return 1;
+      return left.index - right.index;
+    })
+    .map((entry) => entry.snapshot);
+}
+
 export function mergeSnapshotIntoList(
   previous: TaskPlanningSnapshot[],
   snapshot: TaskPlanningSnapshot,
 ): TaskPlanningSnapshot[] {
-  const next = previous.filter(
-    (item) => item.task.taskId !== snapshot.task.taskId,
+  const existingIndex = previous.findIndex(
+    (item) => item.task.taskId === snapshot.task.taskId,
   );
-  return [snapshot, ...next].sort((left, right) =>
-    right.task.updatedAt.localeCompare(left.task.updatedAt),
-  );
+  if (existingIndex >= 0) {
+    const next = [...previous];
+    next[existingIndex] = snapshot;
+    return sortTaskSnapshotsBySeqDesc(next);
+  }
+  return sortTaskSnapshotsBySeqDesc([...previous, snapshot]);
 }
 
 function isTaskApiError(value: unknown): value is TaskApiError {

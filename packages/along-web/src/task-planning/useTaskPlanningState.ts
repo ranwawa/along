@@ -14,6 +14,7 @@ import {
   type RepositoryListResponse,
   type RepositoryOption,
   readJsonResponse,
+  sortTaskSnapshotsBySeqDesc,
 } from './api';
 
 function getErrorMessage(err: unknown): string {
@@ -127,8 +128,9 @@ async function loadTasksForState(input: TaskLoaderInput) {
   });
   const response = await fetch(`/api/tasks?${params.toString()}`);
   const snapshots = await readJsonResponse<TaskPlanningSnapshot[]>(response);
-  input.setTasks(snapshots);
-  updateSelectedTaskAfterLoad(input, snapshots);
+  const sortedSnapshots = sortTaskSnapshotsBySeqDesc(snapshots);
+  input.setTasks(sortedSnapshots);
+  updateSelectedTaskAfterLoad(input, sortedSnapshots);
 }
 
 function updateSelectedTaskAfterLoad(
