@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { TaskArtifactRecord, TaskAttachmentRecord } from '../types';
 import { formatTime, getArtifactClass, getArtifactLabel } from './format';
+import { MarkdownContent } from './MarkdownContent';
 
 function formatAttachmentSize(bytes: number): string {
   return `${Math.round((bytes / 1024 / 1024) * 10) / 10}MB`;
@@ -55,17 +56,43 @@ export function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
     <div className={`rounded-lg border p-3 ${getArtifactClass(artifact.type)}`}>
       <div className="flex items-center justify-between gap-3 mb-2">
         <span className="text-xs font-semibold text-text-secondary">
-          {getArtifactLabel(artifact.type)}
+          {getArtifactLabel(artifact.type, artifact.metadata)}
         </span>
         <span className="text-[11px] text-text-muted shrink-0">
           {formatTime(artifact.createdAt)}
         </span>
       </div>
-      <div className="text-sm whitespace-pre-wrap break-words leading-6">
-        {artifact.body}
-      </div>
+      <MarkdownContent value={artifact.body} />
       <ArtifactAttachments attachments={artifact.attachments || []} />
     </div>
+  );
+}
+
+export function isDuplicatePlannerAgentResult(
+  artifact: TaskArtifactRecord,
+): boolean {
+  if (
+    artifact.type !== 'agent_result' ||
+    artifact.metadata.agentId !== 'planner'
+  ) {
+    return false;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(artifact.body);
+    if (!parsed || typeof parsed !== 'object') return false;
+    const action = (parsed as { action?: unknown }).action;
+    return action === 'plan_revision' || action === 'planning_update';
+  } catch {
+    return false;
+  }
+}
+
+export function getReadableArtifacts(
+  artifacts: TaskArtifactRecord[],
+): TaskArtifactRecord[] {
+  return artifacts.filter(
+    (artifact) => !isDuplicatePlannerAgentResult(artifact),
   );
 }
 
@@ -76,14 +103,16 @@ export function TaskRecordsPanel({
   artifacts: TaskArtifactRecord[];
   children?: ReactNode;
 }) {
+  const readableArtifacts = getReadableArtifacts(artifacts);
+
   return (
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-semibold text-text-secondary">过程记录</h3>
       <div className="flex flex-col gap-3">
-        {artifacts.length === 0 ? (
+        {readableArtifacts.length === 0 ? (
           <div className="text-sm text-text-muted">暂无记录。</div>
         ) : (
-          artifacts.map((artifact) => (
+          readableArtifacts.map((artifact) => (
             <ArtifactItem key={artifact.artifactId} artifact={artifact} />
           ))
         )}
