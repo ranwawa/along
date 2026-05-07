@@ -63,6 +63,7 @@ function useSelectionActions(input: UseTaskPlanningActionsInput) {
     input.setSelectedSnapshot(snapshot);
     input.setMessageBody('');
     input.setMessageAttachments([]);
+    input.setMessageExecutionMode(snapshot.task.executionMode);
   };
   return { selectTask };
 }
@@ -100,7 +101,11 @@ function useMessageActions(
     const attachments = input.messageAttachments;
     if (!input.selected || input.busyAction) return;
     await runBusy(input, 'message', async () => {
-      const payload = { body, autoRun: true };
+      const payload = {
+        body,
+        autoRun: true,
+        executionMode: input.messageExecutionMode,
+      };
       const result =
         attachments.length > 0
           ? await postSelectedMultipart<SubmitTaskMessageResponse>(

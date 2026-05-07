@@ -47,6 +47,7 @@ function TaskPlanningMain({
         sortedArtifacts={taskPlanning.sortedArtifacts}
         messageBody={taskPlanning.messageBody}
         messageAttachments={taskPlanning.messageAttachments}
+        messageExecutionMode={taskPlanning.messageExecutionMode}
         busyAction={taskPlanning.busyAction}
         onDraftChange={taskPlanning.updateDraft}
         onDraftAttachmentsChange={(attachments) =>
@@ -55,6 +56,7 @@ function TaskPlanningMain({
         onCreateTask={taskPlanning.createTask}
         onMessageChange={taskPlanning.setMessageBody}
         onMessageAttachmentsChange={taskPlanning.setMessageAttachments}
+        onMessageExecutionModeChange={taskPlanning.setMessageExecutionMode}
         onSubmitMessage={taskPlanning.submitMessageFromFlow}
         onAction={taskPlanning.handleFlowAction}
       />
