@@ -12,6 +12,7 @@ export type PlanningMocks = {
   listTaskPlanningSnapshots: PlanningMock;
   readTaskAgentBinding: PlanningMock;
   readTaskPlanningSnapshot: PlanningMock;
+  requestTaskPlan: PlanningMock;
   submitTaskMessage: PlanningMock;
 };
 
@@ -89,6 +90,10 @@ function mockTaskReads(planningMocks: PlanningMocks) {
   planningMocks.readTaskAgentBinding.mockReturnValue({
     success: true,
     data: null,
+  });
+  planningMocks.requestTaskPlan.mockReturnValue({
+    success: true,
+    data: undefined,
   });
 }
 

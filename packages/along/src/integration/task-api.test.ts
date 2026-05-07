@@ -18,6 +18,7 @@ const planningMocks: PlanningMocks = vi.hoisted(() => ({
   listTaskPlanningSnapshots: vi.fn(),
   readTaskAgentBinding: vi.fn(),
   readTaskPlanningSnapshot: vi.fn(),
+  requestTaskPlan: vi.fn(),
   submitTaskMessage: vi.fn(),
 }));
 
@@ -40,6 +41,7 @@ vi.mock('../domain/task-planning', () => ({
   listTaskPlanningSnapshots: planningMocks.listTaskPlanningSnapshots,
   readTaskAgentBinding: planningMocks.readTaskAgentBinding,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
+  requestTaskPlan: planningMocks.requestTaskPlan,
   submitTaskMessage: planningMocks.submitTaskMessage,
 }));
 

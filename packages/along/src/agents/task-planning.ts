@@ -115,20 +115,27 @@ function buildSnapshotSummary(snapshot: TaskPlanningSnapshot): string {
   return JSON.stringify(summary, null, 2);
 }
 
-export function buildPlannerPrompt(snapshot: TaskPlanningSnapshot): string {
-  const hasCurrentPlan = Boolean(snapshot.currentPlan);
-  const hasOpenRound = Boolean(snapshot.openRound);
-
+function buildPlannerPromptIntro(isAsk: boolean): string[] {
   return [
-    '你是 Along 的 Planning Agent，只负责输出一个可直接落库的任务规划结果。',
-    '你的目标是帮助用户把一个 Task 讨论到足够清晰，然后给出正式 Plan，或在必要时先提出澄清。',
+    isAsk
+      ? '你是 Along 的 Ask Agent，负责回答咨询、解释代码、探索方案，但不默认创建正式计划。'
+      : '你是 Along 的 Planning Agent，只负责输出一个可直接落库的任务规划结果。',
+    isAsk
+      ? '你的目标是直接回答用户问题；只有用户明确要求制定计划、修复、实现或改代码时，才输出正式 Plan。'
+      : '你的目标是帮助用户把一个 Task 讨论到足够清晰，然后给出正式 Plan，或在必要时先提出澄清。',
     '',
+  ];
+}
+
+function buildPlannerPromptRules(): string[] {
+  return [
     '要求：',
     '1. 只输出 JSON，不要输出 Markdown、代码块、解释或前后缀文本。',
     '2. JSON 结构必须是：{"action":"plan_revision"|"planning_update","body":"...","type":"feat"|"fix"|...}',
     '3. body 必须是中文，且是最终要落库的正文。',
     '4. action = "plan_revision" 表示你已经给出了正式计划或计划修订。',
     '5. action = "planning_update" 表示你是在回答问题、澄清约束或补充上下文，但还不是正式计划。',
+    '5a. 当前 workflow=ask 时，默认使用 planning_update 回答咨询；不要因为能想到实现方式就自动升级为 plan_revision。',
     '6. 如果信息仍然不足以形成正式计划，优先输出 planning_update，明确指出还缺什么。',
     '7. 如果当前已经有 Plan 且存在 open feedback round，优先结合反馈决定是 answer_only 还是 revise_plan 的语义，但输出仍然只用上面的两个 action。',
     '8. type 字段必须提供 conventional commit 类型（feat/fix/docs/style/refactor/perf/test/chore/ci），planning_update 可使用 chore。',
@@ -141,6 +148,17 @@ export function buildPlannerPrompt(snapshot: TaskPlanningSnapshot): string {
     '15. 对涉及多个模块、状态流转、数据流、跨端交互或多阶段 agent 编排的大计划，正文必须包含 Mermaid 图表，从整体上展示结构、流程或状态机；小型单点修改不强制加图。',
     '16. 正式计划推荐包含 Assessment、Summary、Implementation Changes、Test Plan、Assumptions；涉及跨模块契约、API、类型、状态、持久化或外部调用方时，再补充 Contracts / Interfaces。',
     '',
+  ];
+}
+
+export function buildPlannerPrompt(snapshot: TaskPlanningSnapshot): string {
+  const hasCurrentPlan = Boolean(snapshot.currentPlan);
+  const hasOpenRound = Boolean(snapshot.openRound);
+  const isAsk = snapshot.task.currentWorkflowKind === 'ask';
+
+  return [
+    ...buildPlannerPromptIntro(isAsk),
+    ...buildPlannerPromptRules(),
     `当前状态: hasCurrentPlan=${hasCurrentPlan}, hasOpenRound=${hasOpenRound}`,
     '',
     '任务快照：',

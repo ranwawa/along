@@ -3,9 +3,7 @@ import type {
   TaskAgentStageRecord,
   TaskAgentStageStatus,
   TaskArtifactType,
-  TaskFlowAction,
   TaskFlowSnapshot,
-  TaskFlowStageState,
   TaskPlanningSnapshot,
   TaskStatus,
   TaskThreadStatus,
@@ -37,6 +35,12 @@ export function formatDuration(startedAt: string, endedAt?: string): string {
 
 export function getThreadStatusLabel(status: TaskThreadStatus): string {
   switch (status) {
+    case 'active':
+      return '进行中';
+    case 'waiting_user':
+      return '待补充';
+    case 'answered':
+      return '已回答';
     case 'drafting':
       return '起草中';
     case 'awaiting_approval':
@@ -45,6 +49,16 @@ export function getThreadStatusLabel(status: TaskThreadStatus): string {
       return '讨论中';
     case 'approved':
       return '已批准';
+    case 'planned':
+      return '已规划';
+    case 'implementing':
+      return '实现中';
+    case 'verifying':
+      return '验证中';
+    case 'completed':
+      return '已完成';
+    case 'failed':
+      return '失败';
     default:
       return status;
   }
@@ -239,36 +253,6 @@ export function getArtifactClass(type: TaskArtifactType): string {
   }
 }
 
-export function getFlowStageStateClass(state: TaskFlowStageState): string {
-  switch (state) {
-    case 'completed':
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
-    case 'current':
-      return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-100';
-    case 'blocked':
-      return 'border-rose-500/40 bg-rose-500/10 text-rose-100';
-    case 'attention':
-      return 'border-amber-500/40 bg-amber-500/10 text-amber-100';
-    default:
-      return 'border-border-color bg-black/20 text-text-muted';
-  }
-}
-
-export function getFlowStageDotClass(state: TaskFlowStageState): string {
-  switch (state) {
-    case 'completed':
-      return 'bg-emerald-400';
-    case 'current':
-      return 'bg-cyan-400';
-    case 'blocked':
-      return 'bg-rose-400';
-    case 'attention':
-      return 'bg-amber-400';
-    default:
-      return 'bg-text-muted';
-  }
-}
-
 export function getFlowSeverityClass(
   severity: TaskFlowSnapshot['severity'],
 ): string {
@@ -282,14 +266,4 @@ export function getFlowSeverityClass(
     default:
       return 'border-cyan-500/25 bg-cyan-500/10 text-cyan-100';
   }
-}
-
-export function getFlowActionClass(action: TaskFlowAction): string {
-  if (action.variant === 'danger') {
-    return 'border-rose-500/30 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25';
-  }
-  if (action.variant === 'primary') {
-    return 'border-brand bg-brand text-white hover:bg-brand-hover';
-  }
-  return 'border-border-color text-text-secondary hover:bg-white/5';
 }

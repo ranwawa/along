@@ -23,8 +23,8 @@ import { TaskRecordsPanel } from './TaskRecords';
 
 function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const executionMode =
-    selected.task.executionMode === 'autonomous' ? '全自动' : '人工确认';
+  const statusLabel =
+    selected.display?.label || getTaskStatusLabel(selected.task.status);
   return (
     <aside className="min-w-0 rounded-lg border border-border-color bg-black/25">
       <button
@@ -40,8 +40,7 @@ function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
             </span>
             {!isExpanded && (
               <span className="truncate text-xs text-text-muted">
-                {getTaskStatusLabel(selected.task.status)} ·{' '}
-                {formatTime(selected.task.updatedAt)}
+                {statusLabel} · {formatTime(selected.task.updatedAt)}
               </span>
             )}
           </div>
@@ -51,63 +50,91 @@ function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
         </div>
       </button>
       {isExpanded && (
-        <div className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-2 px-4 pb-4 text-sm">
-          <span className="text-text-muted">ID</span>
-          <span className="truncate">{selected.task.taskId}</span>
-          {selected.task.seq != null && (
-            <>
-              <span className="text-text-muted">Seq</span>
-              <span>#{selected.task.seq}</span>
-            </>
-          )}
-          {selected.task.type && (
-            <>
-              <span className="text-text-muted">Type</span>
-              <span>{selected.task.type}</span>
-            </>
-          )}
-          <span className="text-text-muted">Thread</span>
-          <span className="truncate">{selected.thread.threadId}</span>
-          <span className="text-text-muted">Plan Status</span>
-          <span>{getThreadStatusLabel(selected.thread.status)}</span>
-          <span className="text-text-muted">Source</span>
-          <span>{selected.task.source}</span>
-          <span className="text-text-muted">Mode</span>
-          <span>{executionMode}</span>
-          <span className="text-text-muted">Status</span>
-          <span>{getTaskStatusLabel(selected.task.status)}</span>
-          {selected.task.branchName && (
-            <>
-              <span className="text-text-muted">Branch</span>
-              <span className="truncate">{selected.task.branchName}</span>
-            </>
-          )}
-          {selected.task.worktreePath && (
-            <>
-              <span className="text-text-muted">Worktree</span>
-              <span className="truncate" title={selected.task.worktreePath}>
-                {selected.task.worktreePath}
-              </span>
-            </>
-          )}
-          {selected.task.prUrl && (
-            <>
-              <span className="text-text-muted">PR</span>
-              <a
-                href={selected.task.prUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="truncate text-brand hover:text-brand-hover"
-              >
-                #{selected.task.prNumber || selected.task.prUrl}
-              </a>
-            </>
-          )}
-          <span className="text-text-muted">Updated</span>
-          <span>{formatTime(selected.task.updatedAt)}</span>
-        </div>
+        <TaskInfoRows selected={selected} statusLabel={statusLabel} />
       )}
     </aside>
+  );
+}
+
+function TaskInfoRows({
+  selected,
+  statusLabel,
+}: {
+  selected: TaskPlanningSnapshot;
+  statusLabel: string;
+}) {
+  const executionMode =
+    selected.task.executionMode === 'autonomous' ? '全自动' : '人工确认';
+  return (
+    <div className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-2 px-4 pb-4 text-sm">
+      <span className="text-text-muted">ID</span>
+      <span className="truncate">{selected.task.taskId}</span>
+      {selected.task.seq != null && (
+        <>
+          <span className="text-text-muted">Seq</span>
+          <span>#{selected.task.seq}</span>
+        </>
+      )}
+      {selected.task.type && (
+        <>
+          <span className="text-text-muted">Type</span>
+          <span>{selected.task.type}</span>
+        </>
+      )}
+      <span className="text-text-muted">Thread</span>
+      <span className="truncate">{selected.thread.threadId}</span>
+      <span className="text-text-muted">Plan Status</span>
+      <span>{getThreadStatusLabel(selected.thread.status)}</span>
+      <span className="text-text-muted">Workflow</span>
+      <span>{selected.task.currentWorkflowKind}</span>
+      <span className="text-text-muted">Source</span>
+      <span>{selected.task.source}</span>
+      <span className="text-text-muted">Mode</span>
+      <span>{executionMode}</span>
+      <span className="text-text-muted">Status</span>
+      <span>{statusLabel}</span>
+      <TaskInfoOptionalRows selected={selected} />
+      <span className="text-text-muted">Updated</span>
+      <span>{formatTime(selected.task.updatedAt)}</span>
+    </div>
+  );
+}
+
+function TaskInfoOptionalRows({
+  selected,
+}: {
+  selected: TaskPlanningSnapshot;
+}) {
+  return (
+    <>
+      {selected.task.branchName && (
+        <>
+          <span className="text-text-muted">Branch</span>
+          <span className="truncate">{selected.task.branchName}</span>
+        </>
+      )}
+      {selected.task.worktreePath && (
+        <>
+          <span className="text-text-muted">Worktree</span>
+          <span className="truncate" title={selected.task.worktreePath}>
+            {selected.task.worktreePath}
+          </span>
+        </>
+      )}
+      {selected.task.prUrl && (
+        <>
+          <span className="text-text-muted">PR</span>
+          <a
+            href={selected.task.prUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="truncate text-brand hover:text-brand-hover"
+          >
+            #{selected.task.prNumber || selected.task.prUrl}
+          </a>
+        </>
+      )}
+    </>
   );
 }
 

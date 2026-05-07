@@ -862,7 +862,7 @@ describe('task-planning', () => {
     expect(snapshot.data.task.executionMode).toBe('autonomous');
   });
 
-  it('当首版计划前需要澄清时，期望记录 Planning Update 并保持可继续讨论', () => {
+  it('当纯咨询得到回答时，期望记录 Planning Update 并保持 ask 展示', () => {
     const created = createPlanningTask({
       title: '实现 Task API',
       body: '希望通过网页创建 planning task。',
@@ -885,8 +885,18 @@ describe('task-planning', () => {
       throw new Error('missing snapshot');
     expect(snapshot.data.currentPlan).toBeNull();
     expect(snapshot.data.openRound).toBeNull();
-    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.DISCUSSING);
-    expect(snapshot.data.flow.currentStageId).toBe('plan_discussion');
+    expect(snapshot.data.task.currentWorkflowKind).toBe('ask');
+    expect(snapshot.data.display).toMatchObject({
+      state: 'ask_answered',
+      label: '已回答',
+    });
+    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.ANSWERED);
+    expect(snapshot.data.flow.currentStageId).toBe('ask');
+    expect(
+      snapshot.data.flow.stages.some(
+        (stage) => stage.id === 'plan_confirmation',
+      ),
+    ).toBe(false);
     expect(snapshot.data.artifacts.map((item) => item.type)).toEqual([
       'user_message',
       'planning_update',
@@ -933,7 +943,11 @@ describe('task-planning', () => {
     if (!snapshot.success || !snapshot.data)
       throw new Error('missing snapshot');
     expect(snapshot.data.task.status).toBe(TASK_STATUS.PLANNING_APPROVED);
-    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.APPROVED);
+    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.PLANNED);
+    expect(snapshot.data.display).toMatchObject({
+      state: 'planning_planned',
+      label: '已规划',
+    });
   });
 
   it('当已交付任务验收完成时，期望流程进入任务完成阶段', () => {

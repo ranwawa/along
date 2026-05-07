@@ -51,6 +51,8 @@ const TABLES = [
     task_id TEXT PRIMARY KEY,
     title TEXT NOT NULL, body TEXT NOT NULL, source TEXT NOT NULL,
     status TEXT NOT NULL, active_thread_id TEXT, repo_owner TEXT, repo_name TEXT,
+    lifecycle TEXT NOT NULL DEFAULT 'open',
+    current_workflow_kind TEXT NOT NULL DEFAULT 'ask',
     cwd TEXT, worktree_path TEXT, branch_name TEXT, commit_shas TEXT DEFAULT '[]',
     pr_url TEXT, pr_number INTEGER, seq INTEGER, type TEXT,
     execution_mode TEXT NOT NULL DEFAULT 'manual',
@@ -182,6 +184,8 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE task_items ADD COLUMN seq INTEGER',
   'ALTER TABLE task_items ADD COLUMN type TEXT',
   "ALTER TABLE task_items ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'manual'",
+  "ALTER TABLE task_items ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'open'",
+  "ALTER TABLE task_items ADD COLUMN current_workflow_kind TEXT NOT NULL DEFAULT 'ask'",
 ];
 
 function execRequired(db: Database, statements: string[]) {

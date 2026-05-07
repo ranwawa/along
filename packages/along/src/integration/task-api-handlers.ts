@@ -15,6 +15,7 @@ import {
   createPlanningTask,
   listTaskPlanningSnapshots,
   readTaskPlanningSnapshot,
+  requestTaskPlan,
   submitTaskMessage,
   type TaskPlanningSnapshot,
 } from '../domain/task-planning';
@@ -220,6 +221,8 @@ export async function handleTaskPlannerRequest(
   if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
   const snapshotError = readExistingTaskError(taskId);
   if (snapshotError) return snapshotError;
+  const requestPlanRes = requestTaskPlan(taskId);
+  if (!requestPlanRes.success) return errorResponse(requestPlanRes.error, 409);
 
   const scheduledRes = schedulePlannerIfNeeded(
     { ...bodyRes.data, autoRun: true },
