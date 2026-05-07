@@ -62,6 +62,42 @@
         }
       },
       "style": {
+        "noJsxLiterals": {
+          "level": "error",
+          "options": {
+            "allowedStrings": [
+              " ",
+              ",",
+              ".",
+              ":",
+              ";",
+              "/",
+              "\\",
+              "|",
+              "-",
+              "_",
+              "(",
+              ")",
+              "[",
+              "]",
+              "{",
+              "}",
+              "·",
+              "•",
+              " - ",
+              " / ",
+              " | ",
+              " · ",
+              " • ",
+              "$",
+              "¥",
+              "￥",
+              "€",
+              "£"
+            ]
+          }
+        },
+        "noMagicNumbers": "error",
         "noNonNullAssertion": "error",
         "noParameterAssign": "error",
         "useImportType": "error"
