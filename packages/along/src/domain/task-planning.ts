@@ -24,6 +24,14 @@ export const TASK_STATUS = {
 
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
 
+export const TASK_EXECUTION_MODE = {
+  MANUAL: 'manual',
+  AUTONOMOUS: 'autonomous',
+} as const;
+
+export type TaskExecutionMode =
+  (typeof TASK_EXECUTION_MODE)[keyof typeof TASK_EXECUTION_MODE];
+
 export const THREAD_PURPOSE = {
   PLANNING: 'planning',
 } as const;
@@ -145,6 +153,7 @@ export interface TaskItemRecord {
   prNumber?: number;
   seq?: number;
   type?: string;
+  executionMode: TaskExecutionMode;
   createdAt: string;
   updatedAt: string;
 }
@@ -380,6 +389,7 @@ export interface CreatePlanningTaskInput {
   repoOwner?: string;
   repoName?: string;
   cwd?: string;
+  executionMode?: TaskExecutionMode;
 }
 
 export interface UpdatePlanningTaskTitleInput {
@@ -535,6 +545,7 @@ interface TaskItemRow {
   pr_number: number | null;
   seq: number | null;
   type: string | null;
+  execution_mode?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -642,6 +653,14 @@ function parseStringArray(value: string | null | undefined): string[] {
   }
 }
 
+function normalizeTaskExecutionMode(
+  value: string | null | undefined,
+): TaskExecutionMode {
+  return value === TASK_EXECUTION_MODE.AUTONOMOUS
+    ? TASK_EXECUTION_MODE.AUTONOMOUS
+    : TASK_EXECUTION_MODE.MANUAL;
+}
+
 function parseMetadata(
   value: string | null | undefined,
 ): Record<string, unknown> {
@@ -745,6 +764,7 @@ function mapTask(row: TaskItemRow): TaskItemRecord {
     prNumber: row.pr_number || undefined,
     seq: row.seq || undefined,
     type: row.type || undefined,
+    executionMode: normalizeTaskExecutionMode(row.execution_mode),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1850,8 +1870,8 @@ export function createPlanningTask(
         `
           INSERT INTO task_items (
             task_id, title, body, source, status, active_thread_id,
-            repo_owner, repo_name, cwd, seq, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            repo_owner, repo_name, cwd, seq, execution_mode, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       ).run(
         taskId,
@@ -1864,6 +1884,7 @@ export function createPlanningTask(
         input.repoName || null,
         input.cwd || null,
         seq,
+        input.executionMode || TASK_EXECUTION_MODE.MANUAL,
         now,
         now,
       );

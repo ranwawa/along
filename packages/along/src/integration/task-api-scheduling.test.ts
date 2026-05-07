@@ -22,6 +22,10 @@ const planningMocks: PlanningMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../domain/task-planning', () => ({
+  TASK_EXECUTION_MODE: {
+    MANUAL: 'manual',
+    AUTONOMOUS: 'autonomous',
+  },
   TASK_AGENT_STAGE: {
     PLANNING: 'planning',
     IMPLEMENTATION: 'implementation',

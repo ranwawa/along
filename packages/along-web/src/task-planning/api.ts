@@ -1,4 +1,4 @@
-import type { TaskPlanningSnapshot } from '../types';
+import type { TaskExecutionMode, TaskPlanningSnapshot } from '../types';
 
 export interface CreateTaskResponse {
   taskId: string;
@@ -58,6 +58,7 @@ export interface RepositoryListResponse {
 export interface DraftTaskInput {
   body: string;
   repository: string;
+  executionMode: TaskExecutionMode;
 }
 
 interface TaskApiError {
@@ -67,6 +68,7 @@ interface TaskApiError {
 export const emptyDraft: DraftTaskInput = {
   body: '',
   repository: '',
+  executionMode: 'manual',
 };
 
 export function mergeSnapshotIntoList(

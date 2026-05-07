@@ -22,6 +22,8 @@ export const snapshot = {
     source: 'web',
     status: 'planning',
     activeThreadId: 'thread-1',
+    commitShas: [],
+    executionMode: 'manual',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
@@ -157,7 +159,7 @@ export function jsonRequest(
 export function expectScheduledRunner(
   scheduled: unknown[],
   cwd: string,
-  reason: 'task_created' | 'user_message' | 'manual',
+  reason: 'task_created' | 'user_message' | 'manual' | 'autonomous',
 ) {
   expect(scheduled).toEqual([
     {

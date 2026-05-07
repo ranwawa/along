@@ -21,6 +21,10 @@ const planningMocks: PlanningMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../domain/task-planning', () => ({
+  TASK_EXECUTION_MODE: {
+    MANUAL: 'manual',
+    AUTONOMOUS: 'autonomous',
+  },
   TASK_AGENT_STAGE: {
     PLANNING: 'planning',
     IMPLEMENTATION: 'implementation',
@@ -86,6 +90,46 @@ it('当创建 Task 时，期望返回 202 并调度 planner', async () => {
       body: '通过 Web API 创建 planning task。',
     },
   ]);
+});
+
+it('当创建 Task 指定全自动模式时，期望 executionMode 传给创建层', async () => {
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks', {
+      body: '创建全自动 planning task。',
+      executionMode: 'autonomous',
+    }),
+    new URL('http://localhost/api/tasks'),
+    {
+      defaultCwd: '/tmp/default',
+      scheduleTitleSummary: () => {},
+    },
+  );
+
+  expect(response.status).toBe(201);
+  expect(planningMocks.createPlanningTask).toHaveBeenCalledWith(
+    expect.objectContaining({
+      executionMode: 'autonomous',
+    }),
+  );
+});
+
+it('当创建 Task 指定非法执行模式时，期望返回 400', async () => {
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks', {
+      body: '创建非法模式 planning task。',
+      executionMode: 'fast',
+    }),
+    new URL('http://localhost/api/tasks'),
+    {
+      defaultCwd: '/tmp/default',
+      scheduleTitleSummary: () => {},
+    },
+  );
+  const payload = (await response.json()) as { error: string };
+
+  expect(response.status).toBe(400);
+  expect(payload.error).toBe('executionMode 必须是 manual 或 autonomous');
+  expect(planningMocks.createPlanningTask).not.toHaveBeenCalled();
 });
 
 it('当创建 Task 未带 owner/repo 时，期望从默认 cwd 反查仓库并落库', async () => {
@@ -220,6 +264,7 @@ function expectCreatedTaskFields(cwd: string) {
     repoOwner: 'ranwawa',
     repoName: 'along',
     cwd,
+    executionMode: undefined,
   });
 }
 
@@ -236,5 +281,6 @@ function expectDefaultCreatedTaskFields() {
     repoOwner: 'ranwawa',
     repoName: 'along',
     cwd: '/tmp/along/packages/along',
+    executionMode: undefined,
   });
 }

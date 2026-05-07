@@ -226,6 +226,7 @@ const mockDbState = vi.hoisted(() => {
             repoName,
             cwd,
             seq,
+            executionMode,
             createdAt,
             updatedAt,
           ] = args;
@@ -246,6 +247,7 @@ const mockDbState = vi.hoisted(() => {
             pr_number: null,
             seq,
             type: null,
+            execution_mode: executionMode,
             created_at: createdAt,
             updated_at: updatedAt,
           });
@@ -787,6 +789,35 @@ describe('task-planning', () => {
       snapshot.data.flow.actions.find((action) => action.id === 'approve_plan')
         ?.enabled,
     ).toBe(true);
+  });
+
+  it('当创建 Task 未指定执行模式时，期望默认为 manual', () => {
+    const created = createPlanningTask({
+      title: '默认模式任务',
+      body: '不指定 executionMode。',
+      source: 'test',
+    });
+    expect(created.success).toBe(true);
+    if (!created.success) throw new Error(created.error);
+
+    expect(created.data.task.executionMode).toBe('manual');
+  });
+
+  it('当创建 Task 指定全自动模式时，期望快照返回 autonomous', () => {
+    const created = createPlanningTask({
+      title: '全自动任务',
+      body: '指定 executionMode。',
+      source: 'test',
+      executionMode: 'autonomous',
+    });
+    expect(created.success).toBe(true);
+    if (!created.success) throw new Error(created.error);
+
+    const snapshot = readTaskPlanningSnapshot(created.data.task.taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+    expect(snapshot.data.task.executionMode).toBe('autonomous');
   });
 
   it('当首版计划前需要澄清时，期望记录 Planning Update 并保持可继续讨论', () => {
