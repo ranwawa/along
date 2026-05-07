@@ -10,8 +10,9 @@ import {
   PLAN_STATUS,
   readTaskPlanningSnapshot,
   TASK_EXECUTION_MODE,
-  TASK_STATUS,
+  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
+  WORKFLOW_KIND,
 } from '../domain/task-planning';
 import type {
   ScheduledTaskDeliveryRun,
@@ -50,6 +51,10 @@ function hasApprovedThread(snapshot: TaskPlanningSnapshot): boolean {
   return Boolean(snapshot.thread.approvedPlanId);
 }
 
+function isClosed(snapshot: TaskPlanningSnapshot): boolean {
+  return snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED;
+}
+
 export function continueAutonomousTaskAfterPlanning(
   input: TaskAutonomousContinuationInput & { plannerAction: string },
 ): Result<AutonomousContinuationAction> {
@@ -58,7 +63,7 @@ export function continueAutonomousTaskAfterPlanning(
   const snapshotRes = readRequiredSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
-  if (snapshot.task.status === TASK_STATUS.CLOSED) return success('skipped');
+  if (isClosed(snapshot)) return success('skipped');
   if (!isAutonomous(snapshot)) return success('skipped');
   if (
     !snapshot.currentPlan ||
@@ -88,13 +93,16 @@ export function continueAutonomousTaskAfterImplementation(
   const snapshotRes = readRequiredSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
-  if (snapshot.task.status === TASK_STATUS.CLOSED) return success('skipped');
+  if (isClosed(snapshot)) return success('skipped');
   if (!isAutonomous(snapshot)) return success('skipped');
 
-  if (snapshot.task.status === TASK_STATUS.PLANNING_APPROVED) {
+  if (snapshot.task.currentWorkflowKind === WORKFLOW_KIND.PLANNING) {
     return continueAfterImplementationSteps(input, snapshot);
   }
-  if (snapshot.task.status === TASK_STATUS.IMPLEMENTED) {
+  if (
+    snapshot.task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION &&
+    snapshot.task.lifecycle === TASK_LIFECYCLE.READY
+  ) {
     return continueAfterImplemented(input, snapshot);
   }
   return success('skipped');

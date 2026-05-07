@@ -11,10 +11,12 @@ import {
 import {
   PLAN_STATUS,
   readTaskPlanningSnapshot,
-  TASK_STATUS,
+  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
   type TaskPlanRevisionRecord,
-  updateTaskStatus,
+  THREAD_STATUS,
+  updateTaskWorkflowState,
+  WORKFLOW_KIND,
 } from './task-planning';
 import {
   defaultTaskWorktreeCommandRunner,
@@ -76,7 +78,12 @@ async function readRequiredSnapshot(
 }
 
 function rollbackToPlanningApproved<T>(taskId: string, result: Result<T>) {
-  const rollbackRes = updateTaskStatus(taskId, TASK_STATUS.PLANNING_APPROVED);
+  const rollbackRes = updateTaskWorkflowState({
+    taskId,
+    lifecycle: TASK_LIFECYCLE.READY,
+    currentWorkflowKind: WORKFLOW_KIND.PLANNING,
+    threadStatus: THREAD_STATUS.APPROVED,
+  });
   return rollbackRes.success ? result : failure<T>(rollbackRes.error);
 }
 
@@ -137,7 +144,12 @@ async function prepareImplementationRun(
   });
   if (!worktreeRes.success) return failure(worktreeRes.error);
 
-  const startedRes = updateTaskStatus(input.taskId, TASK_STATUS.IMPLEMENTING);
+  const startedRes = updateTaskWorkflowState({
+    taskId: input.taskId,
+    lifecycle: TASK_LIFECYCLE.RUNNING,
+    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+    threadStatus: THREAD_STATUS.IMPLEMENTING,
+  });
   if (!startedRes.success) return failure(startedRes.error);
 
   return success({ snapshot, approvedPlan, worktree: worktreeRes.data });
@@ -150,17 +162,17 @@ function readApprovedImplementationContext(
   if (!snapshotRes.success) return failure(snapshotRes.error);
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
-  if (snapshot.task.status === TASK_STATUS.CLOSED) {
+  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return failure('Task 已关闭，不能开始实现');
   }
 
   const approvedPlan = findApprovedPlan(snapshot);
   if (!approvedPlan) return failure('当前 Task 没有已批准方案，不能开始实现');
   if (
-    snapshot.task.status !== TASK_STATUS.PLANNING_APPROVED &&
-    snapshot.task.status !== TASK_STATUS.IMPLEMENTING
+    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.PLANNING &&
+    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.IMPLEMENTATION
   ) {
-    return failure(`当前 Task 状态不能开始实现: ${snapshot.task.status}`);
+    return failure('当前 Task 工作流不能开始实现');
   }
 
   return success({ snapshot, approvedPlan });

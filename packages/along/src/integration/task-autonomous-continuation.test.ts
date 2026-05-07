@@ -9,8 +9,7 @@ const planningMocks = vi.hoisted(() => ({
   approveCurrentTaskPlan: vi.fn(),
   readTaskPlanningSnapshot: vi.fn(),
 }));
-
-vi.mock('../domain/task-planning', () => ({
+const mockTaskConstants = vi.hoisted(() => ({
   PLAN_STATUS: {
     ACTIVE: 'active',
     APPROVED: 'approved',
@@ -19,10 +18,34 @@ vi.mock('../domain/task-planning', () => ({
     MANUAL: 'manual',
     AUTONOMOUS: 'autonomous',
   },
-  TASK_STATUS: {
-    PLANNING_APPROVED: 'planning_approved',
-    IMPLEMENTED: 'implemented',
+  TASK_LIFECYCLE: {
+    CANCELLED: 'cancelled',
+    OPEN: 'open',
+    READY: 'ready',
   },
+  TASK_STATUS: {
+    IMPLEMENTED: 'implemented',
+    PLANNING: 'planning',
+    PLANNING_APPROVED: 'planning_approved',
+  },
+  THREAD_PURPOSE: {
+    PLANNING: 'planning',
+  },
+  THREAD_STATUS: {
+    APPROVED: 'approved',
+    AWAITING_APPROVAL: 'awaiting_approval',
+  },
+  WORKFLOW_KIND: {
+    PLANNING: 'planning',
+    IMPLEMENTATION: 'implementation',
+  },
+}));
+
+vi.mock('../domain/task-planning', () => ({
+  PLAN_STATUS: mockTaskConstants.PLAN_STATUS,
+  TASK_EXECUTION_MODE: mockTaskConstants.TASK_EXECUTION_MODE,
+  TASK_LIFECYCLE: mockTaskConstants.TASK_LIFECYCLE,
+  WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
@@ -100,9 +123,13 @@ it('implementation 仅产出步骤时自动确认并二次调度', () => {
   planningMocks.readTaskPlanningSnapshot.mockReturnValue({
     success: true,
     data: makeSnapshot({
-      task: { status: 'planning_approved' },
+      task: {
+        status: mockTaskConstants.TASK_STATUS.PLANNING_APPROVED,
+        lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+        currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.PLANNING,
+      },
       thread: { approvedPlanId: 'plan-1' },
-      currentPlan: { status: 'approved' },
+      currentPlan: { status: mockTaskConstants.PLAN_STATUS.APPROVED },
       plans: [plan],
       artifacts: [steps],
     }),
@@ -131,7 +158,12 @@ it('implementation 完成且有 commit 后自动调度 delivery', () => {
   planningMocks.readTaskPlanningSnapshot.mockReturnValue({
     success: true,
     data: makeSnapshot({
-      task: { status: 'implemented', commitShas: ['abc123'] },
+      task: {
+        status: mockTaskConstants.TASK_STATUS.IMPLEMENTED,
+        lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+        currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
+        commitShas: ['abc123'],
+      },
     }),
   });
 
@@ -153,7 +185,9 @@ it('已有 prUrl 时不重复调度 delivery', () => {
     success: true,
     data: makeSnapshot({
       task: {
-        status: 'implemented',
+        status: mockTaskConstants.TASK_STATUS.IMPLEMENTED,
+        lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+        currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
         commitShas: ['abc123'],
         prUrl: 'https://github.com/ranwawa/along/pull/1',
       },
@@ -175,7 +209,7 @@ const plan = {
   taskId: 'task-1',
   threadId: 'thread-1',
   version: 1,
-  status: 'approved',
+  status: mockTaskConstants.PLAN_STATUS.APPROVED,
   artifactId: 'art-plan',
   body: 'Plan',
   createdAt: '2026-01-01T00:00:01.000Z',
@@ -226,10 +260,12 @@ function makeSnapshot(
       title: 'Task',
       body: 'Body',
       source: 'web',
-      status: 'planning',
+      status: mockTaskConstants.TASK_STATUS.PLANNING,
+      lifecycle: mockTaskConstants.TASK_LIFECYCLE.OPEN,
+      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.PLANNING,
       activeThreadId: 'thread-1',
       commitShas: [],
-      executionMode: 'autonomous',
+      executionMode: mockTaskConstants.TASK_EXECUTION_MODE.AUTONOMOUS,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
       ...overrides.task,
@@ -237,8 +273,8 @@ function makeSnapshot(
     thread: {
       threadId: 'thread-1',
       taskId: 'task-1',
-      purpose: 'planning',
-      status: 'awaiting_approval',
+      purpose: mockTaskConstants.THREAD_PURPOSE.PLANNING,
+      status: mockTaskConstants.THREAD_STATUS.AWAITING_APPROVAL,
       currentPlanId: 'plan-1',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
@@ -249,12 +285,14 @@ function makeSnapshot(
         ? null
         : {
             ...plan,
-            status: 'active',
+            status: mockTaskConstants.PLAN_STATUS.ACTIVE,
             ...overrides.currentPlan,
           },
     openRound: overrides.openRound ?? null,
     artifacts: overrides.artifacts || [],
-    plans: overrides.plans || [{ ...plan, status: 'active' }],
+    plans: overrides.plans || [
+      { ...plan, status: mockTaskConstants.PLAN_STATUS.ACTIVE },
+    ],
     agentRuns: [],
     agentProgressEvents: [],
     agentSessionEvents: [],

@@ -1,3 +1,27 @@
+import type { TaskFlowSnapshot } from './types-flow';
+import type {
+  TaskDisplay,
+  TaskLifecycle,
+  WorkflowKind,
+} from './types-workflow';
+
+export type {
+  TaskFlowAction,
+  TaskFlowActionId,
+  TaskFlowEvent,
+  TaskFlowEventType,
+  TaskFlowSnapshot,
+  TaskFlowStage,
+  TaskFlowStageId,
+  TaskFlowStageState,
+} from './types-flow';
+export type {
+  TaskDisplay,
+  TaskDisplayState,
+  TaskLifecycle,
+  WorkflowKind,
+} from './types-workflow';
+
 export type TaskStatus =
   | 'planning'
   | 'planning_approved'
@@ -11,10 +35,18 @@ export type TaskStatus =
 export type TaskExecutionMode = 'manual' | 'autonomous';
 
 export type TaskThreadStatus =
+  | 'active'
+  | 'waiting_user'
+  | 'answered'
   | 'drafting'
   | 'awaiting_approval'
   | 'discussing'
-  | 'approved';
+  | 'approved'
+  | 'planned'
+  | 'implementing'
+  | 'verifying'
+  | 'completed'
+  | 'failed';
 
 export type TaskArtifactType =
   | 'user_message'
@@ -45,6 +77,8 @@ export interface TaskItemRecord {
   body: string;
   source: string;
   status: TaskStatus;
+  lifecycle?: TaskLifecycle;
+  currentWorkflowKind?: WorkflowKind;
   activeThreadId?: string;
   repoOwner?: string;
   repoName?: string;
@@ -64,7 +98,7 @@ export interface TaskItemRecord {
 export interface TaskThreadRecord {
   threadId: string;
   taskId: string;
-  purpose: 'planning';
+  purpose: WorkflowKind;
   status: TaskThreadStatus;
   currentPlanId?: string;
   openRoundId?: string;
@@ -204,94 +238,10 @@ export interface TaskAgentStageRecord {
   manualResume?: TaskAgentManualResume;
 }
 
-export type TaskFlowStageId =
-  | 'requirements'
-  | 'plan_discussion'
-  | 'plan_confirmation'
-  | 'implementation'
-  | 'delivery'
-  | 'completed';
-
-export type TaskFlowStageState =
-  | 'pending'
-  | 'current'
-  | 'completed'
-  | 'blocked'
-  | 'attention';
-
-export type TaskFlowActionId =
-  | 'submit_feedback'
-  | 'approve_plan'
-  | 'request_revision'
-  | 'rerun_planner'
-  | 'start_implementation'
-  | 'confirm_implementation_steps'
-  | 'resume_failed_stage'
-  | 'copy_resume_command'
-  | 'manual_complete'
-  | 'start_delivery'
-  | 'accept_delivery'
-  | 'request_changes'
-  | 'close_task';
-
-export type TaskFlowEventType =
-  | 'task_created'
-  | 'user_feedback'
-  | 'plan_revision'
-  | 'plan_approved'
-  | 'implementation_steps_approved'
-  | 'feedback_round'
-  | 'agent_run_started'
-  | 'agent_run_succeeded'
-  | 'agent_run_failed'
-  | 'agent_run_cancelled'
-  | 'delivery_updated'
-  | 'task_completed'
-  | 'task_closed';
-
-export interface TaskFlowAction {
-  id: TaskFlowActionId;
-  label: string;
-  description: string;
-  enabled: boolean;
-  disabledReason?: string;
-  stage: TaskFlowStageId;
-  variant: 'primary' | 'secondary' | 'danger';
-}
-
-export interface TaskFlowStage {
-  id: TaskFlowStageId;
-  label: string;
-  summary: string;
-  state: TaskFlowStageState;
-  blocker?: string;
-  details: string[];
-  startedAt?: string;
-  endedAt?: string;
-}
-
-export interface TaskFlowEvent {
-  eventId: string;
-  type: TaskFlowEventType;
-  stage: TaskFlowStageId;
-  title: string;
-  summary?: string;
-  occurredAt: string;
-}
-
-export interface TaskFlowSnapshot {
-  currentStageId: TaskFlowStageId;
-  conclusion: string;
-  severity: 'normal' | 'warning' | 'blocked' | 'success';
-  stages: TaskFlowStage[];
-  actions: TaskFlowAction[];
-  blockers: string[];
-  events: TaskFlowEvent[];
-}
-
 export interface TaskPlanningSnapshot {
   task: TaskItemRecord;
   thread: TaskThreadRecord;
+  display?: TaskDisplay;
   currentPlan: TaskPlanRevisionRecord | null;
   openRound: TaskFeedbackRoundRecord | null;
   artifacts: TaskArtifactRecord[];

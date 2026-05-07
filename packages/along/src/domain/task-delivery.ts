@@ -12,10 +12,13 @@ import {
   finishTaskAgentRun,
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
-  TASK_STATUS,
+  TASK_LIFECYCLE,
   type TaskAgentRunRecord,
   type TaskPlanningSnapshot,
+  THREAD_STATUS,
   updateTaskDelivery,
+  updateTaskWorkflowState,
+  WORKFLOW_KIND,
 } from './task-planning';
 import {
   defaultTaskWorktreeCommandRunner,
@@ -130,7 +133,12 @@ function failDeliveryRun(
   threadId: string,
   message: string,
 ): Result<never> {
-  updateTaskDelivery({ taskId, status: TASK_STATUS.IMPLEMENTED });
+  updateTaskWorkflowState({
+    taskId,
+    lifecycle: TASK_LIFECYCLE.READY,
+    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+    threadStatus: THREAD_STATUS.COMPLETED,
+  });
   recordTaskAgentResult({
     taskId,
     threadId,
@@ -167,11 +175,17 @@ export async function runTaskDelivery(
     });
   }
 
-  if (snapshot.task.status === TASK_STATUS.CLOSED) {
+  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return failure('Task 已关闭，不能交付');
   }
-  if (snapshot.task.status !== TASK_STATUS.IMPLEMENTED) {
-    return failure(`当前 Task 状态不能交付: ${snapshot.task.status}`);
+  if (
+    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.IMPLEMENTATION ||
+    snapshot.task.lifecycle !== TASK_LIFECYCLE.READY ||
+    snapshot.task.prUrl
+  ) {
+    return failure(
+      `当前 Task 工作流不能交付: ${snapshot.task.currentWorkflowKind}/${snapshot.task.lifecycle}`,
+    );
   }
 
   const repositoryRes = await ensureTaskRepository(snapshot, input.cwd, runner);
@@ -224,7 +238,6 @@ export async function runTaskDelivery(
 
   const startedRes = updateTaskDelivery({
     taskId: input.taskId,
-    status: TASK_STATUS.DELIVERING,
     worktreePath,
     branchName,
   });
@@ -234,6 +247,20 @@ export async function runTaskDelivery(
       input.taskId,
       snapshot.thread.threadId,
       startedRes.error,
+    );
+  }
+  const workflowStartedRes = updateTaskWorkflowState({
+    taskId: input.taskId,
+    lifecycle: TASK_LIFECYCLE.RUNNING,
+    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+    threadStatus: THREAD_STATUS.VERIFYING,
+  });
+  if (!workflowStartedRes.success) {
+    return failDeliveryRun(
+      run,
+      input.taskId,
+      snapshot.thread.threadId,
+      workflowStartedRes.error,
     );
   }
 
@@ -289,7 +316,6 @@ export async function runTaskDelivery(
     commitShas = [existingCommit];
     const commitMetaRes = updateTaskDelivery({
       taskId: input.taskId,
-      status: TASK_STATUS.DELIVERING,
       branchName,
       commitShas,
     });
@@ -418,7 +444,6 @@ export async function runTaskDelivery(
     const prNumber = parsePrNumber(prUrl);
     const deliveryRes = updateTaskDelivery({
       taskId: input.taskId,
-      status: TASK_STATUS.DELIVERED,
       branchName,
       commitShas,
       prUrl,
@@ -430,6 +455,20 @@ export async function runTaskDelivery(
         input.taskId,
         snapshot.thread.threadId,
         deliveryRes.error,
+      );
+    }
+    const workflowDeliveredRes = updateTaskWorkflowState({
+      taskId: input.taskId,
+      lifecycle: TASK_LIFECYCLE.READY,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: THREAD_STATUS.COMPLETED,
+    });
+    if (!workflowDeliveredRes.success) {
+      return failDeliveryRun(
+        run,
+        input.taskId,
+        snapshot.thread.threadId,
+        workflowDeliveredRes.error,
       );
     }
 

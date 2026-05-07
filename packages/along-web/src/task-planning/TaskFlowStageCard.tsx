@@ -3,7 +3,7 @@ import type {
   TaskFlowStage,
   TaskPlanRevisionRecord,
 } from '../types';
-import { getFlowActionClass, getFlowStageDotClass } from './format';
+import { getFlowActionClass, getFlowStageDotClass } from './flowFormat';
 
 export function getStageActionScope(
   actions: TaskFlowAction[],

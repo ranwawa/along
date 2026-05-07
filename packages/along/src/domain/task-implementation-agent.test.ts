@@ -2,23 +2,43 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const planningMocks = vi.hoisted(() => ({
   readTaskPlanningSnapshot: vi.fn(),
-  updateTaskStatus: vi.fn(),
+  updateTaskWorkflowState: vi.fn(),
 }));
 const runnerMock = vi.hoisted(() => vi.fn());
 const worktreeMock = vi.hoisted(() => vi.fn());
 const autoCommitMock = vi.hoisted(() => vi.fn());
-
-vi.mock('./task-planning', () => ({
+const mockTaskConstants = vi.hoisted(() => ({
   PLAN_STATUS: {
     APPROVED: 'approved',
   },
+  TASK_LIFECYCLE: {
+    CANCELLED: 'cancelled',
+    READY: 'ready',
+    RUNNING: 'running',
+  },
   TASK_STATUS: {
     PLANNING_APPROVED: 'planning_approved',
-    IMPLEMENTING: 'implementing',
-    IMPLEMENTED: 'implemented',
   },
+  THREAD_STATUS: {
+    APPROVED: 'approved',
+    IMPLEMENTING: 'implementing',
+  },
+  THREAD_PURPOSE: {
+    PLANNING: 'planning',
+  },
+  WORKFLOW_KIND: {
+    PLANNING: 'planning',
+    IMPLEMENTATION: 'implementation',
+  },
+}));
+
+vi.mock('./task-planning', () => ({
+  PLAN_STATUS: mockTaskConstants.PLAN_STATUS,
+  TASK_LIFECYCLE: mockTaskConstants.TASK_LIFECYCLE,
+  THREAD_STATUS: mockTaskConstants.THREAD_STATUS,
+  WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
-  updateTaskStatus: planningMocks.updateTaskStatus,
+  updateTaskWorkflowState: planningMocks.updateTaskWorkflowState,
 }));
 
 vi.mock('./task-agent-runtime', () => ({
@@ -42,7 +62,9 @@ const approvedSnapshot = {
     title: '移动演示数据按钮',
     body: '删除下方的演示数据按钮应该位于礼薄列表上方。',
     source: 'web',
-    status: 'planning_approved',
+    status: mockTaskConstants.TASK_STATUS.PLANNING_APPROVED,
+    lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+    currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.PLANNING,
     activeThreadId: 'thread-1',
     repoOwner: 'ranwawa',
     repoName: 'kinkeeper',
@@ -53,8 +75,8 @@ const approvedSnapshot = {
   thread: {
     threadId: 'thread-1',
     taskId: 'task-1',
-    purpose: 'planning',
-    status: 'approved',
+    purpose: mockTaskConstants.THREAD_PURPOSE.PLANNING,
+    status: mockTaskConstants.THREAD_STATUS.APPROVED,
     currentPlanId: 'plan-1',
     approvedPlanId: 'plan-1',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -65,7 +87,7 @@ const approvedSnapshot = {
     taskId: 'task-1',
     threadId: 'thread-1',
     version: 1,
-    status: 'approved',
+    status: mockTaskConstants.PLAN_STATUS.APPROVED,
     artifactId: 'art-plan',
     body: '## 方案\n\n移动按钮。',
     createdAt: '2026-01-01T00:00:01.000Z',
@@ -89,7 +111,7 @@ const approvedSnapshot = {
       taskId: 'task-1',
       threadId: 'thread-1',
       version: 1,
-      status: 'approved',
+      status: mockTaskConstants.PLAN_STATUS.APPROVED,
       artifactId: 'art-plan',
       body: '## 方案\n\n移动按钮。',
       createdAt: '2026-01-01T00:00:01.000Z',
@@ -148,7 +170,7 @@ describe('task-implementation-agent', () => {
       success: true,
       data: approvedSnapshot,
     });
-    planningMocks.updateTaskStatus.mockReturnValue({
+    planningMocks.updateTaskWorkflowState.mockReturnValue({
       success: true,
       data: undefined,
     });
@@ -199,7 +221,7 @@ describe('task-implementation-agent', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
-    expect(planningMocks.updateTaskStatus).not.toHaveBeenCalled();
+    expect(planningMocks.updateTaskWorkflowState).not.toHaveBeenCalled();
     expect(worktreeMock).not.toHaveBeenCalled();
     expect(autoCommitMock).not.toHaveBeenCalled();
     expect(result.data.commitShas).toEqual([]);
@@ -236,7 +258,7 @@ describe('task-implementation-agent', () => {
     expect(runnerMock).not.toHaveBeenCalled();
     expect(worktreeMock).not.toHaveBeenCalled();
     expect(autoCommitMock).not.toHaveBeenCalled();
-    expect(planningMocks.updateTaskStatus).not.toHaveBeenCalled();
+    expect(planningMocks.updateTaskWorkflowState).not.toHaveBeenCalled();
   });
 
   it('当实施步骤已人工确认时，期望启动实现 Agent 并在完成后自动提交', async () => {
@@ -252,12 +274,13 @@ describe('task-implementation-agent', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
-    expect(planningMocks.updateTaskStatus).toHaveBeenNthCalledWith(
-      1,
-      'task-1',
-      'implementing',
-    );
-    expect(planningMocks.updateTaskStatus).toHaveBeenCalledTimes(1);
+    expect(planningMocks.updateTaskWorkflowState).toHaveBeenNthCalledWith(1, {
+      taskId: 'task-1',
+      lifecycle: mockTaskConstants.TASK_LIFECYCLE.RUNNING,
+      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: mockTaskConstants.THREAD_STATUS.IMPLEMENTING,
+    });
+    expect(planningMocks.updateTaskWorkflowState).toHaveBeenCalledTimes(1);
     expect(result.data.commitShas).toEqual(['abc123']);
     expect(runnerMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -296,11 +319,12 @@ describe('task-implementation-agent', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(planningMocks.updateTaskStatus).toHaveBeenNthCalledWith(
-      2,
-      'task-1',
-      'planning_approved',
-    );
+    expect(planningMocks.updateTaskWorkflowState).toHaveBeenNthCalledWith(2, {
+      taskId: 'task-1',
+      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
+      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.PLANNING,
+      threadStatus: mockTaskConstants.THREAD_STATUS.APPROVED,
+    });
   });
 
   it('当 auto-commit 失败后，期望反馈错误给实现 Agent 修复并重试提交', async () => {
@@ -363,6 +387,6 @@ describe('task-implementation-agent', () => {
 
     expect(result.success).toBe(false);
     expect(runnerMock).not.toHaveBeenCalled();
-    expect(planningMocks.updateTaskStatus).not.toHaveBeenCalled();
+    expect(planningMocks.updateTaskWorkflowState).not.toHaveBeenCalled();
   });
 });

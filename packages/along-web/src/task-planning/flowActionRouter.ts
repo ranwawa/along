@@ -59,6 +59,7 @@ function runStageAction(
 ) {
   if (id === 'approve_plan')
     runSimpleAction('approve', 'approve', input.canApprove);
+  if (id === 'request_plan') runSimpleAction('planner', 'planner', true);
   if (id === 'rerun_planner') runSimpleAction('planner', 'planner', true);
   if (id === 'start_implementation') {
     runSimpleAction('implementation', 'implementation', input.canImplement);

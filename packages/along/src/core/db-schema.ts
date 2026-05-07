@@ -50,7 +50,9 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS task_items (
     task_id TEXT PRIMARY KEY,
     title TEXT NOT NULL, body TEXT NOT NULL, source TEXT NOT NULL,
-    status TEXT NOT NULL, active_thread_id TEXT, repo_owner TEXT, repo_name TEXT,
+    active_thread_id TEXT, repo_owner TEXT, repo_name TEXT,
+    lifecycle TEXT NOT NULL DEFAULT 'open',
+    current_workflow_kind TEXT NOT NULL DEFAULT 'ask',
     cwd TEXT, worktree_path TEXT, branch_name TEXT, commit_shas TEXT DEFAULT '[]',
     pr_url TEXT, pr_number INTEGER, seq INTEGER, type TEXT,
     execution_mode TEXT NOT NULL DEFAULT 'manual',
@@ -147,7 +149,6 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_comment_mirror_issue ON comment_mirror(owner, repo, issue_number, comment_id)',
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_revisions_active_issue ON plan_revisions(owner, repo, issue_number) WHERE status = 'active'",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_discussion_rounds_open_issue ON discussion_rounds(owner, repo, issue_number) WHERE status IN ('open','processing','stale_partial')",
-  'CREATE INDEX IF NOT EXISTS idx_task_items_status ON task_items(status, updated_at)',
   'CREATE INDEX IF NOT EXISTS idx_task_threads_task ON task_threads(task_id, purpose, status)',
   'CREATE INDEX IF NOT EXISTS idx_task_artifacts_thread ON task_artifacts(thread_id, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_task_attachments_artifact ON task_attachments(artifact_id, created_at)',
@@ -182,6 +183,8 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE task_items ADD COLUMN seq INTEGER',
   'ALTER TABLE task_items ADD COLUMN type TEXT',
   "ALTER TABLE task_items ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'manual'",
+  "ALTER TABLE task_items ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'open'",
+  "ALTER TABLE task_items ADD COLUMN current_workflow_kind TEXT NOT NULL DEFAULT 'ask'",
 ];
 
 function execRequired(db: Database, statements: string[]) {

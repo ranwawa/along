@@ -15,8 +15,11 @@ import {
   createPlanningTask,
   listTaskPlanningSnapshots,
   readTaskPlanningSnapshot,
+  requestTaskPlan,
   submitTaskMessage,
+  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
+  WORKFLOW_KIND,
 } from '../domain/task-planning';
 import type { TaskApiContext } from './task-api';
 import { readTaskAttachmentResponse } from './task-api-attachments';
@@ -220,6 +223,8 @@ export async function handleTaskPlannerRequest(
   if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
   const snapshotError = readExistingTaskError(taskId);
   if (snapshotError) return snapshotError;
+  const requestPlanRes = requestTaskPlan(taskId);
+  if (!requestPlanRes.success) return errorResponse(requestPlanRes.error, 409);
 
   const scheduledRes = schedulePlannerIfNeeded(
     { ...bodyRes.data, autoRun: true },
@@ -242,7 +247,7 @@ export async function handleTaskImplementationRequest(
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
-  if (snapshotRes.data.task.status === 'closed') {
+  if (snapshotRes.data.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return errorResponse('Task 已关闭，不能开始实现', 409);
   }
   if (!snapshotRes.data.thread.approvedPlanId) {
@@ -297,10 +302,15 @@ export async function handleTaskDeliveryRequest(
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
-  if (snapshotRes.data.task.status === 'closed') {
+  if (snapshotRes.data.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return errorResponse('Task 已关闭，不能开始交付', 409);
   }
-  if (snapshotRes.data.task.status !== 'implemented') {
+  if (
+    snapshotRes.data.task.currentWorkflowKind !==
+      WORKFLOW_KIND.IMPLEMENTATION ||
+    snapshotRes.data.task.lifecycle !== TASK_LIFECYCLE.READY ||
+    snapshotRes.data.task.prUrl
+  ) {
     return errorResponse('当前 Task 只有在已实现后才能交付', 409);
   }
 
@@ -345,7 +355,7 @@ function readExistingTaskError(taskId: string): Response | null {
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
-  if (snapshotRes.data.task.status === 'closed') {
+  if (snapshotRes.data.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return errorResponse('Task 已关闭，不能继续推进', 409);
   }
   return null;
