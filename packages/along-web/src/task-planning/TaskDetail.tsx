@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type {
   TaskArtifactRecord,
+  TaskExecutionMode,
   TaskFlowAction,
   TaskPlanningSnapshot,
 } from '../types';
@@ -15,8 +16,8 @@ import { AgentStagesPanel } from './AgentStagesPanel';
 import type { DraftTaskInput, RepositoryOption } from './api';
 import { ExistingTaskComposer } from './ExistingTaskComposer';
 import { formatTime, getTaskStatusLabel, getThreadStatusLabel } from './format';
+import { TaskComposerInput } from './TaskComposerInput';
 import { FlowHistory, TaskFlowPanel } from './TaskFlowPanel';
-import { ImageAttachmentPicker } from './TaskImageAttachments';
 import { TaskProgressPanel } from './TaskProgressPanel';
 import { TaskRecordsPanel } from './TaskRecords';
 
@@ -125,50 +126,21 @@ function NewTaskComposer({
   onDraftAttachmentsChange: (files: File[]) => void;
   onCreateTask: (event: FormEvent) => void;
 }) {
+  const hasDraft = Boolean(draft.body.trim()) || draft.attachments.length > 0;
   return (
-    <form onSubmit={onCreateTask} className="flex flex-col gap-3">
-      <div className="text-sm font-semibold text-text-secondary">任务内容</div>
-      <textarea
-        value={draft.body}
-        onChange={(event) => onDraftChange('body', event.target.value)}
-        placeholder="输入任务目标或问题"
-        rows={2}
-        className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60"
-      />
-      <ImageAttachmentPicker
-        attachments={draft.attachments}
-        onChange={onDraftAttachmentsChange}
-      />
-      <label className="flex flex-col gap-1 text-xs text-text-muted">
-        执行模式
-        <select
-          value={draft.executionMode}
-          onChange={(event) =>
-            onDraftChange('executionMode', event.target.value)
-          }
-          className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm text-text-primary outline-none focus:ring-1 focus:ring-brand/60"
-        >
-          <option value="manual">人工确认</option>
-          <option value="autonomous">全自动</option>
-        </select>
-      </label>
-      <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0 text-xs text-text-muted">
-          {selectedRepository ? '将创建到当前仓库。' : '请先选择仓库。'}
-        </span>
-        <button
-          type="submit"
-          disabled={
-            !selectedRepository ||
-            (!draft.body.trim() && draft.attachments.length === 0) ||
-            busyAction === 'create'
-          }
-          className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold bg-brand text-white border border-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {busyAction === 'create' ? '发送中' : '发送'}
-        </button>
-      </div>
-    </form>
+    <TaskComposerInput
+      attachments={draft.attachments}
+      body={draft.body}
+      busy={busyAction === 'create'}
+      executionMode={draft.executionMode}
+      placeholder={selectedRepository ? '输入任务目标或问题' : '请先选择仓库'}
+      submitDisabled={!selectedRepository || !hasDraft || Boolean(busyAction)}
+      submitTitle="创建任务"
+      onAttachmentsChange={onDraftAttachmentsChange}
+      onBodyChange={(value) => onDraftChange('body', value)}
+      onExecutionModeChange={(value) => onDraftChange('executionMode', value)}
+      onSubmit={onCreateTask}
+    />
   );
 }
 
@@ -185,12 +157,14 @@ type TaskDetailProps = {
   sortedArtifacts: TaskArtifactRecord[];
   messageBody: string;
   messageAttachments: File[];
+  messageExecutionMode: TaskExecutionMode;
   busyAction: string | null;
   onDraftChange: (key: keyof DraftTaskInput, value: string) => void;
   onDraftAttachmentsChange: (files: File[]) => void;
   onCreateTask: (event: FormEvent) => void;
   onMessageChange: (value: string) => void;
   onMessageAttachmentsChange: (files: File[]) => void;
+  onMessageExecutionModeChange: (value: TaskExecutionMode) => void;
   onSubmitMessage: () => void;
   onAction: (action: TaskFlowAction) => void;
 };
@@ -317,9 +291,11 @@ function SelectedTaskDetail({
             flow={selected.flow}
             messageBody={detail.messageBody}
             attachments={detail.messageAttachments}
+            executionMode={detail.messageExecutionMode}
             busyAction={detail.busyAction}
             onMessageChange={detail.onMessageChange}
             onAttachmentsChange={detail.onMessageAttachmentsChange}
+            onExecutionModeChange={detail.onMessageExecutionModeChange}
             onSubmitMessage={detail.onSubmitMessage}
           />
         </div>

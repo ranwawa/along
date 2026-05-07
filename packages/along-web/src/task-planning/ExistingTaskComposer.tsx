@@ -1,6 +1,9 @@
-import type { TaskFlowAction, TaskPlanningSnapshot } from '../types';
-import { getFlowActionClass } from './format';
-import { ImageAttachmentPicker } from './TaskImageAttachments';
+import type {
+  TaskExecutionMode,
+  TaskFlowAction,
+  TaskPlanningSnapshot,
+} from '../types';
+import { TaskComposerInput } from './TaskComposerInput';
 
 function getMessageActions(flow: TaskPlanningSnapshot['flow']) {
   const submitFeedbackAction = flow.actions.find(
@@ -19,80 +22,49 @@ function getMessageActions(flow: TaskPlanningSnapshot['flow']) {
       );
 }
 
-function MessageActionButtons({
-  actions,
-  busyAction,
-  hasDraft,
-}: {
-  actions: TaskFlowAction[];
-  busyAction: string | null;
-  hasDraft: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {actions.map((action) => (
-        <button
-          key={action.id}
-          type="submit"
-          disabled={!action.enabled || !hasDraft || Boolean(busyAction)}
-          title={!action.enabled ? action.disabledReason : action.description}
-          className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getFlowActionClass(
-            action,
-          )}`}
-        >
-          {busyAction === 'message' ? '发送中' : action.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function ExistingTaskComposer({
   flow,
   messageBody,
   attachments,
+  executionMode,
   busyAction,
   onMessageChange,
   onAttachmentsChange,
+  onExecutionModeChange,
   onSubmitMessage,
 }: {
   flow: TaskPlanningSnapshot['flow'];
   messageBody: string;
   attachments: File[];
+  executionMode: TaskExecutionMode;
   busyAction: string | null;
   onMessageChange: (value: string) => void;
   onAttachmentsChange: (files: File[]) => void;
+  onExecutionModeChange: (value: TaskExecutionMode) => void;
   onSubmitMessage: () => void;
 }) {
   const messageActions = getMessageActions(flow);
   const canSubmitMessage = messageActions.some((action) => action.enabled);
   const hasDraft = Boolean(messageBody.trim()) || attachments.length > 0;
+  const submitAction =
+    messageActions.find((action) => action.enabled) || messageActions[0];
   return (
-    <form
+    <TaskComposerInput
+      attachments={attachments}
+      body={messageBody}
+      busy={busyAction === 'message'}
+      disabled={!canSubmitMessage}
+      executionMode={executionMode}
+      placeholder="补充反馈、继续提问或说明交付后的修改要求"
+      submitDisabled={!canSubmitMessage || !hasDraft || Boolean(busyAction)}
+      submitTitle={submitAction?.description || submitAction?.label || '发送'}
+      onAttachmentsChange={onAttachmentsChange}
+      onBodyChange={onMessageChange}
+      onExecutionModeChange={onExecutionModeChange}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmitMessage();
       }}
-      className="flex flex-col gap-3"
-    >
-      <textarea
-        value={messageBody}
-        onChange={(event) => onMessageChange(event.target.value)}
-        placeholder="补充反馈、继续提问或说明交付后的修改要求"
-        rows={2}
-        disabled={!canSubmitMessage}
-        className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none resize-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
-      />
-      <ImageAttachmentPicker
-        attachments={attachments}
-        disabled={!canSubmitMessage}
-        onChange={onAttachmentsChange}
-      />
-      <MessageActionButtons
-        actions={messageActions}
-        busyAction={busyAction}
-        hasDraft={hasDraft}
-      />
-    </form>
+    />
   );
 }

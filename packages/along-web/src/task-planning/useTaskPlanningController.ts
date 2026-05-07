@@ -1,5 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { TaskFlowActionId, TaskPlanningSnapshot } from '../types';
+import type {
+  TaskExecutionMode,
+  TaskFlowActionId,
+  TaskPlanningSnapshot,
+} from '../types';
 import type { RepositoryOption } from './api';
 import { useTaskPlanningActions } from './useTaskPlanningActions';
 import {
@@ -27,6 +31,8 @@ function usePlanningBaseState() {
   const repositoryState = useRepositories();
   const [messageBody, setMessageBody] = useState('');
   const [messageAttachments, setMessageAttachments] = useState<File[]>([]);
+  const [messageExecutionMode, setMessageExecutionMode] =
+    useState<TaskExecutionMode>('manual');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [repositoriesRefreshing, setRepositoriesRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +43,8 @@ function usePlanningBaseState() {
     setMessageBody,
     messageAttachments,
     setMessageAttachments,
+    messageExecutionMode,
+    setMessageExecutionMode,
     busyAction,
     setBusyAction,
     repositoriesRefreshing,
@@ -127,6 +135,7 @@ function usePlanningActions(
     draft: base.repositoryState.draft,
     messageBody: base.messageBody,
     messageAttachments: base.messageAttachments,
+    messageExecutionMode: base.messageExecutionMode,
     busyAction: base.busyAction,
     repositoriesRefreshing: base.repositoriesRefreshing,
     ...flowFlags,
@@ -137,6 +146,7 @@ function usePlanningActions(
     setSelectedSnapshot: base.taskState.setSelectedSnapshot,
     setMessageBody: base.setMessageBody,
     setMessageAttachments: base.setMessageAttachments,
+    setMessageExecutionMode: base.setMessageExecutionMode,
     setBusyAction: base.setBusyAction,
     setRepositoriesRefreshing: base.setRepositoriesRefreshing,
     setError: base.setError,
@@ -157,12 +167,14 @@ export function useTaskPlanningController() {
     ...derived,
     messageBody: base.messageBody,
     messageAttachments: base.messageAttachments,
+    messageExecutionMode: base.messageExecutionMode,
     loading: loadState.loading,
     busyAction: base.busyAction,
     repositoriesRefreshing: base.repositoriesRefreshing,
     error: base.error,
     setMessageBody: base.setMessageBody,
     setMessageAttachments: base.setMessageAttachments,
+    setMessageExecutionMode: base.setMessageExecutionMode,
     ...actions,
   };
 }

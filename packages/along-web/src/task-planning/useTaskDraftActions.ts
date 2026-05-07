@@ -47,6 +47,7 @@ function clearSelectedTask(input: UseTaskPlanningActionsInput) {
   input.setSelectedSnapshot(null);
   input.setMessageBody('');
   input.setMessageAttachments([]);
+  input.setMessageExecutionMode('manual');
 }
 
 function resetDraft(input: UseTaskPlanningActionsInput) {

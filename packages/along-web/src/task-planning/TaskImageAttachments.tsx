@@ -1,6 +1,7 @@
 import {
   type ChangeEvent,
   type DragEvent,
+  type ReactNode,
   type RefObject,
   useEffect,
   useRef,
@@ -61,26 +62,23 @@ function ImageAttachmentThumb({
     return () => URL.revokeObjectURL(objectUrl);
   }, [file]);
   return (
-    <div className="flex h-16 min-w-0 items-center gap-2 rounded-lg border border-border-color bg-black/25 p-2">
+    <div className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-border-color bg-black/25">
       {url && (
         <img
           src={url}
-          alt={file.name}
-          className="h-12 w-12 shrink-0 rounded object-cover"
+          alt="待发送图片"
+          className="h-full w-full object-cover"
         />
       )}
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-xs text-text-secondary">{file.name}</div>
-        <div className="text-[11px] text-text-muted">
-          {formatFileSize(file.size)}
-        </div>
-      </div>
       <button
         type="button"
+        aria-label="删除图片"
         onClick={onRemove}
-        className="shrink-0 rounded border border-border-color px-2 py-1 text-[11px] text-text-muted hover:text-text-primary"
+        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border border-border-color bg-black/70 text-text-primary opacity-0 transition-opacity hover:bg-black focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-brand/70 group-hover:opacity-100 group-focus-within:opacity-100"
       >
-        删除
+        <span aria-hidden="true" className="text-base leading-none">
+          ×
+        </span>
       </button>
     </div>
   );
@@ -95,7 +93,7 @@ function ImageAttachmentList({
 }) {
   if (attachments.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div className="flex flex-wrap gap-2">
       {attachments.map((file) => (
         <ImageAttachmentThumb
           key={`${file.name}-${file.size}-${file.lastModified}`}
@@ -107,7 +105,7 @@ function ImageAttachmentList({
   );
 }
 
-function ImageAttachmentActions({
+function DefaultImageAttachmentActions({
   attachments,
   disabled,
   inputRef,
@@ -122,13 +120,22 @@ function ImageAttachmentActions({
         onClick={() => inputRef.current?.click()}
         className="rounded-lg border border-border-color bg-black/25 px-3 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
       >
-        添加图片
+        图片
       </button>
       <span className="text-[11px] text-text-muted">
         {attachments.length}/{MAX_IMAGE_COUNT}
       </span>
     </div>
   );
+}
+
+export interface ImageAttachmentPickerRenderProps {
+  canAdd: boolean;
+  count: number;
+  error: ReactNode;
+  maxCount: number;
+  openPicker: () => void;
+  previews: ReactNode;
 }
 
 function HiddenImageInput({
@@ -150,11 +157,10 @@ function HiddenImageInput({
   );
 }
 
-export function ImageAttachmentPicker({
+function useImageAttachmentInput({
   attachments,
-  disabled,
   onChange,
-}: ImageAttachmentPickerProps) {
+}: Pick<ImageAttachmentPickerProps, 'attachments' | 'onChange'>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const addFiles = (files: File[]) => {
@@ -166,11 +172,91 @@ export function ImageAttachmentPicker({
     addFiles(Array.from(event.target.files || []));
     event.target.value = '';
   };
-  const onDrop = (event: DragEvent<HTMLFieldSetElement>) => {
+  return { addFiles, error, inputRef, onFileChange };
+}
+
+function buildPickerRenderProps({
+  attachments,
+  canAdd,
+  error,
+  onChange,
+  openPicker,
+}: {
+  attachments: File[];
+  canAdd: boolean;
+  error: string | null;
+  onChange: (files: File[]) => void;
+  openPicker: () => void;
+}): ImageAttachmentPickerRenderProps {
+  return {
+    canAdd,
+    count: attachments.length,
+    error: error ? (
+      <div className="text-xs text-status-error">{error}</div>
+    ) : null,
+    maxCount: MAX_IMAGE_COUNT,
+    openPicker,
+    previews: (
+      <ImageAttachmentList attachments={attachments} onChange={onChange} />
+    ),
+  };
+}
+
+function DefaultImageAttachmentPickerContent({
+  attachments,
+  disabled,
+  inputRef,
+  renderProps,
+}: Pick<ImageAttachmentPickerProps, 'attachments' | 'disabled'> & {
+  inputRef: RefObject<HTMLInputElement | null>;
+  renderProps: ImageAttachmentPickerRenderProps;
+}) {
+  return (
+    <>
+      <DefaultImageAttachmentActions
+        attachments={attachments}
+        disabled={disabled}
+        inputRef={inputRef}
+      />
+      {renderProps.previews}
+      {renderProps.error}
+    </>
+  );
+}
+
+function useImageAttachmentDrop(
+  disabled: boolean | undefined,
+  addFiles: (files: File[]) => void,
+) {
+  return (event: DragEvent<HTMLFieldSetElement>) => {
     event.preventDefault();
     if (disabled) return;
     addFiles(Array.from(event.dataTransfer.files));
   };
+}
+
+export function ImageAttachmentPicker({
+  attachments,
+  children,
+  disabled,
+  onChange,
+}: ImageAttachmentPickerProps) {
+  const { addFiles, error, inputRef, onFileChange } = useImageAttachmentInput({
+    attachments,
+    onChange,
+  });
+  const onDrop = useImageAttachmentDrop(disabled, addFiles);
+  const canAdd = !disabled && attachments.length < MAX_IMAGE_COUNT;
+  const openPicker = () => {
+    if (canAdd) inputRef.current?.click();
+  };
+  const renderProps = buildPickerRenderProps({
+    attachments,
+    canAdd,
+    error,
+    onChange,
+    openPicker,
+  });
   return (
     <fieldset
       onDragOver={(event) => event.preventDefault()}
@@ -179,18 +265,22 @@ export function ImageAttachmentPicker({
     >
       <HiddenImageInput inputRef={inputRef} onFileChange={onFileChange} />
       <legend className="sr-only">图片附件</legend>
-      <ImageAttachmentActions
-        attachments={attachments}
-        disabled={disabled}
-        inputRef={inputRef}
-      />
-      <ImageAttachmentList attachments={attachments} onChange={onChange} />
-      {error && <div className="text-xs text-status-error">{error}</div>}
+      {children ? (
+        children(renderProps)
+      ) : (
+        <DefaultImageAttachmentPickerContent
+          attachments={attachments}
+          disabled={disabled}
+          inputRef={inputRef}
+          renderProps={renderProps}
+        />
+      )}
     </fieldset>
   );
 }
 interface ImageAttachmentPickerProps {
   attachments: File[];
+  children?: (props: ImageAttachmentPickerRenderProps) => ReactNode;
   disabled?: boolean;
   onChange: (files: File[]) => void;
 }
