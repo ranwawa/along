@@ -167,6 +167,9 @@ export async function runTaskDelivery(
     });
   }
 
+  if (snapshot.task.status === TASK_STATUS.CLOSED) {
+    return failure('Task 已关闭，不能交付');
+  }
   if (snapshot.task.status !== TASK_STATUS.IMPLEMENTED) {
     return failure(`当前 Task 状态不能交付: ${snapshot.task.status}`);
   }

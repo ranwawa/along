@@ -150,6 +150,9 @@ function readApprovedImplementationContext(
   if (!snapshotRes.success) return failure(snapshotRes.error);
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
+  if (snapshot.task.status === TASK_STATUS.CLOSED) {
+    return failure('Task 已关闭，不能开始实现');
+  }
 
   const approvedPlan = findApprovedPlan(snapshot);
   if (!approvedPlan) return failure('当前 Task 没有已批准方案，不能开始实现');

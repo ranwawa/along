@@ -8,6 +8,9 @@ const planningMocks = vi.hoisted(() => ({
 const runnerMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./task-planning', () => ({
+  TASK_STATUS: {
+    CLOSED: 'closed',
+  },
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   publishTaskPlanRevision: planningMocks.publishTaskPlanRevision,
   publishPlanningUpdate: planningMocks.publishPlanningUpdate,

@@ -58,6 +58,7 @@ export function continueAutonomousTaskAfterPlanning(
   const snapshotRes = readRequiredSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
+  if (snapshot.task.status === TASK_STATUS.CLOSED) return success('skipped');
   if (!isAutonomous(snapshot)) return success('skipped');
   if (
     !snapshot.currentPlan ||
@@ -87,6 +88,7 @@ export function continueAutonomousTaskAfterImplementation(
   const snapshotRes = readRequiredSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
+  if (snapshot.task.status === TASK_STATUS.CLOSED) return success('skipped');
   if (!isAutonomous(snapshot)) return success('skipped');
 
   if (snapshot.task.status === TASK_STATUS.PLANNING_APPROVED) {

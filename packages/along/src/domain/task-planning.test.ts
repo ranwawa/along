@@ -315,6 +315,19 @@ const mockDbState = vi.hoisted(() => {
           return { changes: row ? 1 : 0 };
         }
 
+        if (
+          normalized ===
+          'UPDATE task_threads SET open_round_id = NULL, updated_at = ? WHERE thread_id = ?'
+        ) {
+          const [updatedAt, threadId] = args;
+          const row = findThread(String(threadId));
+          if (row) {
+            row.open_round_id = null;
+            row.updated_at = updatedAt;
+          }
+          return { changes: row ? 1 : 0 };
+        }
+
         if (normalized.startsWith('INSERT INTO task_feedback_rounds')) {
           const [
             roundId,
@@ -466,6 +479,19 @@ const mockDbState = vi.hoisted(() => {
           if (row) {
             row.status = status;
             row.resolution = resolution;
+            row.resolved_at = resolvedAt;
+          }
+          return { changes: row ? 1 : 0 };
+        }
+
+        if (
+          normalized ===
+          'UPDATE task_feedback_rounds SET status = ?, resolved_at = ? WHERE round_id = ?'
+        ) {
+          const [status, resolvedAt, roundId] = args;
+          const row = state.rounds.find((item) => item.round_id === roundId);
+          if (row) {
+            row.status = status;
             row.resolved_at = resolvedAt;
           }
           return { changes: row ? 1 : 0 };
@@ -628,6 +654,21 @@ const mockDbState = vi.hoisted(() => {
         }
 
         if (normalized.startsWith('UPDATE task_agent_runs SET status = ?')) {
+          if (normalized.includes('WHERE run_id = ? AND status = ?')) {
+            const [status, outputIds, error, endedAt, runId, currentStatus] =
+              args;
+            const row = state.runs.find(
+              (item) => item.run_id === runId && item.status === currentStatus,
+            );
+            if (row) {
+              row.status = status;
+              row.output_artifact_ids = outputIds;
+              row.error = error;
+              row.ended_at = endedAt;
+            }
+            return { changes: row ? 1 : 0 };
+          }
+
           const [status, endSessionId, outputIds, error, endedAt, runId] = args;
           const row = state.runs.find((item) => item.run_id === runId);
           if (row) {
@@ -719,6 +760,7 @@ vi.mock('../core/db', () => ({
 import {
   AGENT_RUN_STATUS,
   approveCurrentTaskPlan,
+  closeTask,
   completeDeliveredTask,
   createPlanningTask,
   createTaskAgentRun,
@@ -923,6 +965,131 @@ describe('task-planning', () => {
         ?.label,
     ).toBe('已完成');
     expect(completed.data.flow.conclusion).toBe('任务已完成，关键产物已归档。');
+  });
+
+  it.each([
+    TASK_STATUS.PLANNING,
+    TASK_STATUS.PLANNING_APPROVED,
+    TASK_STATUS.IMPLEMENTING,
+    TASK_STATUS.IMPLEMENTED,
+    TASK_STATUS.DELIVERING,
+    TASK_STATUS.DELIVERED,
+  ])('当 %s 状态关闭任务时，期望进入 closed 并记录关闭事件', (status) => {
+    const { taskId } = createTaskWithPlan();
+    const approve = approveCurrentTaskPlan(taskId);
+    expect(approve.success).toBe(true);
+    const statusRes = updateTaskStatus(taskId, status);
+    expect(statusRes.success).toBe(true);
+
+    const closed = closeTask(taskId, '无需继续');
+    expect(closed.success).toBe(true);
+    if (!closed.success) throw new Error(closed.error);
+
+    expect(closed.data.task.status).toBe(TASK_STATUS.CLOSED);
+    expect(closed.data.flow.currentStageId).toBe('completed');
+    expect(closed.data.flow.conclusion).toBe('任务已关闭，不再继续推进。');
+    expect(closed.data.flow.actions).toEqual([]);
+    expect(closed.data.artifacts.at(-1)).toMatchObject({
+      type: 'task_closed',
+      role: 'system',
+      metadata: expect.objectContaining({
+        previousStatus: status,
+        reason: '无需继续',
+      }),
+    });
+    expect(
+      closed.data.flow.events.find((event) => event.type === 'task_closed'),
+    ).toMatchObject({
+      title: '任务已关闭',
+      summary: expect.stringContaining(`关闭前状态：${status}`),
+    });
+  });
+
+  it('当关闭已完成任务时，期望返回冲突语义的失败结果', () => {
+    const { taskId } = createTaskWithPlan();
+    const approve = approveCurrentTaskPlan(taskId);
+    expect(approve.success).toBe(true);
+    const delivered = updateTaskStatus(taskId, TASK_STATUS.DELIVERED);
+    expect(delivered.success).toBe(true);
+    const completed = completeDeliveredTask(taskId);
+    expect(completed.success).toBe(true);
+
+    const closed = closeTask(taskId);
+    expect(closed.success).toBe(false);
+    if (closed.success) throw new Error('expected failure');
+    expect(closed.error).toBe('已完成 Task 不能关闭');
+  });
+
+  it('当重复关闭任务时，期望幂等返回当前 closed snapshot', () => {
+    const { taskId } = createTaskWithPlan();
+    const first = closeTask(taskId);
+    expect(first.success).toBe(true);
+    const second = closeTask(taskId);
+    expect(second.success).toBe(true);
+    if (!second.success) throw new Error(second.error);
+
+    expect(second.data.task.status).toBe(TASK_STATUS.CLOSED);
+    expect(
+      second.data.artifacts.filter(
+        (artifact) => artifact.type === 'task_closed',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('当关闭带开放反馈和运行中 Agent 的任务时，期望关闭反馈并取消运行', () => {
+    const { taskId } = createTaskWithPlan();
+    const feedback = submitTaskMessage({ taskId, body: '需要补充约束。' });
+    expect(feedback.success).toBe(true);
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+    const run = createTaskAgentRun({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'codex',
+    });
+    expect(run.success).toBe(true);
+
+    const closed = closeTask(taskId);
+    expect(closed.success).toBe(true);
+    if (!closed.success) throw new Error(closed.error);
+
+    expect(closed.data.openRound).toBeNull();
+    expect(closed.data.agentRuns[0].status).toBe(AGENT_RUN_STATUS.CANCELLED);
+    expect(closed.data.agentStages[0].status).not.toBe(
+      AGENT_RUN_STATUS.RUNNING,
+    );
+    expect(closed.data.flow.blockers).not.toContain(
+      '当前反馈轮次已打开，等待 Planner 处理你的补充反馈。',
+    );
+  });
+
+  it('当任务已关闭后继续推进流程时，期望拒绝且不改变 closed 状态', () => {
+    const { taskId } = createTaskWithPlan();
+    const closed = closeTask(taskId);
+    expect(closed.success).toBe(true);
+
+    expect(approveCurrentTaskPlan(taskId).success).toBe(false);
+    expect(submitTaskMessage({ taskId, body: '继续' }).success).toBe(false);
+    expect(updateTaskStatus(taskId, TASK_STATUS.IMPLEMENTED).success).toBe(
+      false,
+    );
+    expect(
+      createTaskAgentRun({
+        taskId,
+        threadId: closed.success ? closed.data.thread.threadId : 'thread',
+        agentId: 'implementer',
+        provider: 'codex',
+      }).success,
+    ).toBe(false);
+
+    const refreshed = readTaskPlanningSnapshot(taskId);
+    expect(refreshed.success).toBe(true);
+    if (!refreshed.success || !refreshed.data)
+      throw new Error('missing refreshed snapshot');
+    expect(refreshed.data.task.status).toBe(TASK_STATUS.CLOSED);
   });
 
   it('当反馈改变执行约束时，期望生成新版计划并批准新版计划', () => {
