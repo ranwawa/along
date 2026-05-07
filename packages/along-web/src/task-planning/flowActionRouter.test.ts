@@ -162,4 +162,24 @@ describe('flowActionRouter', () => {
       { confirmImplementationSteps: true },
     );
   });
+
+  it('当关闭任务时，期望直接调度 close API', () => {
+    const actions = makeActions();
+    const action: TaskFlowAction = {
+      id: 'close_task',
+      label: '关闭任务',
+      description: '终止当前 Task 流程',
+      enabled: true,
+      stage: 'completed',
+      variant: 'danger',
+    };
+
+    runFlowAction(action, makeInput(makeSnapshot('implementation')), actions);
+
+    expect(actions.runSimpleAction).toHaveBeenCalledWith(
+      'close_task',
+      'close',
+      true,
+    );
+  });
 });

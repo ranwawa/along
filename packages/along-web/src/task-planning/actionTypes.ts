@@ -1,6 +1,7 @@
 import type { TaskPlanningSnapshot } from '../types';
 import type {
   ApproveTaskPlanResponse,
+  CloseTaskResponse,
   CompleteTaskResponse,
   DeliveryRunResponse,
   DraftTaskInput,
@@ -14,7 +15,8 @@ export type SimpleActionResponse =
   | PlannerRunResponse
   | ImplementationRunResponse
   | DeliveryRunResponse
-  | CompleteTaskResponse;
+  | CompleteTaskResponse
+  | CloseTaskResponse;
 
 export interface UseTaskPlanningActionsInput {
   selected: TaskPlanningSnapshot | null;

@@ -74,4 +74,7 @@ function runStageAction(
   if (id === 'accept_delivery') {
     runSimpleAction('accept_delivery', 'complete', true);
   }
+  if (id === 'close_task') {
+    runSimpleAction('close_task', 'close', true);
+  }
 }

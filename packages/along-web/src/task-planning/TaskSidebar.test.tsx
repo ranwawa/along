@@ -108,6 +108,15 @@ describe('TaskListPanel', () => {
     expect(html).not.toContain('实现失败');
   });
 
+  it('已关闭任务显示独立状态', () => {
+    const html = renderPanel({
+      tasks: [makeSnapshot({ task: makeTask({ status: 'closed' }) })],
+    });
+
+    expect(html).toContain('已关闭');
+    expect(html).toContain('zinc');
+  });
+
   it('序号缺失时不补造占位内容', () => {
     const html = renderPanel({
       tasks: [makeSnapshot({ task: makeTask({ seq: undefined }) })],

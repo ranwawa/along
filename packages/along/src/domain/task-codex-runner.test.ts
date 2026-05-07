@@ -17,6 +17,7 @@ vi.mock('./task-planning', () => ({
     RUNNING: 'running',
     SUCCEEDED: 'succeeded',
     FAILED: 'failed',
+    CANCELLED: 'cancelled',
   },
   ensureTaskAgentBinding: planningMocks.ensureTaskAgentBinding,
   createTaskAgentRun: planningMocks.createTaskAgentRun,

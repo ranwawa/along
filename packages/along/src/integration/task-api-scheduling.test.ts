@@ -12,6 +12,7 @@ import {
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
   approveTaskImplementationSteps: vi.fn(),
   approveCurrentTaskPlan: vi.fn(),
+  closeTask: vi.fn(),
   completeDeliveredTask: vi.fn(),
   completeTaskAgentStageManually: vi.fn(),
   createPlanningTask: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('../domain/task-planning', () => ({
   },
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
+  closeTask: planningMocks.closeTask,
   completeDeliveredTask: planningMocks.completeDeliveredTask,
   completeTaskAgentStageManually: planningMocks.completeTaskAgentStageManually,
   createPlanningTask: planningMocks.createPlanningTask,

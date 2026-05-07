@@ -42,6 +42,11 @@ export interface CompleteTaskResponse {
   snapshot: TaskPlanningSnapshot;
 }
 
+export interface CloseTaskResponse {
+  taskId: string;
+  snapshot: TaskPlanningSnapshot;
+}
+
 export interface RepositoryOption {
   owner: string;
   repo: string;

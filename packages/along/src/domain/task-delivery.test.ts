@@ -16,6 +16,7 @@ vi.mock('./task-planning', () => ({
     RUNNING: 'running',
     SUCCEEDED: 'succeeded',
     FAILED: 'failed',
+    CANCELLED: 'cancelled',
   },
   TASK_STATUS: {
     IMPLEMENTED: 'implemented',
