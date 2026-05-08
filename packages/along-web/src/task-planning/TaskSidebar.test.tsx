@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { TaskPlanningSnapshot } from '../types';
+import {
+  TASK_LEGACY_STATUS_COLORS,
+  TASK_STATUS_COLOR_STYLES,
+} from './statusStyles';
 import { TaskListPanel } from './TaskSidebar';
 
 function makeTask(
@@ -101,7 +105,9 @@ describe('TaskListPanel', () => {
 
     expect(html).toContain('#12');
     expect(html).toContain('优化左侧任务列表展示');
-    expect(html).toContain('实现中');
+    expect(html).toContain('aria-label="实现中"');
+    expect(html).toContain('title="实现中"');
+    expect(html).not.toContain('>实现中<');
     expect(html).not.toContain('custom-updated-at');
     expect(html).not.toContain('这段任务正文不应该出现在左侧列表');
     expect(html).not.toContain('命令退出码 1');
@@ -113,8 +119,55 @@ describe('TaskListPanel', () => {
       tasks: [makeSnapshot({ task: makeTask({ status: 'closed' }) })],
     });
 
-    expect(html).toContain('已关闭');
-    expect(html).toContain('zinc');
+    expect(html).toContain('aria-label="已关闭"');
+    expect(html).not.toContain('>已关闭<');
+    expect(html).toContain(
+      TASK_STATUS_COLOR_STYLES[TASK_LEGACY_STATUS_COLORS.closed].dotClass,
+    );
+  });
+
+  it('优先使用 display 状态文案和颜色点', () => {
+    const html = renderPanel({
+      tasks: [
+        makeSnapshot({
+          display: {
+            state: 'waiting_user',
+            label: '待用户补充',
+          },
+        }),
+      ],
+    });
+
+    expect(html).toContain('aria-label="待用户补充"');
+    expect(html).toContain('title="待用户补充"');
+    expect(html).not.toContain('>待用户补充<');
+    expect(html).toContain(TASK_STATUS_COLOR_STYLES.amber.dotClass);
+  });
+
+  it('agentStages 存在运行阶段时显示运行动画', () => {
+    const html = renderPanel({
+      tasks: [
+        makeSnapshot({
+          agentStages: [
+            {
+              stage: 'implementation',
+              agentId: 'implementer',
+              label: '实现',
+              status: 'running',
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(html).toContain('after:animate-ping');
+    expect(html).toContain('motion-reduce:after:animate-none');
+  });
+
+  it('agentStages 非运行阶段时不显示运行动画', () => {
+    const html = renderPanel();
+
+    expect(html).not.toContain('after:animate-ping');
   });
 
   it('序号缺失时不补造占位内容', () => {

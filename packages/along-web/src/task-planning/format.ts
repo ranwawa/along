@@ -8,6 +8,14 @@ import type {
   TaskStatus,
   TaskThreadStatus,
 } from '../types';
+import {
+  getTaskAgentStageStatusStyle,
+  getTaskLegacyStatusStyle,
+} from './statusStyles';
+
+const MIN_DURATION_SECONDS = 1;
+const MILLISECONDS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
 
 export function formatTime(value: string): string {
   const date = new Date(value);
@@ -26,9 +34,12 @@ export function formatDuration(startedAt: string, endedAt?: string): string {
   if (Number.isNaN(started) || Number.isNaN(ended) || ended < started) {
     return '-';
   }
-  const totalSeconds = Math.max(1, Math.round((ended - started) / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
+  const totalSeconds = Math.max(
+    MIN_DURATION_SECONDS,
+    Math.round((ended - started) / MILLISECONDS_PER_SECOND),
+  );
+  const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
+  const seconds = totalSeconds % SECONDS_PER_MINUTE;
   if (minutes === 0) return `${seconds}s`;
   return `${minutes}m ${seconds}s`;
 }
@@ -88,26 +99,7 @@ export function getTaskStatusLabel(status: TaskStatus): string {
 }
 
 export function getTaskStatusClass(status: TaskStatus): string {
-  switch (status) {
-    case 'planning':
-      return 'bg-sky-500/15 text-sky-300 border-sky-500/30';
-    case 'planning_approved':
-      return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
-    case 'implementing':
-      return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
-    case 'implemented':
-      return 'bg-blue-500/15 text-blue-300 border-blue-500/30';
-    case 'delivering':
-      return 'bg-violet-500/15 text-violet-300 border-violet-500/30';
-    case 'delivered':
-      return 'bg-teal-500/15 text-teal-300 border-teal-500/30';
-    case 'completed':
-      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
-    case 'closed':
-      return 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
-    default:
-      return 'bg-white/10 text-text-secondary border-border-color';
-  }
+  return getTaskLegacyStatusStyle(status).badgeClass;
 }
 
 export function getStageStatusLabel(status: TaskAgentStageStatus): string {
@@ -128,18 +120,7 @@ export function getStageStatusLabel(status: TaskAgentStageStatus): string {
 }
 
 export function getStageStatusClass(status: TaskAgentStageStatus): string {
-  switch (status) {
-    case 'running':
-      return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
-    case 'succeeded':
-      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
-    case 'failed':
-      return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
-    case 'cancelled':
-      return 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
-    default:
-      return 'bg-white/5 text-text-muted border-border-color';
-  }
+  return getTaskAgentStageStatusStyle(status).badgeClass;
 }
 
 export function getProgressPhaseLabel(phase: TaskAgentProgressPhase): string {
