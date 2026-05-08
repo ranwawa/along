@@ -5,7 +5,7 @@ import {
   jsonRequest,
   type PlanningMocks,
   resetPlanningMocks,
-  type snapshot,
+  snapshot,
 } from './task-api.test-utils';
 
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
@@ -22,6 +22,10 @@ const planningMocks: PlanningMocks = vi.hoisted(() => ({
   submitTaskMessage: vi.fn(),
 }));
 
+const cleanupMocks = vi.hoisted(() => ({
+  cleanupIssue: vi.fn(),
+}));
+
 vi.mock('../domain/task-planning', () => ({
   TASK_EXECUTION_MODE: {
     MANUAL: 'manual',
@@ -31,6 +35,16 @@ vi.mock('../domain/task-planning', () => ({
     PLANNING: 'planning',
     IMPLEMENTATION: 'implementation',
     DELIVERY: 'delivery',
+  },
+  TASK_LIFECYCLE: {
+    CANCELLED: 'cancelled',
+    COMPLETED: 'completed',
+    OPEN: 'open',
+    READY: 'ready',
+  },
+  WORKFLOW_KIND: {
+    IMPLEMENTATION: 'implementation',
+    PLANNING: 'planning',
   },
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
@@ -45,7 +59,17 @@ vi.mock('../domain/task-planning', () => ({
   submitTaskMessage: planningMocks.submitTaskMessage,
 }));
 
+vi.mock('../domain/cleanup-utils', () => ({
+  cleanupIssue: cleanupMocks.cleanupIssue,
+}));
+
 beforeEach(() => resetPlanningMocks(planningMocks));
+beforeEach(() => {
+  cleanupMocks.cleanupIssue.mockResolvedValue({
+    success: true,
+    data: undefined,
+  });
+});
 
 it('当路径属于 Task API 时，期望能识别', () => {
   expect(isTaskApiPath('/api/tasks')).toBe(true);
@@ -295,6 +319,26 @@ it('当人工标记实现阶段已处理时，期望返回更新后的 snapshot'
 });
 
 it('当验收已交付 Task 时，期望返回完成后的 snapshot', async () => {
+  const deliveredSnapshot = {
+    ...snapshot,
+    task: {
+      ...snapshot.task,
+      lifecycle: 'open',
+      repoOwner: 'ranwawa',
+      repoName: 'along',
+      cwd: '/repo/along',
+      seq: 25,
+      worktreePath: '/repo/along/tasks/25/worktree',
+      branchName: 'fix/demo-25',
+      prUrl: 'https://github.com/ranwawa/along/pull/25',
+      prNumber: 25,
+    },
+  };
+  planningMocks.readTaskPlanningSnapshot.mockReturnValueOnce({
+    success: true,
+    data: deliveredSnapshot,
+  });
+
   const response = await handleTaskApiRequest(
     jsonRequest('/api/tasks/task-1/complete', {}),
     new URL('http://localhost/api/tasks/task-1/complete'),
@@ -307,7 +351,56 @@ it('当验收已交付 Task 时，期望返回完成后的 snapshot', async () =
 
   expect(response.status).toBe(200);
   expect(payload.taskId).toBe('task-1');
+  expect(cleanupMocks.cleanupIssue).toHaveBeenCalledWith(
+    '25',
+    {
+      reason: 'delivery_acceptance',
+      worktreePath: '/repo/along/tasks/25/worktree',
+      branchName: 'fix/demo-25',
+    },
+    'ranwawa',
+    'along',
+    '/repo/along',
+  );
   expect(planningMocks.completeDeliveredTask).toHaveBeenCalledWith('task-1');
+  expect(cleanupMocks.cleanupIssue.mock.invocationCallOrder[0]).toBeLessThan(
+    planningMocks.completeDeliveredTask.mock.invocationCallOrder[0],
+  );
+});
+
+it('当验收清理失败时，期望不继续完成 Task', async () => {
+  cleanupMocks.cleanupIssue.mockResolvedValueOnce({
+    success: false,
+    error: 'worktree 清理失败',
+  });
+  planningMocks.readTaskPlanningSnapshot.mockReturnValueOnce({
+    success: true,
+    data: {
+      ...snapshot,
+      task: {
+        ...snapshot.task,
+        repoOwner: 'ranwawa',
+        repoName: 'along',
+        cwd: '/repo/along',
+        seq: 25,
+        worktreePath: '/repo/along/tasks/25/worktree',
+        branchName: 'fix/demo-25',
+        prUrl: 'https://github.com/ranwawa/along/pull/25',
+        prNumber: 25,
+      },
+    },
+  });
+
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/task-1/complete', {}),
+    new URL('http://localhost/api/tasks/task-1/complete'),
+    { defaultCwd: '/tmp/default' },
+  );
+  const payload = (await response.json()) as { error: string };
+
+  expect(response.status).toBe(409);
+  expect(payload.error).toBe('worktree 清理失败');
+  expect(planningMocks.completeDeliveredTask).not.toHaveBeenCalled();
 });
 
 it('当关闭 Task 时，期望返回关闭后的 snapshot', async () => {

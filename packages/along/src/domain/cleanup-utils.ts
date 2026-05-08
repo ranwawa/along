@@ -24,6 +24,8 @@ export interface CleanupOptions {
   force?: boolean;
   reason?: string; // "normal" | "force" | "gc"
   silent?: boolean;
+  worktreePath?: string;
+  branchName?: string;
 }
 
 function info(msg: string, silent?: boolean) {
@@ -32,6 +34,10 @@ function info(msg: string, silent?: boolean) {
 
 function warn(msg: string, silent?: boolean) {
   if (!silent) logger.warn(msg);
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -148,23 +154,33 @@ export async function pullDefaultBranch(
 
   try {
     await g.fetch('origin', defaultBranch);
-  } catch (e: any) {
-    logger.warn(`fetch origin/${defaultBranch} 失败: ${e.message}`);
-    return failure(`fetch 失败: ${e.message}`);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.warn(`fetch origin/${defaultBranch} 失败: ${message}`);
+    return failure(`fetch 失败: ${message}`);
   }
 
+  let currentBranch = '';
   try {
-    await g.raw(['branch', '-f', defaultBranch, `origin/${defaultBranch}`]);
+    currentBranch = (
+      await g.raw(['symbolic-ref', '--quiet', '--short', 'HEAD'])
+    ).trim();
+  } catch {}
+
+  try {
+    if (currentBranch === defaultBranch) {
+      await g.raw(['merge', '--ff-only', `origin/${defaultBranch}`]);
+    } else {
+      await g.raw(['branch', '-f', defaultBranch, `origin/${defaultBranch}`]);
+    }
     logger.info(
       `本地默认分支 ${defaultBranch} 已更新到 origin/${defaultBranch}`,
     );
     return success(defaultBranch);
-  } catch {
-    // 当前 checkout 在默认分支上时 git branch -f 会失败，降级为仅 fetch
-    logger.warn(
-      `git branch -f ${defaultBranch} 失败（可能当前在该分支上），已完成 fetch`,
-    );
-    return success(defaultBranch);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.warn(`更新本地默认分支 ${defaultBranch} 失败: ${message}`);
+    return failure(`更新本地默认分支失败: ${message}`);
   }
 }
 
@@ -191,7 +207,7 @@ export async function cleanupIssue(
 
   const paths = new SessionPathManager(owner, repo, Number(issueNumber));
   const session = new SessionManager(owner, repo, Number(issueNumber));
-  const worktreePath = paths.getWorktreeDir();
+  const worktreePath = options.worktreePath || paths.getWorktreeDir();
   const reason = options.reason || (options.force ? 'force' : 'normal');
 
   session.logEvent('cleanup-started', {
@@ -213,7 +229,8 @@ export async function cleanupIssue(
   }
 
   // 读取分支名（必须在归档前读取）
-  const branchName = readBranchName(owner, repo, Number(issueNumber));
+  const branchName =
+    options.branchName || readBranchName(owner, repo, Number(issueNumber));
 
   // 清理 worktree
   await cleanupWorktree(worktreePath, options.silent, session, repoPath);
@@ -225,6 +242,9 @@ export async function cleanupIssue(
   const pullRes = await pullDefaultBranch(repoPath);
   if (pullRes.success) {
     session.logEvent('default-branch-updated', { branch: pullRes.data });
+  } else {
+    warn(`默认分支同步失败: ${pullRes.error}`, options.silent);
+    session.logEvent('default-branch-sync-failed', { error: pullRes.error });
   }
 
   session.logEvent('cleanup-completed', { issueNumber, reason, branchName });
@@ -284,15 +304,21 @@ export async function cleanupIssueAssets(
   await cleanupBranch(branchName, options.silent, session, repoPath);
 
   // 更新本地默认分支到远程最新
-  await pullDefaultBranch(repoPath);
+  const pullRes = await pullDefaultBranch(repoPath);
+  if (pullRes.success) {
+    session.logEvent('default-branch-updated', { branch: pullRes.data });
+  } else {
+    warn(`默认分支同步失败: ${pullRes.error}`, options.silent);
+    session.logEvent('default-branch-sync-failed', { error: pullRes.error });
+  }
 
   const issueDir = paths.getIssueDir();
   if (fs.existsSync(issueDir)) {
     info(`删除本地数据目录: ${issueDir}`, options.silent);
     try {
       fs.rmSync(issueDir, { recursive: true, force: true });
-    } catch (e: any) {
-      return failure(`删除本地数据目录失败: ${e.message}`);
+    } catch (error: unknown) {
+      return failure(`删除本地数据目录失败: ${getErrorMessage(error)}`);
     }
   }
 
