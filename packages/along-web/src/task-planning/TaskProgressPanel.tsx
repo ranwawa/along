@@ -13,7 +13,27 @@ import {
 
 const RECENT_PROGRESS_LIMIT = 8;
 const RECENT_SESSION_LIMIT = 40;
-const STALE_PROGRESS_MS = 2 * 60 * 1000;
+const MILLISECONDS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
+const STALE_PROGRESS_MINUTES = 2;
+const STALE_PROGRESS_MS =
+  STALE_PROGRESS_MINUTES * SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND;
+const SESSION_QUIET_SECONDS = 2 * SECONDS_PER_MINUTE;
+const TEXT_PROGRESS_TITLE = '实时进展';
+const TEXT_ORCHESTRATION_STATE = 'Along 编排状态';
+const TEXT_SESSION_TAIL_TITLE = 'Agent 会话 Tail';
+
+function formatCount(count: number): string {
+  return `${count} 条`;
+}
+
+function formatHiddenProgressCount(count: number): string {
+  return `已折叠较早 ${count} 条进展。`;
+}
+
+function formatHiddenSessionCount(count: number): string {
+  return `已折叠较早 ${count} 条会话。`;
+}
 
 function sortProgressEvents(events: TaskAgentProgressEventRecord[]) {
   return [...events].sort((left, right) =>
@@ -42,7 +62,7 @@ function getLatestRunningRun(
 function getRelativeSeconds(value: string, nowMs: number): number | null {
   const time = new Date(value).getTime();
   if (Number.isNaN(time) || nowMs < time) return null;
-  return Math.round((nowMs - time) / 1000);
+  return Math.round((nowMs - time) / MILLISECONDS_PER_SECOND);
 }
 
 function formatRelativeTime(value: string, nowMs: number): string {
@@ -57,7 +77,10 @@ function formatRelativeTime(value: string, nowMs: number): string {
 function formatDurationToNow(startedAt: string, nowMs: number): string {
   const started = new Date(startedAt).getTime();
   if (Number.isNaN(started) || nowMs < started) return '-';
-  const totalSeconds = Math.max(1, Math.round((nowMs - started) / 1000));
+  const totalSeconds = Math.max(
+    1,
+    Math.round((nowMs - started) / MILLISECONDS_PER_SECOND),
+  );
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   if (minutes === 0) return `${seconds}s`;
@@ -91,7 +114,7 @@ function buildSessionQuietHint(input: {
     return 'Agent 仍在执行，但当前暂无可展示会话信息。';
   }
   const seconds = getRelativeSeconds(input.latestEvent.createdAt, input.nowMs);
-  if (seconds === null || seconds < 120) return null;
+  if (seconds === null || seconds < SESSION_QUIET_SECONDS) return null;
   return `最近一条会话在 ${formatRelativeTime(
     input.latestEvent.createdAt,
     input.nowMs,
@@ -214,15 +237,20 @@ function SessionTail({
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-text-secondary">
-            Agent 会话 Tail
+            {TEXT_SESSION_TAIL_TITLE}
           </div>
           <div className="mt-1 text-xs text-text-muted">
             {latestEvent
-              ? `最近更新 ${formatRelativeTime(latestEvent.createdAt, nowMs)}`
-              : '暂无可展示会话信息'}
+              ? `Codex 实时输出，最近更新 ${formatRelativeTime(
+                  latestEvent.createdAt,
+                  nowMs,
+                )}`
+              : '暂无 Codex 实时输出'}
           </div>
         </div>
-        <span className="text-xs text-text-muted">{events.length} 条</span>
+        <span className="text-xs text-text-muted">
+          {formatCount(events.length)}
+        </span>
       </div>
       {quietHint && (
         <div className="mb-3 rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-200">
@@ -231,14 +259,14 @@ function SessionTail({
       )}
       {hiddenCount > 0 && (
         <div className="mb-2 text-xs text-text-muted">
-          已折叠较早 {hiddenCount} 条会话。
+          {formatHiddenSessionCount(hiddenCount)}
         </div>
       )}
       {visibleEvents.length === 0 ? (
         <div className="rounded-md border border-border-color bg-black/25 px-3 py-3 text-sm text-text-muted">
           {runningRun
-            ? 'Agent 已开始运行，正在等待第一条会话输出。'
-            : '暂无可展示会话信息。'}
+            ? 'Agent 已开始运行，正在等待第一条 Codex 实时输出。'
+            : '暂无 Codex 实时输出。'}
         </div>
       ) : (
         <ol className="flex max-h-[520px] flex-col gap-2 overflow-auto pr-1">
@@ -285,7 +313,7 @@ function ProgressEventsPanel({
       )}
       {hiddenCount > 0 && (
         <div className="mb-2 text-xs text-text-muted">
-          已折叠较早 {hiddenCount} 条进展。
+          {formatHiddenProgressCount(hiddenCount)}
         </div>
       )}
       <ol className="flex flex-col gap-2">
@@ -316,8 +344,17 @@ export function TaskProgressPanel({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-text-secondary">实时进展</h3>
-        <span className="text-xs text-text-muted">{events.length} 条</span>
+        <div>
+          <h3 className="text-sm font-semibold text-text-secondary">
+            {TEXT_PROGRESS_TITLE}
+          </h3>
+          <div className="mt-1 text-xs text-text-muted">
+            {TEXT_ORCHESTRATION_STATE}
+          </div>
+        </div>
+        <span className="text-xs text-text-muted">
+          {formatCount(events.length)}
+        </span>
       </div>
 
       <ProgressEventsPanel

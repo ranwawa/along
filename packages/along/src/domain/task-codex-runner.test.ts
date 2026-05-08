@@ -1,5 +1,6 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner tests use large shared mock setup.
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy runner test file predates current file-size rule.
+import type { ThreadEvent } from '@openai/codex-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const planningMocks = vi.hoisted(() => ({
@@ -48,7 +49,35 @@ vi.mock('./task-attachment-read', () => ({
   resolveInputImageAttachments: attachmentMocks.resolveInputImageAttachments,
 }));
 
+import { requestTaskAgentCancellation } from './task-agent-run-lifecycle';
 import { runTaskCodexTurn } from './task-codex-runner';
+
+async function* streamEvents(
+  events: ThreadEvent[],
+): AsyncGenerator<ThreadEvent> {
+  for (const event of events) yield event;
+}
+
+function makeCompletedStream(
+  threadId: string,
+  text: string,
+  usage = {
+    input_tokens: 1,
+    cached_input_tokens: 0,
+    output_tokens: 1,
+    reasoning_output_tokens: 0,
+  },
+): ThreadEvent[] {
+  return [
+    { type: 'thread.started', thread_id: threadId },
+    { type: 'turn.started' },
+    {
+      type: 'item.completed',
+      item: { id: 'msg-1', type: 'agent_message', text },
+    },
+    { type: 'turn.completed', usage },
+  ];
+}
 
 describe('task-codex-runner', () => {
   beforeEach(() => {
@@ -172,10 +201,8 @@ describe('task-codex-runner', () => {
     });
     const thread = {
       id: 'codex-thread-1',
-      run: vi.fn().mockResolvedValue({
-        finalResponse: '完成',
-        items: [],
-        usage: null,
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents(makeCompletedStream('codex-thread-1', '完成')),
       }),
     };
     const client = {
@@ -194,7 +221,7 @@ describe('task-codex-runner', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(thread.run).toHaveBeenCalledWith(
+    expect(thread.runStreamed).toHaveBeenCalledWith(
       [
         { type: 'text', text: '看图生成计划' },
         { type: 'local_image', path: '/tmp/screen.png' },
@@ -215,10 +242,13 @@ describe('task-codex-runner', () => {
   it('使用 Codex SDK 新建 thread 并保存结构化输出', async () => {
     const thread = {
       id: 'codex-thread-1',
-      run: vi.fn().mockResolvedValue({
-        finalResponse: '{"action":"plan_revision","body":"计划"}',
-        items: [],
-        usage: null,
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents(
+          makeCompletedStream(
+            'codex-thread-1',
+            '{"action":"plan_revision","body":"计划"}',
+          ),
+        ),
       }),
     };
     const client = {
@@ -252,7 +282,7 @@ describe('task-codex-runner', () => {
         approvalPolicy: 'never',
       }),
     );
-    expect(thread.run).toHaveBeenCalledWith(
+    expect(thread.runStreamed).toHaveBeenCalledWith(
       '生成计划',
       expect.objectContaining({
         outputSchema: { type: 'object' },
@@ -272,6 +302,306 @@ describe('task-codex-runner', () => {
     );
   });
 
+  it('消费 runStreamed 事件并把 Codex 实时输出写入会话 Tail', async () => {
+    const thread = {
+      id: 'codex-thread-1',
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents([
+          { type: 'thread.started', thread_id: 'codex-thread-1' },
+          { type: 'turn.started' },
+          {
+            type: 'item.started',
+            item: {
+              id: 'cmd-1',
+              type: 'command_execution',
+              command: 'bun test',
+              aggregated_output: '',
+              status: 'in_progress',
+            },
+          },
+          {
+            type: 'item.updated',
+            item: {
+              id: 'cmd-1',
+              type: 'command_execution',
+              command: 'bun test',
+              aggregated_output: 'pass',
+              status: 'in_progress',
+            },
+          },
+          {
+            type: 'item.updated',
+            item: {
+              id: 'cmd-1',
+              type: 'command_execution',
+              command: 'bun test',
+              aggregated_output: 'pass\nall',
+              status: 'in_progress',
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-1',
+              type: 'command_execution',
+              command: 'bun test',
+              aggregated_output: 'pass\nall',
+              status: 'completed',
+              exit_code: 0,
+            },
+          },
+          {
+            type: 'item.updated',
+            item: { id: 'msg-1', type: 'agent_message', text: '完成' },
+          },
+          {
+            type: 'item.updated',
+            item: { id: 'msg-1', type: 'agent_message', text: '完成实现' },
+          },
+          {
+            type: 'item.completed',
+            item: { id: 'msg-1', type: 'agent_message', text: '完成实现' },
+          },
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 10,
+              cached_input_tokens: 1,
+              output_tokens: 5,
+              reasoning_output_tokens: 2,
+            },
+          },
+        ]),
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data.assistantText).toBe('完成实现');
+    expect(planningMocks.recordTaskAgentProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: 'waiting',
+        summary: 'Codex 已开始处理本轮请求。',
+      }),
+    );
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'system',
+        kind: 'message',
+        content: 'Codex thread 已连接。',
+        metadata: expect.objectContaining({
+          provider_event_type: 'thread.started',
+          thread_id: 'codex-thread-1',
+        }),
+      }),
+    );
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'stdout',
+        kind: 'output',
+        content: 'pass',
+        metadata: expect.objectContaining({
+          provider_event_type: 'item.updated',
+          item_id: 'cmd-1',
+          delta_mode: 'delta',
+        }),
+      }),
+    );
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'stdout',
+        kind: 'output',
+        content: '\nall',
+      }),
+    );
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'agent',
+        kind: 'output',
+        content: '实现',
+        metadata: expect.objectContaining({
+          provider_event_type: 'item.updated',
+          item_type: 'agent_message',
+          delta_mode: 'delta',
+        }),
+      }),
+    );
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'Codex turn 已完成。',
+        metadata: expect.objectContaining({
+          provider_event_type: 'turn.completed',
+          usage: expect.objectContaining({ input_tokens: 10 }),
+        }),
+      }),
+    );
+  });
+
+  it('当 item.updated 不是前缀增长时写 snapshot 并标记 metadata', async () => {
+    const thread = {
+      id: 'codex-thread-1',
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents([
+          { type: 'thread.started', thread_id: 'codex-thread-1' },
+          { type: 'turn.started' },
+          {
+            type: 'item.updated',
+            item: { id: 'msg-1', type: 'agent_message', text: '旧内容' },
+          },
+          {
+            type: 'item.updated',
+            item: { id: 'msg-1', type: 'agent_message', text: '重排后内容' },
+          },
+          {
+            type: 'item.completed',
+            item: { id: 'msg-1', type: 'agent_message', text: '重排后内容' },
+          },
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 1,
+              cached_input_tokens: 0,
+              output_tokens: 1,
+              reasoning_output_tokens: 0,
+            },
+          },
+        ]),
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(true);
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'agent',
+        kind: 'output',
+        content: '重排后内容',
+        metadata: expect.objectContaining({
+          provider_event_type: 'item.updated',
+          item_id: 'msg-1',
+          delta_mode: 'snapshot',
+        }),
+      }),
+    );
+  });
+
+  it('当 Codex stream 返回 turn.failed 时写 Tail 错误并标记 run 失败', async () => {
+    const thread = {
+      id: 'codex-thread-1',
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents([
+          { type: 'thread.started', thread_id: 'codex-thread-1' },
+          {
+            type: 'turn.failed',
+            error: { message: 'provider unavailable' },
+          },
+        ]),
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(false);
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'system',
+        kind: 'error',
+        content: 'Codex turn 失败：provider unavailable',
+        metadata: expect.objectContaining({
+          provider_event_type: 'turn.failed',
+        }),
+      }),
+    );
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
+      runId: 'run-1',
+      status: 'failed',
+      providerSessionIdAtEnd: 'codex-thread-1',
+      error: 'provider unavailable',
+    });
+  });
+
+  it('当 Codex stream 返回 error 时写 Tail 错误并标记 run 失败', async () => {
+    const thread = {
+      id: 'codex-thread-1',
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents([
+          { type: 'thread.started', thread_id: 'codex-thread-1' },
+          {
+            type: 'error',
+            message: 'stream disconnected',
+          },
+        ]),
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(false);
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'system',
+        kind: 'error',
+        content: 'Codex stream 错误：stream disconnected',
+        metadata: expect.objectContaining({
+          provider_event_type: 'error',
+        }),
+      }),
+    );
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
+      runId: 'run-1',
+      status: 'failed',
+      providerSessionIdAtEnd: 'codex-thread-1',
+      error: 'stream disconnected',
+    });
+  });
+
   it('存在 provider session 时恢复 Codex thread', async () => {
     planningMocks.ensureTaskAgentBinding.mockReturnValueOnce({
       success: true,
@@ -285,10 +615,8 @@ describe('task-codex-runner', () => {
     });
     const thread = {
       id: 'codex-thread-old',
-      run: vi.fn().mockResolvedValue({
-        finalResponse: '完成',
-        items: [],
-        usage: null,
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents(makeCompletedStream('codex-thread-old', '完成')),
       }),
     };
     const client = {
@@ -317,7 +645,7 @@ describe('task-codex-runner', () => {
   it('当 Codex thread 执行失败但已有 session 时，期望保存 session 供下次恢复', async () => {
     const thread = {
       id: 'codex-thread-failed',
-      run: vi.fn().mockRejectedValue(new Error('provider unavailable')),
+      runStreamed: vi.fn().mockRejectedValue(new Error('provider unavailable')),
     };
     const client = {
       startThread: vi.fn().mockReturnValue(thread),
@@ -376,10 +704,8 @@ describe('task-codex-runner', () => {
     });
     const thread = {
       id: 'codex-thread-1',
-      run: vi.fn().mockResolvedValue({
-        finalResponse: '完成',
-        items: [],
-        usage: null,
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents(makeCompletedStream('codex-thread-1', '完成')),
       }),
     };
     const client = {
@@ -413,7 +739,7 @@ describe('task-codex-runner', () => {
     try {
       const thread = {
         id: 'codex-thread-1',
-        run: vi.fn(
+        runStreamed: vi.fn(
           (
             _prompt: string,
             options?: { outputSchema?: unknown; signal?: AbortSignal },
@@ -457,5 +783,67 @@ describe('task-codex-runner', () => {
       }
       vi.useRealTimers();
     }
+  });
+
+  it('当用户取消 Codex turn 时，期望中止执行且不保存输出', async () => {
+    let aborted = false;
+    let resolveStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const thread = {
+      id: 'codex-thread-1',
+      runStreamed: vi.fn(
+        (
+          _prompt: string,
+          options?: { outputSchema?: unknown; signal?: AbortSignal },
+        ) =>
+          new Promise<never>((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => {
+              aborted = true;
+              planningMocks.readTaskAgentRun.mockReturnValue({
+                success: true,
+                data: {
+                  runId: 'run-1',
+                  taskId: 'task-1',
+                  threadId: 'thread-1',
+                  agentId: 'planner',
+                  provider: 'codex',
+                  status: 'cancelled',
+                  inputArtifactIds: [],
+                  outputArtifactIds: [],
+                  startedAt: '2026-01-01T00:00:00.000Z',
+                  endedAt: '2026-01-01T00:00:01.000Z',
+                },
+              });
+              reject(new Error('aborted'));
+            });
+            resolveStarted();
+          }),
+      ),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const pending = runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+    await started;
+    requestTaskAgentCancellation('run-1', 'user cancelled');
+    const result = await pending;
+
+    expect(result.success).toBe(true);
+    expect(aborted).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data.run.status).toBe('cancelled');
+    expect(result.data.assistantText).toBe('');
+    expect(planningMocks.recordTaskAgentResult).not.toHaveBeenCalled();
   });
 });

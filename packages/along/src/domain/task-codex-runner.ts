@@ -1,6 +1,11 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner keeps provider orchestration together.
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy runner keeps provider orchestration together.
-import type { ThreadOptions } from '@openai/codex-sdk';
+import type {
+  ThreadEvent,
+  ThreadItem,
+  ThreadOptions,
+  Usage,
+} from '@openai/codex-sdk';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
@@ -22,7 +27,7 @@ import type {
   RunTaskClaudeTurnInput,
   RunTaskClaudeTurnOutput,
 } from './task-claude-runner';
-import { writeCodexTurnSessionEvents } from './task-codex-session-events';
+import { CodexStreamSessionEventMapper } from './task-codex-session-events';
 import {
   buildThreadOptions,
   createDefaultCodexClient,
@@ -46,7 +51,7 @@ const PROVIDER = 'codex';
 
 export interface TaskCodexTurn {
   finalResponse: string;
-  items: unknown[];
+  items: ThreadItem[];
   usage: unknown;
 }
 
@@ -56,10 +61,10 @@ export type TaskCodexInputItem =
 
 export interface TaskCodexThread {
   readonly id: string | null;
-  run(
+  runStreamed(
     input: string | TaskCodexInputItem[],
     options?: { outputSchema?: unknown; signal?: AbortSignal },
-  ): Promise<TaskCodexTurn>;
+  ): Promise<{ events: AsyncGenerator<ThreadEvent> }>;
 }
 
 export interface TaskCodexClient {
@@ -68,6 +73,11 @@ export interface TaskCodexClient {
 }
 
 export type CreateTaskCodexClient = () => TaskCodexClient;
+
+interface RunCodexPromptResult {
+  turn: TaskCodexTurn;
+  latestThreadId?: string;
+}
 
 export interface RunTaskCodexTurnInput extends RunTaskClaudeTurnInput {
   createClient?: CreateTaskCodexClient;
@@ -117,11 +127,16 @@ async function runStartedCodexTurn(
     thread = openCodexThread(input, progressContext, binding.providerSessionId);
     const turn = await runCodexPrompt(
       progressContext.runId,
+      progressContext,
       thread,
       promptRes.data,
       outputSchema,
+      (threadId) => {
+        latestThreadId = threadId;
+      },
     );
-    latestThreadId = thread.id || binding.providerSessionId;
+    latestThreadId =
+      turn.latestThreadId || thread.id || binding.providerSessionId;
     if (isTaskAgentRunCancelled(progressContext.runId)) {
       return completeCancelledCodexTurn(
         progressContext,
@@ -129,12 +144,11 @@ async function runStartedCodexTurn(
         latestThreadId,
       );
     }
-    writeCodexTurnSessionEvents(progressContext, turn);
     return completeCodexTurn(
       input,
       progressContext,
       usedResume,
-      turn,
+      turn.turn,
       outputSchema,
       latestThreadId,
     );
@@ -227,10 +241,12 @@ function openCodexThread(
 
 async function runCodexPrompt(
   runId: string,
+  context: TaskAgentProgressContext,
   thread: TaskCodexThread,
   prompt: string | TaskCodexInputItem[],
   outputSchema: unknown,
-): Promise<TaskCodexTurn> {
+  onThreadStarted: (threadId: string) => void,
+): Promise<RunCodexPromptResult> {
   const timeoutMs = readCodexTurnTimeoutMs();
   const abortController = new AbortController();
   const unregisterCancel = registerTaskAgentCancellation(runId, (reason) =>
@@ -243,6 +259,7 @@ async function runCodexPrompt(
   }, timeoutMs);
   return runCodexThreadWithTimeout(
     thread,
+    context,
     prompt,
     outputSchema,
     abortController,
@@ -250,11 +267,13 @@ async function runCodexPrompt(
     () => timedOut,
     timeoutMs,
     unregisterCancel,
+    onThreadStarted,
   );
 }
 
 async function runCodexThreadWithTimeout(
   thread: TaskCodexThread,
+  context: TaskAgentProgressContext,
   prompt: string | TaskCodexInputItem[],
   outputSchema: unknown,
   abortController: AbortController,
@@ -262,12 +281,14 @@ async function runCodexThreadWithTimeout(
   isTimedOut: () => boolean,
   timeoutMs: number,
   unregisterCancel: () => void,
-): Promise<TaskCodexTurn> {
+  onThreadStarted: (threadId: string) => void,
+): Promise<RunCodexPromptResult> {
   try {
-    return await thread.run(prompt, {
+    const stream = await thread.runStreamed(prompt, {
       outputSchema,
       signal: abortController.signal,
     });
+    return await consumeCodexStream(context, stream.events, onThreadStarted);
   } catch (error: unknown) {
     if (!isTimedOut()) throw error;
     throw new Error(
@@ -280,6 +301,48 @@ async function runCodexThreadWithTimeout(
     unregisterCancel();
     clearTimeout(timeout);
   }
+}
+
+async function consumeCodexStream(
+  context: TaskAgentProgressContext,
+  events: AsyncGenerator<ThreadEvent>,
+  onThreadStarted: (threadId: string) => void,
+): Promise<RunCodexPromptResult> {
+  const mapper = new CodexStreamSessionEventMapper(context);
+  const items: ThreadItem[] = [];
+  let finalResponse = '';
+  let usage: Usage | null = null;
+  let latestThreadId: string | undefined;
+
+  for await (const event of events) {
+    const eventRes = mapper.handleEvent(event);
+    if (!eventRes.success) throw new Error(eventRes.error);
+    if (eventRes.data.latestThreadId) {
+      latestThreadId = eventRes.data.latestThreadId;
+      onThreadStarted(latestThreadId);
+    }
+    if (event.type === 'item.completed') {
+      items.push(event.item);
+      if (event.item.type === 'agent_message') {
+        finalResponse = event.item.text;
+      }
+    } else if (event.type === 'turn.completed') {
+      usage = event.usage;
+    } else if (event.type === 'turn.failed') {
+      throw new Error(event.error.message);
+    } else if (event.type === 'error') {
+      throw new Error(event.message);
+    }
+  }
+
+  return {
+    turn: {
+      finalResponse,
+      items,
+      usage,
+    },
+    latestThreadId,
+  };
 }
 
 function completeCancelledCodexTurn(

@@ -93,6 +93,7 @@ describe('TaskProgressPanel progress event', () => {
         agentProgressEvents: [makeProgressEvent({ detail: '运行局部测试。' })],
       }),
     );
+    expect(html).toContain('Along 编排状态');
     expect(html).toContain('正在执行命令');
     expect(html).toContain('运行局部测试');
   });
@@ -138,7 +139,46 @@ describe('TaskProgressPanel session tail', () => {
       }),
     );
     expect(html).toContain('Agent 会话 Tail');
+    expect(html).toContain('Codex 实时输出');
     expect(html).toContain('正在修改 TaskProgressPanel');
+  });
+
+  it('渲染 Codex 多来源会话事件', () => {
+    const html = renderPanel(
+      makeSnapshot({
+        agentSessionEvents: [
+          makeSessionEvent({
+            eventId: 'sess-system',
+            source: 'system',
+            kind: 'progress',
+            content: 'Codex 已开始处理本轮请求。',
+          }),
+          makeSessionEvent({
+            eventId: 'sess-tool',
+            source: 'tool',
+            kind: 'message',
+            content: '开始执行命令。',
+          }),
+          makeSessionEvent({
+            eventId: 'sess-stdout',
+            source: 'stdout',
+            kind: 'output',
+            content: 'test passed',
+          }),
+          makeSessionEvent({
+            eventId: 'sess-stderr',
+            source: 'stderr',
+            kind: 'error',
+            content: 'command failed',
+          }),
+        ],
+      }),
+    );
+    expect(html).toContain('System / codex');
+    expect(html).toContain('Tool / codex');
+    expect(html).toContain('stdout / codex');
+    expect(html).toContain('stderr / codex');
+    expect(html).toContain('command failed');
   });
 
   it('运行中但无会话输出时渲染可观测提示', () => {
@@ -147,7 +187,7 @@ describe('TaskProgressPanel session tail', () => {
         agentRuns: [makeRunningRun()],
       }),
     );
-    expect(html).toContain('正在等待第一条会话输出');
+    expect(html).toContain('正在等待第一条 Codex 实时输出');
   });
 });
 
@@ -181,5 +221,24 @@ function makeRunningRun(): TaskPlanningSnapshot['agentRuns'][number] {
     inputArtifactIds: [],
     outputArtifactIds: [],
     startedAt: '2026-01-01T00:00:00.000Z',
+  };
+}
+
+function makeSessionEvent(
+  overrides: Partial<TaskPlanningSnapshot['agentSessionEvents'][number]>,
+): TaskPlanningSnapshot['agentSessionEvents'][number] {
+  return {
+    eventId: 'sess-1',
+    runId: 'run-1',
+    taskId: 'task-1',
+    threadId: 'thread-1',
+    agentId: 'implementer',
+    provider: 'codex',
+    source: 'agent',
+    kind: 'output',
+    content: '正在处理。',
+    metadata: {},
+    createdAt: '2026-01-01T00:04:50.000Z',
+    ...overrides,
   };
 }
