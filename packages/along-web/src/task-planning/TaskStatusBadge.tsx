@@ -1,21 +1,38 @@
 import type { TaskPlanningSnapshot } from '../types';
-import { getTaskDisplayClass } from './displayFormat';
-import { getTaskStatusClass, getTaskStatusLabel } from './format';
+import { getTaskStatusLabel } from './format';
+import {
+  getTaskDisplayStatusStyle,
+  getTaskLegacyStatusStyle,
+} from './statusStyles';
+
+const TASK_STATUS_DOT_BASE_CLASS =
+  'relative inline-flex h-2.5 w-2.5 shrink-0 rounded-full ring-2';
+
+const TASK_STATUS_DOT_RUNNING_CLASS =
+  "after:absolute after:inset-0 after:rounded-full after:bg-current after:content-[''] after:animate-ping after:opacity-60 motion-reduce:after:animate-none motion-reduce:after:opacity-30";
 
 export function TaskStatusBadge({
   snapshot,
 }: {
   snapshot: TaskPlanningSnapshot;
 }) {
+  const label =
+    snapshot.display?.label || getTaskStatusLabel(snapshot.task.status);
+  const style = snapshot.display
+    ? getTaskDisplayStatusStyle(snapshot.display.state)
+    : getTaskLegacyStatusStyle(snapshot.task.status);
+  const isAgentRunning = snapshot.agentStages.some(
+    (stage) => stage.status === 'running',
+  );
+
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${
-        snapshot.display
-          ? getTaskDisplayClass(snapshot.display.state)
-          : getTaskStatusClass(snapshot.task.status)
+      aria-label={label}
+      className={`${TASK_STATUS_DOT_BASE_CLASS} ${style.dotClass} ${
+        isAgentRunning ? TASK_STATUS_DOT_RUNNING_CLASS : ''
       }`}
-    >
-      {snapshot.display?.label || getTaskStatusLabel(snapshot.task.status)}
-    </span>
+      role="img"
+      title={label}
+    />
   );
 }
