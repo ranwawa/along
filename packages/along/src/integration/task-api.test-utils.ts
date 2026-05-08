@@ -35,6 +35,7 @@ export const TEST_PLAN_STATUS = {
 export type PlanningMocks = {
   approveTaskImplementationSteps: PlanningMock;
   approveCurrentTaskPlan: PlanningMock;
+  cancelTaskAgentRun: PlanningMock;
   closeTask: PlanningMock;
   completeDeliveredTask: PlanningMock;
   completeTaskAgentStageManually: PlanningMock;
@@ -79,11 +80,34 @@ export function resetPlanningMocks(planningMocks: PlanningMocks) {
   vi.clearAllMocks();
   mockTaskReads(planningMocks);
   mockTaskMessage(planningMocks);
+  mockTaskAgentCancellation(planningMocks);
   mockPlanApproval(planningMocks);
   mockTaskClose(planningMocks);
   mockImplementationStepsApproval(planningMocks);
   mockManualComplete(planningMocks);
   mockDeliveredComplete(planningMocks);
+}
+
+function mockTaskAgentCancellation(planningMocks: PlanningMocks) {
+  planningMocks.cancelTaskAgentRun.mockReturnValue({
+    success: true,
+    data: {
+      cancelled: true,
+      runId: 'run-1',
+      run: {
+        runId: 'run-1',
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'planner',
+        provider: 'codex',
+        status: 'cancelled',
+        inputArtifactIds: [],
+        outputArtifactIds: [],
+        startedAt: '2026-01-01T00:00:00.000Z',
+        endedAt: '2026-01-01T00:00:01.000Z',
+      },
+    },
+  });
 }
 
 function mockImplementationStepsApproval(planningMocks: PlanningMocks) {

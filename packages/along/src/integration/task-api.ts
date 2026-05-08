@@ -1,7 +1,9 @@
+// biome-ignore-all lint/style/noMagicNumbers: API router uses HTTP status literals.
 import type { TaskPlanningSnapshot } from '../domain/task-planning';
 import {
   handleTaskApproveRequest,
   handleTaskAttachmentRequest,
+  handleTaskCancelAgentRequest,
   handleTaskCloseRequest,
   handleTaskCompleteRequest,
   handleTaskCreateRequest,
@@ -67,6 +69,7 @@ type TaskActionHandler = (
 
 const ACTION_ROUTES: Record<string, TaskActionHandler> = {
   approve: (_req, taskId) => handleTaskApproveRequest(taskId),
+  'cancel-agent': (req, taskId) => handleTaskCancelAgentRequest(req, taskId),
   close: (req, taskId) => handleTaskCloseRequest(req, taskId),
   complete: (_req, taskId, context) =>
     handleTaskCompleteRequest(taskId, context),

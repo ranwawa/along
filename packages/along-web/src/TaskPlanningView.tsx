@@ -58,6 +58,7 @@ function TaskPlanningMain({
         onMessageAttachmentsChange={taskPlanning.setMessageAttachments}
         onMessageExecutionModeChange={taskPlanning.setMessageExecutionMode}
         onSubmitMessage={taskPlanning.submitMessageFromFlow}
+        onCancelAgentRun={taskPlanning.cancelAgentRun}
         onAction={taskPlanning.handleFlowAction}
       />
     </div>

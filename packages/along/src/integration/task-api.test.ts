@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noMagicNumbers: tests assert HTTP status codes and binary fixtures directly.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handleTaskApiRequest, isTaskApiPath } from './task-api';
 import {
@@ -11,6 +12,7 @@ import {
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
   approveTaskImplementationSteps: vi.fn(),
   approveCurrentTaskPlan: vi.fn(),
+  cancelTaskAgentRun: vi.fn(),
   closeTask: vi.fn(),
   completeDeliveredTask: vi.fn(),
   completeTaskAgentStageManually: vi.fn(),
@@ -20,6 +22,9 @@ const planningMocks: PlanningMocks = vi.hoisted(() => ({
   readTaskPlanningSnapshot: vi.fn(),
   requestTaskPlan: vi.fn(),
   submitTaskMessage: vi.fn(),
+}));
+const lifecycleMocks = vi.hoisted(() => ({
+  requestTaskAgentCancellation: vi.fn(),
 }));
 
 const cleanupMocks = vi.hoisted(() => ({
@@ -48,6 +53,7 @@ vi.mock('../domain/task-planning', () => ({
   },
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
+  cancelTaskAgentRun: planningMocks.cancelTaskAgentRun,
   closeTask: planningMocks.closeTask,
   completeDeliveredTask: planningMocks.completeDeliveredTask,
   completeTaskAgentStageManually: planningMocks.completeTaskAgentStageManually,
@@ -59,11 +65,18 @@ vi.mock('../domain/task-planning', () => ({
   submitTaskMessage: planningMocks.submitTaskMessage,
 }));
 
+vi.mock('../domain/task-agent-run-lifecycle', () => ({
+  requestTaskAgentCancellation: lifecycleMocks.requestTaskAgentCancellation,
+}));
+
 vi.mock('../domain/cleanup-utils', () => ({
   cleanupIssue: cleanupMocks.cleanupIssue,
 }));
 
 beforeEach(() => resetPlanningMocks(planningMocks));
+beforeEach(() => {
+  lifecycleMocks.requestTaskAgentCancellation.mockReturnValue(true);
+});
 beforeEach(() => {
   cleanupMocks.cleanupIssue.mockResolvedValue({
     success: true,
@@ -275,6 +288,112 @@ it('当 multipart 追加用户消息带图片时，期望附件传给消息层',
       }),
     ],
   });
+});
+
+it('当取消当前 running agent 时，期望返回最新 snapshot 并请求中断句柄', async () => {
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/task-1/cancel-agent', {
+      reason: '用户中断',
+    }),
+    new URL('http://localhost/api/tasks/task-1/cancel-agent'),
+    { defaultCwd: '/tmp/default' },
+  );
+  const payload = (await response.json()) as {
+    taskId: string;
+    cancelled: boolean;
+    runId?: string;
+    snapshot: typeof snapshot;
+  };
+
+  expect(response.status).toBe(200);
+  expect(payload.taskId).toBe('task-1');
+  expect(payload.cancelled).toBe(true);
+  expect(payload.runId).toBe('run-1');
+  expect(planningMocks.cancelTaskAgentRun).toHaveBeenCalledWith({
+    taskId: 'task-1',
+    runId: undefined,
+    reason: '用户中断',
+  });
+  expect(lifecycleMocks.requestTaskAgentCancellation).toHaveBeenCalledWith(
+    'run-1',
+    '用户中断',
+  );
+  expect(payload.snapshot.task.lifecycle).toBe('open');
+  expect(planningMocks.closeTask).not.toHaveBeenCalled();
+});
+
+it('当指定 runId 取消 agent 时，期望 runId 传给领域层', async () => {
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/task-1/cancel-agent', {
+      runId: 'run-target',
+    }),
+    new URL('http://localhost/api/tasks/task-1/cancel-agent'),
+    { defaultCwd: '/tmp/default' },
+  );
+
+  expect(response.status).toBe(200);
+  expect(planningMocks.cancelTaskAgentRun).toHaveBeenCalledWith({
+    taskId: 'task-1',
+    runId: 'run-target',
+    reason: undefined,
+  });
+});
+
+it('当没有 running agent 时，取消接口期望幂等返回 cancelled=false', async () => {
+  planningMocks.cancelTaskAgentRun.mockReturnValueOnce({
+    success: true,
+    data: { cancelled: false },
+  });
+
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/task-1/cancel-agent', {}),
+    new URL('http://localhost/api/tasks/task-1/cancel-agent'),
+    { defaultCwd: '/tmp/default' },
+  );
+  const payload = (await response.json()) as {
+    cancelled: boolean;
+    runId?: string;
+  };
+
+  expect(response.status).toBe(200);
+  expect(payload.cancelled).toBe(false);
+  expect(payload.runId).toBeUndefined();
+  expect(lifecycleMocks.requestTaskAgentCancellation).not.toHaveBeenCalled();
+});
+
+it('当取消 agent 未提供请求体时，期望按取消最新 running run 处理', async () => {
+  const response = await handleTaskApiRequest(
+    new Request('http://localhost/api/tasks/task-1/cancel-agent', {
+      method: 'POST',
+    }),
+    new URL('http://localhost/api/tasks/task-1/cancel-agent'),
+    { defaultCwd: '/tmp/default' },
+  );
+
+  expect(response.status).toBe(200);
+  expect(planningMocks.cancelTaskAgentRun).toHaveBeenCalledWith({
+    taskId: 'task-1',
+    runId: undefined,
+    reason: undefined,
+  });
+});
+
+it('当取消不存在 Task 的 agent 时，期望返回 404', async () => {
+  planningMocks.readTaskPlanningSnapshot.mockReturnValueOnce({
+    success: true,
+    data: null,
+  });
+
+  const response = await handleTaskApiRequest(
+    jsonRequest('/api/tasks/missing/cancel-agent', {}),
+    new URL('http://localhost/api/tasks/missing/cancel-agent'),
+    { defaultCwd: '/tmp/default' },
+  );
+  const payload = (await response.json()) as { error: string };
+
+  expect(response.status).toBe(404);
+  expect(payload.error).toBe('Task 不存在: missing');
+  expect(planningMocks.cancelTaskAgentRun).not.toHaveBeenCalled();
 });
 
 it('当批准 Task Plan 时，期望不再调度 planner', async () => {

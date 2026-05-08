@@ -1,3 +1,5 @@
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner keeps provider orchestration together.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy runner keeps provider orchestration together.
 import type { ThreadOptions } from '@openai/codex-sdk';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
@@ -6,8 +8,11 @@ import {
   writeTaskAgentProgress,
 } from './task-agent-progress';
 import {
+  completeTaskAgentCancellation,
   finishTaskAgentSuccess,
+  isTaskAgentRunCancelled,
   markTaskAgentFailed,
+  registerTaskAgentCancellation,
   type StartedTaskAgentRun,
   saveTaskAgentOutput,
   startTaskAgentRun,
@@ -102,9 +107,28 @@ async function runStartedCodexTurn(
     const promptRes = await prepareCodexPrompt(input, prompt, progressContext);
     if (!promptRes.success)
       return failCodexTurn(progressContext, promptRes.error, latestThreadId);
+    if (isTaskAgentRunCancelled(progressContext.runId)) {
+      return completeCancelledCodexTurn(
+        progressContext,
+        usedResume,
+        latestThreadId,
+      );
+    }
     thread = openCodexThread(input, progressContext, binding.providerSessionId);
-    const turn = await runCodexPrompt(thread, promptRes.data, outputSchema);
+    const turn = await runCodexPrompt(
+      progressContext.runId,
+      thread,
+      promptRes.data,
+      outputSchema,
+    );
     latestThreadId = thread.id || binding.providerSessionId;
+    if (isTaskAgentRunCancelled(progressContext.runId)) {
+      return completeCancelledCodexTurn(
+        progressContext,
+        usedResume,
+        latestThreadId,
+      );
+    }
     writeCodexTurnSessionEvents(progressContext, turn);
     return completeCodexTurn(
       input,
@@ -115,6 +139,13 @@ async function runStartedCodexTurn(
       latestThreadId,
     );
   } catch (error: unknown) {
+    if (isTaskAgentRunCancelled(progressContext.runId)) {
+      return completeCancelledCodexTurn(
+        progressContext,
+        usedResume,
+        thread?.id || latestThreadId,
+      );
+    }
     return failCodexTurn(progressContext, error, thread?.id || latestThreadId);
   } finally {
     stopHeartbeat();
@@ -195,12 +226,16 @@ function openCodexThread(
 }
 
 async function runCodexPrompt(
+  runId: string,
   thread: TaskCodexThread,
   prompt: string | TaskCodexInputItem[],
   outputSchema: unknown,
 ): Promise<TaskCodexTurn> {
   const timeoutMs = readCodexTurnTimeoutMs();
   const abortController = new AbortController();
+  const unregisterCancel = registerTaskAgentCancellation(runId, (reason) =>
+    abortController.abort(reason),
+  );
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -214,6 +249,7 @@ async function runCodexPrompt(
     timeout,
     () => timedOut,
     timeoutMs,
+    unregisterCancel,
   );
 }
 
@@ -225,6 +261,7 @@ async function runCodexThreadWithTimeout(
   timeout: ReturnType<typeof setTimeout>,
   isTimedOut: () => boolean,
   timeoutMs: number,
+  unregisterCancel: () => void,
 ): Promise<TaskCodexTurn> {
   try {
     return await thread.run(prompt, {
@@ -240,8 +277,28 @@ async function runCodexThreadWithTimeout(
       },
     );
   } finally {
+    unregisterCancel();
     clearTimeout(timeout);
   }
+}
+
+function completeCancelledCodexTurn(
+  context: TaskAgentProgressContext,
+  usedResume: boolean,
+  latestThreadId?: string,
+): Result<RunTaskClaudeTurnOutput> {
+  const runRes = completeTaskAgentCancellation(
+    context,
+    'Codex Agent 运行已中断，跳过保存输出。',
+  );
+  if (!runRes.success) return runRes;
+  return success({
+    run: runRes.data,
+    providerSessionId: latestThreadId,
+    usedResume,
+    assistantText: '',
+    outputArtifactIds: [],
+  });
 }
 
 function completeCodexTurn(

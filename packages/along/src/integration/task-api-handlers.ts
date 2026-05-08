@@ -1,6 +1,8 @@
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy API handler file keeps related route handlers together.
+// biome-ignore-all lint/style/noMagicNumbers: legacy API handler uses HTTP status literals throughout.
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
+import { requestTaskAgentCancellation } from '../domain/task-agent-run-lifecycle';
 import type { TaskAttachmentUploadInput } from '../domain/task-attachments';
 import {
   areImplementationStepsApproved,
@@ -9,6 +11,7 @@ import {
 import {
   approveCurrentTaskPlan,
   approveTaskImplementationSteps,
+  cancelTaskAgentRun,
   closeTask,
   completeDeliveredTask,
   completeTaskAgentStageManually,
@@ -212,6 +215,57 @@ export async function handleTaskCloseRequest(
   const closeRes = closeTask(taskId, readStringField(bodyRes.data, 'reason'));
   if (!closeRes.success) return errorResponse(closeRes.error, 409);
   return jsonResponse({ taskId, snapshot: closeRes.data });
+}
+
+export async function handleTaskCancelAgentRequest(
+  req: Request,
+  taskId: string,
+): Promise<Response> {
+  const bodyRes = await readOptionalJsonObject(req);
+  if (!bodyRes.success) return errorResponse(bodyRes.error, 400);
+
+  const existing = readTaskPlanningSnapshot(taskId);
+  if (!existing.success) return errorResponse(existing.error, 500);
+  if (!existing.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
+
+  const cancelRes = cancelTaskAgentRun({
+    taskId,
+    runId: readStringField(bodyRes.data, 'runId'),
+    reason: readStringField(bodyRes.data, 'reason'),
+  });
+  if (!cancelRes.success) return errorResponse(cancelRes.error, 409);
+  if (cancelRes.data.runId) {
+    requestTaskAgentCancellation(
+      cancelRes.data.runId,
+      readStringField(bodyRes.data, 'reason'),
+    );
+  }
+
+  const snapshotRes = readTaskPlanningSnapshot(taskId);
+  if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
+  return jsonResponse({
+    taskId,
+    cancelled: cancelRes.data.cancelled,
+    runId: cancelRes.data.runId,
+    snapshot: snapshotRes.data || existing.data,
+  });
+}
+
+async function readOptionalJsonObject(
+  req: Request,
+): Promise<Result<UnknownRecord>> {
+  try {
+    const raw = await req.text();
+    if (!raw.trim()) return success({});
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed)
+      ? success(parsed as UnknownRecord)
+      : failure('请求体必须是 JSON 对象');
+  } catch {
+    return failure('请求体必须是合法 JSON');
+  }
 }
 
 export async function handleTaskPlannerRequest(

@@ -10,6 +10,7 @@ import {
   createTaskAgentRun,
   ensureTaskAgentBinding,
   finishTaskAgentRun,
+  readTaskAgentRun,
   recordTaskAgentResult,
   TASK_AGENT_PROGRESS_PHASE,
   type TaskAgentBindingRecord,
@@ -32,6 +33,61 @@ export interface StartedTaskAgentRun {
   run: TaskAgentRunRecord;
   progressContext: TaskAgentProgressContext;
   usedResume: boolean;
+}
+
+type TaskAgentCancelHandler = (reason?: string) => void;
+
+const runningTaskAgentCancels = new Map<string, TaskAgentCancelHandler>();
+
+export function registerTaskAgentCancellation(
+  runId: string,
+  cancel: TaskAgentCancelHandler,
+): () => void {
+  runningTaskAgentCancels.set(runId, cancel);
+  return () => {
+    if (runningTaskAgentCancels.get(runId) === cancel) {
+      runningTaskAgentCancels.delete(runId);
+    }
+  };
+}
+
+export function requestTaskAgentCancellation(
+  runId: string,
+  reason?: string,
+): boolean {
+  const cancel = runningTaskAgentCancels.get(runId);
+  if (!cancel) return false;
+  cancel(reason);
+  return true;
+}
+
+export function isTaskAgentRunCancelled(runId: string): boolean {
+  const runRes = readTaskAgentRun(runId);
+  return runRes.success && runRes.data?.status === AGENT_RUN_STATUS.CANCELLED;
+}
+
+export function completeTaskAgentCancellation(
+  context: TaskAgentProgressContext,
+  summary = 'Agent 运行已中断。',
+  detail?: string,
+): Result<TaskAgentRunRecord> {
+  if (isTaskAgentRunCancelled(context.runId)) {
+    const runRes = readTaskAgentRun(context.runId);
+    return runRes.success && runRes.data
+      ? success(runRes.data)
+      : failure('Agent Run 已取消，但读取状态失败');
+  }
+  writeTaskAgentProgress(
+    context,
+    TASK_AGENT_PROGRESS_PHASE.CANCELLED,
+    summary,
+    detail,
+  );
+  return finishTaskAgentRun({
+    runId: context.runId,
+    status: AGENT_RUN_STATUS.CANCELLED,
+    error: detail,
+  });
 }
 
 export function startTaskAgentRun(
@@ -98,6 +154,7 @@ export function markTaskAgentFailed(
   providerSessionIdAtEnd?: string,
   summary = 'Agent 运行失败，正在记录错误。',
 ): Result<void> {
+  if (isTaskAgentRunCancelled(context.runId)) return success(undefined);
   writeTaskAgentProgress(
     context,
     TASK_AGENT_PROGRESS_PHASE.FAILED,
@@ -121,6 +178,9 @@ export function saveTaskAgentOutput(
   providerSessionIdAtEnd?: string,
 ): Result<string[]> {
   if (!assistantText) return success([]);
+  if (isTaskAgentRunCancelled(context.runId)) {
+    return failure('Agent Run 已取消，跳过保存输出');
+  }
   writeTaskAgentProgress(
     context,
     TASK_AGENT_PROGRESS_PHASE.FINALIZING,
@@ -158,6 +218,12 @@ export function finishTaskAgentSuccess(
   outputArtifactIds: string[],
   providerSessionIdAtEnd?: string,
 ): Result<TaskAgentRunRecord> {
+  if (isTaskAgentRunCancelled(context.runId)) {
+    const runRes = readTaskAgentRun(context.runId);
+    return runRes.success && runRes.data
+      ? success(runRes.data)
+      : failure('Agent Run 已取消，但读取状态失败');
+  }
   const finishedRun = finishTaskAgentRun({
     runId: context.runId,
     status: AGENT_RUN_STATUS.SUCCEEDED,

@@ -1,5 +1,6 @@
-import { type FormEvent, useState } from 'react';
-import type { TaskExecutionMode } from '../types-task';
+// biome-ignore-all lint/style/noJsxLiterals: existing composer controls use inline UI labels.
+import { type FormEvent, type KeyboardEvent, useState } from 'react';
+import type { TaskAgentRunRecord, TaskExecutionMode } from '../types-task';
 import {
   ImageAttachmentPicker,
   type ImageAttachmentPickerRenderProps,
@@ -13,8 +14,10 @@ interface TaskComposerInputProps {
   executionMode: TaskExecutionMode;
   placeholder: string;
   rows?: number;
+  runningRun?: TaskAgentRunRecord | null;
   submitDisabled: boolean;
   submitTitle?: string;
+  onCancelAgentRun?: (runId?: string) => void;
   onAttachmentsChange: (files: File[]) => void;
   onBodyChange: (value: string) => void;
   onExecutionModeChange: (value: TaskExecutionMode) => void;
@@ -79,6 +82,15 @@ function SendIcon() {
   );
 }
 
+function SpinnerIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      className="h-4 w-4 animate-spin rounded-full border-2 border-white/45 border-t-white motion-reduce:animate-none"
+    />
+  );
+}
+
 function isTaskExecutionMode(value: string): value is TaskExecutionMode {
   return value === 'manual' || value === 'autonomous';
 }
@@ -139,15 +151,32 @@ function ComposerTextarea({
   disabled,
   placeholder,
   rows,
+  runningRun,
   onBodyChange,
+  onSubmitShortcut,
 }: Pick<
   TaskComposerInputProps,
-  'body' | 'busy' | 'disabled' | 'placeholder' | 'rows' | 'onBodyChange'
->) {
+  | 'body'
+  | 'busy'
+  | 'disabled'
+  | 'placeholder'
+  | 'rows'
+  | 'runningRun'
+  | 'onBodyChange'
+> & {
+  onSubmitShortcut: (form: HTMLFormElement | null) => void;
+}) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    if (event.ctrlKey || event.altKey || event.shiftKey || runningRun) return;
+    event.preventDefault();
+    onSubmitShortcut(event.currentTarget.form);
+  };
   return (
     <textarea
       value={body}
       onChange={(event) => onBodyChange(event.target.value)}
+      onKeyDown={handleKeyDown}
       placeholder={placeholder}
       rows={rows}
       disabled={disabled || busy}
@@ -186,24 +215,27 @@ function ExecutionModeSelect({
 
 function SubmitIconButton({
   busy,
+  runningRun,
   submitDisabled,
   submitTitle,
-}: Pick<TaskComposerInputProps, 'busy' | 'submitDisabled' | 'submitTitle'>) {
+  onCancelAgentRun,
+}: Pick<
+  TaskComposerInputProps,
+  'busy' | 'runningRun' | 'submitDisabled' | 'submitTitle' | 'onCancelAgentRun'
+>) {
+  const isCancelling = Boolean(runningRun);
   return (
     <button
-      type="submit"
-      aria-label={busy ? '发送中' : '发送'}
-      title={busy ? '发送中' : submitTitle}
+      type={isCancelling ? 'button' : 'submit'}
+      aria-label={isCancelling ? '中断当前 Agent' : busy ? '发送中' : '发送'}
+      title={isCancelling ? '中断当前 Agent' : busy ? '发送中' : submitTitle}
       disabled={submitDisabled || busy}
+      onClick={() => {
+        if (runningRun) onCancelAgentRun?.(runningRun.runId);
+      }}
       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-brand bg-brand text-white transition-colors hover:bg-brand-hover focus:outline-none focus:ring-1 focus:ring-brand/70 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {busy ? (
-        <span aria-hidden="true" className="text-sm leading-none">
-          ...
-        </span>
-      ) : (
-        <SendIcon />
-      )}
+      {isCancelling ? <SpinnerIcon /> : busy ? <SpinnerIcon /> : <SendIcon />}
     </button>
   );
 }
@@ -232,14 +264,16 @@ function ComposerActionRow({
 
 function ComposerContent({
   controls,
+  onSubmitShortcut,
   ...props
 }: ComposerDisplayProps & {
   controls: ImageAttachmentPickerRenderProps;
+  onSubmitShortcut: (form: HTMLFormElement | null) => void;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {controls.previews}
-      <ComposerTextarea {...props} />
+      <ComposerTextarea {...props} onSubmitShortcut={onSubmitShortcut} />
       {controls.error}
       <ComposerActionRow controls={controls} {...props} />
     </div>
@@ -271,7 +305,15 @@ export function TaskComposerInput({
         onChange={onAttachmentsChange}
       >
         {(controls) => (
-          <ComposerContent controls={controls} {...composerProps} />
+          <ComposerContent
+            controls={controls}
+            {...composerProps}
+            onSubmitShortcut={(form) => {
+              if (!composerProps.submitDisabled && !composerProps.runningRun) {
+                form?.requestSubmit();
+              }
+            }}
+          />
         )}
       </ImageAttachmentPicker>
     </form>

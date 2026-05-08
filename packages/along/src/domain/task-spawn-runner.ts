@@ -7,8 +7,11 @@ import {
   writeTaskAgentSessionEvent,
 } from './task-agent-progress';
 import {
+  completeTaskAgentCancellation,
   finishTaskAgentSuccess,
+  isTaskAgentRunCancelled,
   markTaskAgentFailed,
+  registerTaskAgentCancellation,
   type StartedTaskAgentRun,
   saveTaskAgentOutput,
   startTaskAgentRun,
@@ -86,25 +89,31 @@ export async function runTaskSpawnTurn(
   );
 }
 
-function runPreparedSpawnCommand(
+async function runPreparedSpawnCommand(
   input: RunTaskSpawnTurnInput,
   command: TaskAgentSpawnCommand,
   editor: EditorConfig,
   started: StartedTaskAgentRun,
   runner: TaskAgentSpawnRunner,
-) {
+): Promise<Result<RunTaskClaudeTurnOutput>> {
   const stopHeartbeat = startSpawnHeartbeat(started, editor.name, command.cwd);
+  const abortController = new AbortController();
+  const unregisterCancel = registerTaskAgentCancellation(
+    started.run.runId,
+    (reason) => abortController.abort(reason),
+  );
   try {
     const streamState = { seen: false };
-    return executeSpawnTurn(
+    return await executeSpawnTurn(
       input,
-      command,
+      { ...command, abortSignal: abortController.signal },
       editor,
       started,
       runner,
       streamState,
     );
   } finally {
+    unregisterCancel();
     stopHeartbeat();
   }
 }
@@ -169,6 +178,9 @@ async function executeSpawnTurn(
   const executionRes = await runner(
     withSessionStreamCallbacks(command, started.progressContext, streamState),
   );
+  if (isTaskAgentRunCancelled(started.run.runId)) {
+    return completeCancelledSpawnTurn(started);
+  }
   if (!executionRes.success) {
     return failSpawnTurn(
       started.progressContext,
@@ -244,6 +256,23 @@ function finishSpawnExecution(
     usedResume: started.usedResume,
     assistantText,
     outputArtifactIds: outputRes.data,
+  });
+}
+
+function completeCancelledSpawnTurn(
+  started: StartedTaskAgentRun,
+): Result<RunTaskClaudeTurnOutput> {
+  const runRes = completeTaskAgentCancellation(
+    started.progressContext,
+    '外部 Agent 运行已中断，跳过保存输出。',
+  );
+  if (!runRes.success) return runRes;
+  return success({
+    run: runRes.data,
+    providerSessionId: started.binding.providerSessionId,
+    usedResume: started.usedResume,
+    assistantText: '',
+    outputArtifactIds: [],
   });
 }
 
