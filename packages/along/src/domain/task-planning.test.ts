@@ -28,6 +28,7 @@ const mockDbState = vi.hoisted(() => {
     progress: [],
     sessionEvents: [],
   };
+  let legacyTaskStatusColumn = false;
 
   function reset() {
     state.tasks = [];
@@ -39,6 +40,11 @@ const mockDbState = vi.hoisted(() => {
     state.runs = [];
     state.progress = [];
     state.sessionEvents = [];
+    legacyTaskStatusColumn = false;
+  }
+
+  function setLegacyTaskStatusColumn(value: boolean) {
+    legacyTaskStatusColumn = value;
   }
 
   function normalizeSql(sql: string): string {
@@ -132,6 +138,9 @@ const mockDbState = vi.hoisted(() => {
         return null;
       },
       all: (...args: Array<string | number | null>) => {
+        if (normalized === 'PRAGMA table_info(task_items)') {
+          return legacyTaskStatusColumn ? [{ name: 'status' }] : [];
+        }
         if (
           normalized ===
           'SELECT task_id FROM task_items ORDER BY updated_at DESC LIMIT ?'
@@ -215,11 +224,18 @@ const mockDbState = vi.hoisted(() => {
       },
       run: (...args: Array<string | number | null>) => {
         if (normalized.startsWith('INSERT INTO task_items')) {
+          const hasStatusColumn = normalized.includes(
+            'source, status, active_thread_id',
+          );
+          if (legacyTaskStatusColumn && !hasStatusColumn) {
+            throw new Error('NOT NULL constraint failed: task_items.status');
+          }
           const [
             taskId,
             title,
             body,
             source,
+            status,
             activeThreadId,
             repoOwner,
             repoName,
@@ -230,12 +246,31 @@ const mockDbState = vi.hoisted(() => {
             currentWorkflowKind,
             createdAt,
             updatedAt,
-          ] = args;
+          ] = hasStatusColumn
+            ? args
+            : [
+                args[0],
+                args[1],
+                args[2],
+                args[3],
+                null,
+                args[4],
+                args[5],
+                args[6],
+                args[7],
+                args[8],
+                args[9],
+                args[10],
+                args[11],
+                args[12],
+                args[13],
+              ];
           state.tasks.push({
             task_id: taskId,
             title,
             body,
             source,
+            status,
             active_thread_id: activeThreadId,
             repo_owner: repoOwner,
             repo_name: repoName,
@@ -818,6 +853,7 @@ const mockDbState = vi.hoisted(() => {
 
   return {
     reset,
+    setLegacyTaskStatusColumn,
     db: {
       prepare: makeStmt,
       transaction: (fn: () => void) => fn,
@@ -986,6 +1022,20 @@ describe('task-planning', () => {
     if (!created.success) throw new Error(created.error);
 
     expect(created.data.task.executionMode).toBe('manual');
+  });
+
+  it('当旧数据库仍有 status 非空列时，期望创建 Task 写入兼容状态', () => {
+    mockDbState.setLegacyTaskStatusColumn(true);
+
+    const created = createPlanningTask({
+      title: '兼容旧库状态列',
+      body: '旧库 task_items.status 仍然是 NOT NULL。',
+      source: 'test',
+    });
+    expect(created.success).toBe(true);
+    if (!created.success) throw new Error(created.error);
+
+    expect(created.data.task.status).toBe(TASK_STATUS.PLANNING);
   });
 
   it('当创建 Task 指定全自动模式时，期望快照返回 autonomous', () => {

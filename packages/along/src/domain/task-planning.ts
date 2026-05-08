@@ -1,5 +1,6 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy planning module predates current function-size rule.
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy planning module predates current file-size rule.
+import type { Database } from 'bun:sqlite';
 import crypto from 'node:crypto';
 import { iso_timestamp } from '../core/common';
 import { getDb } from '../core/db';
@@ -679,6 +680,10 @@ interface TaskIdRow {
   task_id: string;
 }
 
+interface TableInfoRow {
+  name: string;
+}
+
 interface LatestProviderSessionRow {
   provider_session_id_at_end: string;
 }
@@ -851,6 +856,17 @@ function mapTask(row: TaskItemRow): TaskItemRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function hasLegacyTaskStatusColumn(db: Pick<Database, 'prepare'>): boolean {
+  try {
+    const rows = db
+      .prepare('PRAGMA table_info(task_items)')
+      .all() as TableInfoRow[];
+    return rows.some((row) => row.name === 'status');
+  } catch {
+    return false;
+  }
 }
 
 function mapRound(row: TaskFeedbackRoundRow): TaskFeedbackRoundRecord {
@@ -2516,6 +2532,7 @@ export function createPlanningTask(
 
   try {
     const now = iso_timestamp();
+    const hasLegacyStatusColumn = hasLegacyTaskStatusColumn(db);
 
     const txn = db.transaction(() => {
       let seq: number | null = null;
@@ -2530,30 +2547,58 @@ export function createPlanningTask(
         seq = (maxRow?.max_seq ?? 0) + 1;
       }
 
-      db.prepare(
-        `
-          INSERT INTO task_items (
-            task_id, title, body, source, active_thread_id,
-            repo_owner, repo_name, cwd, seq, execution_mode, lifecycle,
-            current_workflow_kind, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-      ).run(
-        taskId,
-        title,
-        body,
-        input.source || 'web',
-        threadId,
-        input.repoOwner || null,
-        input.repoName || null,
-        input.cwd || null,
-        seq,
-        input.executionMode || TASK_EXECUTION_MODE.MANUAL,
-        TASK_LIFECYCLE.OPEN,
-        workflowKind,
-        now,
-        now,
-      );
+      if (hasLegacyStatusColumn) {
+        db.prepare(
+          `
+            INSERT INTO task_items (
+              task_id, title, body, source, status, active_thread_id,
+              repo_owner, repo_name, cwd, seq, execution_mode, lifecycle,
+              current_workflow_kind, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+        ).run(
+          taskId,
+          title,
+          body,
+          input.source || 'web',
+          TASK_STATUS.PLANNING,
+          threadId,
+          input.repoOwner || null,
+          input.repoName || null,
+          input.cwd || null,
+          seq,
+          input.executionMode || TASK_EXECUTION_MODE.MANUAL,
+          TASK_LIFECYCLE.OPEN,
+          workflowKind,
+          now,
+          now,
+        );
+      } else {
+        db.prepare(
+          `
+            INSERT INTO task_items (
+              task_id, title, body, source, active_thread_id,
+              repo_owner, repo_name, cwd, seq, execution_mode, lifecycle,
+              current_workflow_kind, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+        ).run(
+          taskId,
+          title,
+          body,
+          input.source || 'web',
+          threadId,
+          input.repoOwner || null,
+          input.repoName || null,
+          input.cwd || null,
+          seq,
+          input.executionMode || TASK_EXECUTION_MODE.MANUAL,
+          TASK_LIFECYCLE.OPEN,
+          workflowKind,
+          now,
+          now,
+        );
+      }
 
       db.prepare(
         `
