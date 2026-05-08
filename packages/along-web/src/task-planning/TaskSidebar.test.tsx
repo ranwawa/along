@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { TaskPlanningSnapshot } from '../types';
+import type { RepositoryOption } from './api';
 import {
   TASK_LEGACY_STATUS_COLORS,
   TASK_STATUS_COLOR_STYLES,
@@ -83,15 +84,38 @@ function makeSnapshot(
   };
 }
 
+const repositories: RepositoryOption[] = [
+  {
+    fullName: 'ranwawa/along',
+    owner: 'ranwawa',
+    repo: 'along',
+    path: '/workspace/along',
+    isDefault: true,
+  },
+];
+
 function renderPanel(
   overrides: Partial<Parameters<typeof TaskListPanel>[0]> = {},
 ): string {
   return renderToStaticMarkup(
     <TaskListPanel
+      draft={{
+        repository: 'ranwawa/along',
+        title: '',
+        body: '',
+        attachments: [],
+        executionMode: 'manual',
+      }}
+      repositories={repositories}
+      selectedRepository={repositories[0]}
+      repositoriesRefreshing={false}
+      error={null}
       tasks={[makeSnapshot()]}
       loading={false}
       selectedTaskId={undefined}
       isNewTaskOpen={false}
+      onDraftChange={() => undefined}
+      onRefreshRepositories={() => undefined}
       onNewTask={() => undefined}
       onSelect={() => undefined}
       {...overrides}
@@ -209,8 +233,25 @@ describe('TaskListPanel', () => {
     const emptyHtml = renderPanel({ tasks: [] });
 
     expect(selectedHtml).toContain('bg-white/10');
+    expect(selectedHtml).toContain('aria-label="新任务"');
     expect(selectedHtml).toContain('新任务');
+    expect(selectedHtml).toContain('>+</button>');
+    expect(selectedHtml).not.toContain('>任务列表<');
+    expect(selectedHtml).not.toContain('>1</span>');
     expect(loadingHtml).toContain('加载中...');
     expect(emptyHtml).toContain('暂无任务。');
+  });
+
+  it('在列表头部展示仓库下拉和刷新入口，不使用原生 title', () => {
+    const html = renderPanel();
+
+    expect(html).toContain('aria-label="仓库"');
+    expect(html).toContain('ranwawa/along');
+    expect(html).toContain('/workspace/along');
+    expect(html).toContain('刷新');
+    expect(html).toContain('role="tooltip"');
+    expect(html).not.toContain('主入口');
+    expect(html).not.toContain('title="/workspace/along"');
+    expect(html).not.toContain('title="新任务"');
   });
 });

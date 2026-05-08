@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import type { TaskPlanningSnapshot } from '../types';
@@ -17,8 +18,53 @@ import {
   sortTaskSnapshotsBySeqDesc,
 } from './api';
 
+export const LAST_TASK_REPOSITORY_KEY = 'along-web:last-task-repository';
+const TASK_POLLING_INTERVAL_MS = 3000;
+
 function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+export function readLastRepository() {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(LAST_TASK_REPOSITORY_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function writeLastRepository(repository: string) {
+  if (!repository || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LAST_TASK_REPOSITORY_KEY, repository);
+  } catch {
+    // localStorage can be disabled; selection still works for the current page.
+  }
+}
+
+function isKnownRepository(
+  repository: string,
+  repositories: RepositoryOption[],
+) {
+  return repositories.some((option) => option.fullName === repository);
+}
+
+export function resolveInitialRepository(
+  repositories: RepositoryOption[],
+  defaultRepository?: string,
+  cachedRepository = readLastRepository(),
+) {
+  const repositoryNames = new Set(
+    repositories.map((repository) => repository.fullName),
+  );
+  if (cachedRepository && repositoryNames.has(cachedRepository)) {
+    return cachedRepository;
+  }
+  if (defaultRepository && repositoryNames.has(defaultRepository)) {
+    return defaultRepository;
+  }
+  return repositories[0]?.fullName || '';
 }
 
 export function useTaskState() {
@@ -47,21 +93,41 @@ export function useTaskState() {
 
 export function useRepositories() {
   const [repositories, setRepositories] = useState<RepositoryOption[]>([]);
+  const repositoriesRef = useRef<RepositoryOption[]>([]);
   const [draft, setDraft] = useState<DraftTaskInput>(emptyDraft);
+  const setDraftWithRepositoryCache: Dispatch<SetStateAction<DraftTaskInput>> =
+    useCallback((value) => {
+      setDraft((previous) => {
+        const next = typeof value === 'function' ? value(previous) : value;
+        if (isKnownRepository(next.repository, repositoriesRef.current)) {
+          writeLastRepository(next.repository);
+        }
+        return next;
+      });
+    }, []);
   const loadRepositories = useCallback(async () => {
     const response = await fetch('/api/repositories');
     const result = await readJsonResponse<RepositoryListResponse>(response);
+    repositoriesRef.current = result.repositories;
     setRepositories(result.repositories);
-    setDraft((previous) => {
+    setDraftWithRepositoryCache((previous) => {
       if (previous.repository) return previous;
       return {
         ...previous,
-        repository:
-          result.defaultRepository || result.repositories[0]?.fullName || '',
+        repository: resolveInitialRepository(
+          result.repositories,
+          result.defaultRepository,
+        ),
       };
     });
-  }, []);
-  return { repositories, setRepositories, draft, setDraft, loadRepositories };
+  }, [setDraftWithRepositoryCache]);
+  return {
+    repositories,
+    setRepositories,
+    draft,
+    setDraft: setDraftWithRepositoryCache,
+    loadRepositories,
+  };
 }
 
 export type TaskLoaderInput = {
@@ -185,7 +251,7 @@ export function useTaskPolling(
       .finally(() => active && setLoading(false));
     const timer = setInterval(() => {
       loadTasks().catch((err: unknown) => setError(getErrorMessage(err)));
-    }, 3000);
+    }, TASK_POLLING_INTERVAL_MS);
     return () => {
       active = false;
       clearInterval(timer);
@@ -207,7 +273,7 @@ export function useSelectedTaskPolling(
         if (active) setError(getErrorMessage(err));
       });
     refresh();
-    const timer = setInterval(refresh, 3000);
+    const timer = setInterval(refresh, TASK_POLLING_INTERVAL_MS);
     return () => {
       active = false;
       clearInterval(timer);
