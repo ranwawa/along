@@ -68,7 +68,8 @@ type TaskActionHandler = (
 const ACTION_ROUTES: Record<string, TaskActionHandler> = {
   approve: (_req, taskId) => handleTaskApproveRequest(taskId),
   close: (req, taskId) => handleTaskCloseRequest(req, taskId),
-  complete: (_req, taskId) => handleTaskCompleteRequest(taskId),
+  complete: (_req, taskId, context) =>
+    handleTaskCompleteRequest(taskId, context),
   delivery: handleTaskDeliveryRequest,
   implementation: handleTaskImplementationRequest,
   'manual-complete': (req, taskId) =>

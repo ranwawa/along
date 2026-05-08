@@ -345,10 +345,73 @@ export async function handleTaskManualCompleteRequest(
   return jsonResponse({ taskId, snapshot: completeRes.data });
 }
 
-export function handleTaskCompleteRequest(taskId: string): Response {
+export async function handleTaskCompleteRequest(
+  taskId: string,
+  _context: TaskApiContext,
+): Promise<Response> {
+  const snapshotRes = readTaskPlanningSnapshot(taskId);
+  if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
+  const snapshot = snapshotRes.data;
+  if (!snapshot) return errorResponse(`Task 不存在: ${taskId}`, 404);
+
+  if (snapshot.task.lifecycle !== TASK_LIFECYCLE.COMPLETED) {
+    const cleanupInputRes = readTaskCleanupInput(snapshot);
+    if (!cleanupInputRes.success) {
+      return errorResponse(cleanupInputRes.error, 409);
+    }
+
+    const { cleanupIssue } = await import('../domain/cleanup-utils');
+    const cleanupRes = await cleanupIssue(
+      String(cleanupInputRes.data.seq),
+      {
+        reason: 'delivery_acceptance',
+        worktreePath: cleanupInputRes.data.worktreePath,
+        branchName: cleanupInputRes.data.branchName,
+      },
+      cleanupInputRes.data.repoOwner,
+      cleanupInputRes.data.repoName,
+      cleanupInputRes.data.cwd,
+    );
+    if (!cleanupRes.success) return errorResponse(cleanupRes.error, 409);
+  }
+
   const completeRes = completeDeliveredTask(taskId);
   if (!completeRes.success) return errorResponse(completeRes.error, 409);
   return jsonResponse({ taskId, snapshot: completeRes.data });
+}
+
+function readTaskCleanupInput(snapshot: TaskPlanningSnapshot): Result<{
+  seq: number;
+  repoOwner: string;
+  repoName: string;
+  cwd: string;
+  worktreePath: string;
+  branchName?: string;
+}> {
+  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+    return failure('Task 已关闭，不能验收完成');
+  }
+  if (!snapshot.task.prUrl) return failure('只有已交付 Task 可以验收完成');
+  if (!snapshot.task.repoOwner || !snapshot.task.repoName) {
+    return failure('当前 Task 缺少仓库信息，不能清理本地资源');
+  }
+  if (!snapshot.task.cwd) {
+    return failure('当前 Task 缺少仓库路径，不能同步默认分支');
+  }
+  if (snapshot.task.seq == null) {
+    return failure('当前 Task 缺少本地序号，不能清理本地资源');
+  }
+  if (!snapshot.task.worktreePath) {
+    return failure('当前 Task 缺少 worktree 路径，不能清理本地资源');
+  }
+  return success({
+    seq: snapshot.task.seq,
+    repoOwner: snapshot.task.repoOwner,
+    repoName: snapshot.task.repoName,
+    cwd: snapshot.task.cwd,
+    worktreePath: snapshot.task.worktreePath,
+    branchName: snapshot.task.branchName,
+  });
 }
 
 function readExistingTaskError(taskId: string): Response | null {
