@@ -1,5 +1,6 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy planning module predates current function-size rule.
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy planning module predates current file-size rule.
+// biome-ignore-all lint/style/noMagicNumbers: legacy planning module uses numeric limits throughout.
 import type { Database } from 'bun:sqlite';
 import crypto from 'node:crypto';
 import { iso_timestamp } from '../core/common';
@@ -487,6 +488,18 @@ export interface FinishTaskAgentRunInput {
   providerSessionIdAtEnd?: string;
   outputArtifactIds?: string[];
   error?: string;
+}
+
+export interface CancelTaskAgentRunInput {
+  taskId: string;
+  runId?: string;
+  reason?: string;
+}
+
+export interface CancelTaskAgentRunOutput {
+  cancelled: boolean;
+  runId?: string;
+  run?: TaskAgentRunRecord;
 }
 
 export interface RecordTaskAgentProgressInput {
@@ -4157,6 +4170,121 @@ export function createTaskAgentRun(
     const message = error instanceof Error ? error.message : String(error);
     return failure(`创建 Agent Run 失败: ${message}`);
   }
+}
+
+export function readTaskAgentRun(
+  runId: string,
+): Result<TaskAgentRunRecord | null> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  try {
+    const row = dbRes.data
+      .prepare('SELECT * FROM task_agent_runs WHERE run_id = ?')
+      .get(runId) as TaskAgentRunRow | null;
+    return success(row ? mapRun(row) : null);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(`读取 Agent Run 失败: ${message}`);
+  }
+}
+
+function findCancelableTaskAgentRun(
+  db: Database,
+  input: CancelTaskAgentRunInput,
+): Result<TaskAgentRunRow | null> {
+  const taskRow = db
+    .prepare('SELECT task_id FROM task_items WHERE task_id = ?')
+    .get(input.taskId) as TaskIdRow | null;
+  if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
+
+  const row = input.runId
+    ? (db
+        .prepare(
+          `
+            SELECT * FROM task_agent_runs
+            WHERE task_id = ? AND run_id = ? AND status = ?
+            LIMIT 1
+          `,
+        )
+        .get(
+          input.taskId,
+          input.runId,
+          AGENT_RUN_STATUS.RUNNING,
+        ) as TaskAgentRunRow | null)
+    : (db
+        .prepare(
+          `
+            SELECT * FROM task_agent_runs
+            WHERE task_id = ? AND status = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+          `,
+        )
+        .get(input.taskId, AGENT_RUN_STATUS.RUNNING) as TaskAgentRunRow | null);
+  return success(row);
+}
+
+function recordTaskAgentCancelledProgress(
+  run: TaskAgentRunRecord,
+  reason?: string,
+): Result<void> {
+  const detail = reason?.trim() || undefined;
+  const summary = 'Agent 运行已被用户中断。';
+  const progressRes = recordTaskAgentProgress({
+    runId: run.runId,
+    taskId: run.taskId,
+    threadId: run.threadId,
+    agentId: run.agentId,
+    provider: run.provider,
+    phase: TASK_AGENT_PROGRESS_PHASE.CANCELLED,
+    summary,
+    detail,
+  });
+  if (!progressRes.success) return failure(progressRes.error);
+
+  const sessionRes = recordTaskAgentSessionEvent({
+    runId: run.runId,
+    taskId: run.taskId,
+    threadId: run.threadId,
+    agentId: run.agentId,
+    provider: run.provider,
+    source: 'system',
+    kind: 'progress',
+    content: detail ? `${summary}\n${detail}` : summary,
+    metadata: { phase: TASK_AGENT_PROGRESS_PHASE.CANCELLED },
+  });
+  return sessionRes.success ? success(undefined) : failure(sessionRes.error);
+}
+
+export function cancelTaskAgentRun(
+  input: CancelTaskAgentRunInput,
+): Result<CancelTaskAgentRunOutput> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+
+  const rowRes = findCancelableTaskAgentRun(dbRes.data, input);
+  if (!rowRes.success) return rowRes;
+  if (!rowRes.data) return success({ cancelled: false });
+
+  const runningRun = mapRun(rowRes.data);
+  const progressRes = recordTaskAgentCancelledProgress(
+    runningRun,
+    input.reason,
+  );
+  if (!progressRes.success) return progressRes;
+
+  const finishRes = finishTaskAgentRun({
+    runId: runningRun.runId,
+    status: AGENT_RUN_STATUS.CANCELLED,
+    error: input.reason,
+  });
+  if (!finishRes.success) return finishRes;
+  return success({
+    cancelled: finishRes.data.status === AGENT_RUN_STATUS.CANCELLED,
+    runId: finishRes.data.runId,
+    run: finishRes.data,
+  });
 }
 
 export function finishTaskAgentRun(

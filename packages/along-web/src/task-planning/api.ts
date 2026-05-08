@@ -37,6 +37,13 @@ export interface ManualCompleteResponse {
   snapshot: TaskPlanningSnapshot;
 }
 
+export interface CancelAgentRunResponse {
+  taskId: string;
+  cancelled: boolean;
+  runId?: string;
+  snapshot: TaskPlanningSnapshot;
+}
+
 export interface CompleteTaskResponse {
   taskId: string;
   snapshot: TaskPlanningSnapshot;

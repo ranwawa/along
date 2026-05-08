@@ -8,6 +8,7 @@ import { getLatestFailedStage } from './format';
 
 export type FlowActionParts = {
   submitMessageFromFlow: () => Promise<void>;
+  cancelAgentRun: (runId?: string) => Promise<void>;
   copyManualResumeCommand: (stage: TaskAgentStageRecord) => Promise<void>;
   completeManualStage: (stage: TaskAgentStageRecord) => Promise<void>;
   runSimpleAction: (

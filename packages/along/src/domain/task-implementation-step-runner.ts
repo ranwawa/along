@@ -1,4 +1,5 @@
 import { buildImplementationStepsPrompt } from '../agents/task-implementation';
+import { failure } from '../core/result';
 import { runTaskAgentTurn } from './task-agent-runtime';
 import type { RunTaskImplementationAgentInput } from './task-implementation-agent';
 import { IMPLEMENTATION_STEPS_KIND } from './task-implementation-steps';
@@ -13,7 +14,7 @@ export async function runImplementationStepsTurn(input: {
   approvedPlan: TaskPlanRevisionRecord;
   agentId: string;
 }) {
-  return runTaskAgentTurn({
+  const result = await runTaskAgentTurn({
     taskId: input.taskInput.taskId,
     threadId: input.snapshot.thread.threadId,
     agentId: input.agentId,
@@ -40,4 +41,8 @@ export async function runImplementationStepsTurn(input: {
       maxTurns: 20,
     },
   });
+  if (result.success && result.data.run.status === 'cancelled') {
+    return failure('Implementation Steps Agent Run 已取消');
+  }
+  return result;
 }

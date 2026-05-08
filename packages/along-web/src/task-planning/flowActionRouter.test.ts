@@ -115,6 +115,7 @@ function makeInput(
 function makeActions() {
   return {
     submitMessageFromFlow: vi.fn(),
+    cancelAgentRun: vi.fn(),
     copyManualResumeCommand: vi.fn(),
     completeManualStage: vi.fn(),
     runSimpleAction: vi.fn(),

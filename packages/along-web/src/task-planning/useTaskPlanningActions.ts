@@ -8,6 +8,7 @@ import type {
   UseTaskPlanningActionsInput,
 } from './actionTypes';
 import {
+  type CancelAgentRunResponse,
   type ManualCompleteResponse,
   readJsonResponse,
   type SubmitTaskMessageResponse,
@@ -98,26 +99,9 @@ function useMessageActions(
   api: ReturnType<typeof useSelectedTaskApi>,
 ) {
   const sendTaskMessage = async (body: string) => {
-    const attachments = input.messageAttachments;
-    if (!input.selected || input.busyAction) return;
+    if (shouldSkipMessageSend(input)) return;
     await runBusy(input, 'message', async () => {
-      const payload = {
-        body,
-        autoRun: true,
-        executionMode: input.messageExecutionMode,
-      };
-      const result =
-        attachments.length > 0
-          ? await postSelectedMultipart<SubmitTaskMessageResponse>(
-              input,
-              'messages',
-              payload,
-              attachments,
-            )
-          : await api.postSelected<SubmitTaskMessageResponse>(
-              'messages',
-              payload,
-            );
+      const result = await postTaskMessage(input, api, body);
       input.setMessageBody('');
       input.setMessageAttachments([]);
       await api.updateFromOptionalSnapshot(result.snapshot);
@@ -130,6 +114,58 @@ function useMessageActions(
     }
   };
   return { sendTaskMessage, submitMessageFromFlow };
+}
+
+function shouldSkipMessageSend(input: UseTaskPlanningActionsInput): boolean {
+  return (
+    !input.selected ||
+    Boolean(input.busyAction) ||
+    hasRunningAgentRun(input.selected)
+  );
+}
+
+function postTaskMessage(
+  input: UseTaskPlanningActionsInput,
+  api: ReturnType<typeof useSelectedTaskApi>,
+  body: string,
+): Promise<SubmitTaskMessageResponse> {
+  const payload = {
+    body,
+    autoRun: true,
+    executionMode: input.messageExecutionMode,
+  };
+  return input.messageAttachments.length > 0
+    ? postSelectedMultipart<SubmitTaskMessageResponse>(
+        input,
+        'messages',
+        payload,
+        input.messageAttachments,
+      )
+    : api.postSelected<SubmitTaskMessageResponse>('messages', payload);
+}
+
+function hasRunningAgentRun(snapshot: TaskPlanningSnapshot): boolean {
+  return snapshot.agentRuns.some((run) => run.status === 'running');
+}
+
+function useAgentCancellationActions(
+  input: UseTaskPlanningActionsInput,
+  api: ReturnType<typeof useSelectedTaskApi>,
+) {
+  const cancelAgentRun = async (runId?: string) => {
+    if (!input.selected || input.busyAction) return;
+    await runBusy(input, 'cancel-agent', async () => {
+      const result = await api.postSelected<CancelAgentRunResponse>(
+        'cancel-agent',
+        {
+          runId,
+          reason: '用户从聊天框中断当前 Agent 会话',
+        },
+      );
+      applySnapshot(result.snapshot, input);
+    });
+  };
+  return { cancelAgentRun };
 }
 
 async function postSelectedMultipart<T>(
@@ -231,9 +267,10 @@ function useFlowActionParts(
 ): FlowActionParts {
   const api = useSelectedTaskApi(input);
   const messages = useMessageActions(input, api);
+  const cancellations = useAgentCancellationActions(input, api);
   const simple = useSimpleFlowActions(input, api);
   const manual = useManualActions(input, api);
-  return { ...messages, ...simple, ...manual };
+  return { ...messages, ...cancellations, ...simple, ...manual };
 }
 
 function useFlowActions(input: UseTaskPlanningActionsInput) {
@@ -244,6 +281,7 @@ function useFlowActions(input: UseTaskPlanningActionsInput) {
   };
   return {
     submitMessageFromFlow: parts.submitMessageFromFlow,
+    cancelAgentRun: parts.cancelAgentRun,
     handleFlowAction,
   };
 }

@@ -229,6 +229,12 @@ async function runConfirmedImplementation(input: {
   if (!result.success) {
     return rollbackToPlanningApproved(input.taskInput.taskId, result);
   }
+  if (result.data.run.status === 'cancelled') {
+    return rollbackToPlanningApproved(
+      input.taskInput.taskId,
+      failure('Implementation Agent Run 已取消'),
+    );
+  }
 
   return runAutoCommitLoop({
     taskInput: input.taskInput,

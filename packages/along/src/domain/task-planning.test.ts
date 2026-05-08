@@ -76,6 +76,10 @@ const mockDbState = vi.hoisted(() => {
         if (normalized === 'SELECT * FROM task_items WHERE task_id = ?') {
           return findTask(String(args[0])) || null;
         }
+        if (normalized === 'SELECT task_id FROM task_items WHERE task_id = ?') {
+          const row = findTask(String(args[0]));
+          return row ? { task_id: row.task_id } : null;
+        }
         if (
           normalized ===
           'SELECT * FROM task_threads WHERE thread_id = ? AND task_id = ?'
@@ -114,6 +118,33 @@ const mockDbState = vi.hoisted(() => {
         }
         if (normalized === 'SELECT * FROM task_agent_runs WHERE run_id = ?') {
           return state.runs.find((row) => row.run_id === args[0]) || null;
+        }
+        if (
+          normalized.includes('FROM task_agent_runs') &&
+          normalized.includes('WHERE task_id = ? AND run_id = ? AND status = ?')
+        ) {
+          return (
+            state.runs.find(
+              (row) =>
+                row.task_id === args[0] &&
+                row.run_id === args[1] &&
+                row.status === args[2],
+            ) || null
+          );
+        }
+        if (
+          normalized.includes('FROM task_agent_runs') &&
+          normalized.includes('WHERE task_id = ? AND status = ?')
+        ) {
+          return (
+            state.runs
+              .filter(
+                (row) => row.task_id === args[0] && row.status === args[1],
+              )
+              .sort((left, right) =>
+                String(right.started_at).localeCompare(String(left.started_at)),
+              )[0] || null
+          );
         }
         if (
           normalized.includes('SELECT provider_session_id_at_end') &&
@@ -868,6 +899,7 @@ vi.mock('../core/db', () => ({
 import {
   AGENT_RUN_STATUS,
   approveCurrentTaskPlan,
+  cancelTaskAgentRun,
   closeTask,
   completeDeliveredTask,
   createPlanningTask,
@@ -1275,6 +1307,56 @@ describe('task-planning', () => {
     expect(closed.data.flow.blockers).not.toContain(
       '当前反馈轮次已打开，等待 Planner 处理你的补充反馈。',
     );
+  });
+
+  it('当取消当前 running agent 时，期望只取消 run 且不关闭 Task', () => {
+    const { taskId } = createTaskWithPlan();
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+    const run = createTaskAgentRun({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'codex',
+    });
+    expect(run.success).toBe(true);
+
+    const cancelled = cancelTaskAgentRun({
+      taskId,
+      reason: '用户中断',
+    });
+    expect(cancelled.success).toBe(true);
+    if (!cancelled.success) throw new Error(cancelled.error);
+
+    expect(cancelled.data.cancelled).toBe(true);
+    expect(cancelled.data.runId).toBe(run.success ? run.data.runId : '');
+    const refreshed = readTaskPlanningSnapshot(taskId);
+    expect(refreshed.success).toBe(true);
+    if (!refreshed.success || !refreshed.data)
+      throw new Error('missing refreshed snapshot');
+    expect(refreshed.data.task.lifecycle).not.toBe(TASK_LIFECYCLE.CANCELLED);
+    expect(refreshed.data.agentRuns[0].status).toBe(AGENT_RUN_STATUS.CANCELLED);
+    expect(
+      refreshed.data.agentProgressEvents.some(
+        (event) => event.phase === TASK_AGENT_PROGRESS_PHASE.CANCELLED,
+      ),
+    ).toBe(true);
+    expect(
+      refreshed.data.artifacts.some(
+        (artifact) => artifact.type === 'task_closed',
+      ),
+    ).toBe(false);
+  });
+
+  it('当没有 running agent 时，取消当前 agent 期望幂等返回 false', () => {
+    const { taskId } = createTaskWithPlan();
+    const cancelled = cancelTaskAgentRun({ taskId });
+    expect(cancelled.success).toBe(true);
+    if (!cancelled.success) throw new Error(cancelled.error);
+
+    expect(cancelled.data).toEqual({ cancelled: false });
   });
 
   it('当任务已关闭后继续推进流程时，期望拒绝且不改变 closed 状态', () => {

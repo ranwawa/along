@@ -1,3 +1,5 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels throughout.
+// biome-ignore-all lint/style/noMagicNumbers: existing dashboard layout uses numeric UI thresholds.
 import {
   type FormEvent,
   type RefObject,
@@ -193,6 +195,7 @@ type TaskDetailProps = {
   onMessageAttachmentsChange: (files: File[]) => void;
   onMessageExecutionModeChange: (value: TaskExecutionMode) => void;
   onSubmitMessage: () => void;
+  onCancelAgentRun: (runId?: string) => void;
   onAction: (action: TaskFlowAction) => void;
 };
 
@@ -315,6 +318,7 @@ function SelectedTaskDetail({
         </div>
         <div className="shrink-0 border-t border-border-color bg-bg-secondary p-3 md:p-4">
           <ExistingTaskComposer
+            snapshot={selected}
             flow={selected.flow}
             messageBody={detail.messageBody}
             attachments={detail.messageAttachments}
@@ -324,6 +328,7 @@ function SelectedTaskDetail({
             onAttachmentsChange={detail.onMessageAttachmentsChange}
             onExecutionModeChange={detail.onMessageExecutionModeChange}
             onSubmitMessage={detail.onSubmitMessage}
+            onCancelAgentRun={detail.onCancelAgentRun}
           />
         </div>
       </section>

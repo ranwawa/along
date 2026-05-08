@@ -2,6 +2,7 @@
 
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy webhook server predates current function-size rule.
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy webhook server predates current file-size rule.
+// biome-ignore-all lint/style/noMagicNumbers: legacy webhook server uses route and timeout literals throughout.
 /**
  * webhook-server.ts - 本地 webhook 接收服务器
  *
@@ -460,6 +461,10 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
         personalityVersion: input.personalityVersion,
       });
       if (!result.success) {
+        if (isTaskAgentCancellationError(result.error)) {
+          logger.info(`[Task ${input.taskId}] planning 已中断`);
+          return;
+        }
         logger.error(`[Task ${input.taskId}] planning 失败: ${result.error}`);
         return;
       }
@@ -500,6 +505,10 @@ function enqueueTaskImplementationRun(input: ScheduledTaskImplementationRun) {
         personalityVersion: input.personalityVersion,
       });
       if (!result.success) {
+        if (isTaskAgentCancellationError(result.error)) {
+          logger.info(`[Task ${input.taskId}] implementation 已中断`);
+          return;
+        }
         logger.error(
           `[Task ${input.taskId}] implementation 失败: ${result.error}`,
         );
@@ -523,6 +532,10 @@ function enqueueTaskImplementationRun(input: ScheduledTaskImplementationRun) {
       }
     });
   });
+}
+
+function isTaskAgentCancellationError(error: string): boolean {
+  return error.includes('已取消') || error.includes('已中断');
 }
 
 function enqueueTaskDeliveryRun(input: ScheduledTaskDeliveryRun) {

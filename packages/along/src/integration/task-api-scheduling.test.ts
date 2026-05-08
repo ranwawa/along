@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noMagicNumbers: tests assert HTTP status codes directly.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handleTaskApiRequest } from './task-api';
 import {
@@ -17,6 +18,7 @@ import {
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
   approveTaskImplementationSteps: vi.fn(),
   approveCurrentTaskPlan: vi.fn(),
+  cancelTaskAgentRun: vi.fn(),
   closeTask: vi.fn(),
   completeDeliveredTask: vi.fn(),
   completeTaskAgentStageManually: vi.fn(),
@@ -61,6 +63,7 @@ vi.mock('../domain/task-planning', () => ({
   WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
+  cancelTaskAgentRun: planningMocks.cancelTaskAgentRun,
   closeTask: planningMocks.closeTask,
   completeDeliveredTask: planningMocks.completeDeliveredTask,
   completeTaskAgentStageManually: planningMocks.completeTaskAgentStageManually,

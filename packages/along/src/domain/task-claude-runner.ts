@@ -1,3 +1,5 @@
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner keeps provider orchestration together.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy runner keeps provider orchestration together.
 import {
   type Options as ClaudeSDKOptions,
   query,
@@ -11,8 +13,11 @@ import {
   writeTaskAgentSessionEvent,
 } from './task-agent-progress';
 import {
+  completeTaskAgentCancellation,
   finishTaskAgentSuccess,
+  isTaskAgentRunCancelled,
   markTaskAgentFailed,
+  registerTaskAgentCancellation,
   type StartedTaskAgentRun,
   saveTaskAgentOutput,
   startTaskAgentRun,
@@ -38,6 +43,7 @@ import {
 import { resolveAndRecordInputImages } from './task-runner-images';
 
 const PROVIDER = 'claude';
+const DEFAULT_MAX_TURNS = 50;
 
 export interface RunTaskClaudeTurnInput {
   taskId: string;
@@ -68,17 +74,25 @@ interface ClaudeTurnState {
   structuredOutput?: unknown;
 }
 
+type AbortableClaudeOptions = ClaudeSDKOptions & {
+  abortController?: AbortController;
+  signal?: AbortSignal;
+};
+
 function buildOptions(
   input: RunTaskClaudeTurnInput,
   resumeSessionId?: string,
-): ClaudeSDKOptions {
+  abortController?: AbortController,
+): AbortableClaudeOptions {
   return {
     ...input.options,
     cwd: input.cwd,
     model: input.model,
     resume: resumeSessionId,
     permissionMode: input.options?.permissionMode || 'plan',
-    maxTurns: input.options?.maxTurns || 50,
+    maxTurns: input.options?.maxTurns || DEFAULT_MAX_TURNS,
+    abortController,
+    signal: abortController?.signal,
   };
 }
 
@@ -99,6 +113,11 @@ async function runStartedClaudeTurn(
   started: StartedTaskAgentRun,
 ): Promise<Result<RunTaskClaudeTurnOutput>> {
   const stopHeartbeat = startClaudeHeartbeat(started, input.cwd);
+  const abortController = new AbortController();
+  const unregisterCancel = registerTaskAgentCancellation(
+    started.run.runId,
+    (reason) => abortController.abort(reason),
+  );
 
   try {
     const promptRes = await prepareClaudePrompt(input, prompt, started);
@@ -109,24 +128,41 @@ async function runStartedClaudeTurn(
         started.binding.providerSessionId,
       );
     }
+    if (isTaskAgentRunCancelled(started.run.runId)) {
+      return completeCancelledClaudeTurn(started);
+    }
     const conversation = query({
       prompt: promptRes.data,
-      options: buildOptions(input, started.binding.providerSessionId),
+      options: buildOptions(
+        input,
+        started.binding.providerSessionId,
+        abortController,
+      ),
     });
     const stateRes = await collectClaudeConversation(
       conversation,
       started.progressContext,
       started.binding.providerSessionId,
     );
+    if (isTaskAgentRunCancelled(started.run.runId)) {
+      return completeCancelledClaudeTurn(
+        started,
+        stateRes.success ? stateRes.data : undefined,
+      );
+    }
     if (!stateRes.success) return stateRes;
     return completeClaudeTurn(input, started, stateRes.data);
   } catch (error: unknown) {
+    if (isTaskAgentRunCancelled(started.run.runId)) {
+      return completeCancelledClaudeTurn(started);
+    }
     return failClaudeTurn(
       started.progressContext,
       error,
       started.binding.providerSessionId,
     );
   } finally {
+    unregisterCancel();
     stopHeartbeat();
   }
 }
@@ -247,6 +283,26 @@ function completeClaudeTurn(
     assistantText,
     structuredOutput: state.structuredOutput,
     outputArtifactIds: outputRes.data,
+  });
+}
+
+function completeCancelledClaudeTurn(
+  started: StartedTaskAgentRun,
+  state?: ClaudeTurnState,
+): Result<RunTaskClaudeTurnOutput> {
+  const runRes = completeTaskAgentCancellation(
+    started.progressContext,
+    'Claude Agent 运行已中断，跳过保存输出。',
+  );
+  if (!runRes.success) return runRes;
+  return success({
+    run: runRes.data,
+    providerSessionId:
+      state?.latestSessionId || started.binding.providerSessionId,
+    usedResume: started.usedResume,
+    assistantText: '',
+    structuredOutput: undefined,
+    outputArtifactIds: [],
   });
 }
 

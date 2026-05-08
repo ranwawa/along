@@ -12,6 +12,7 @@ const planningMocks = vi.hoisted(() => ({
   ensureTaskAgentBinding: vi.fn(),
   createTaskAgentRun: vi.fn(),
   finishTaskAgentRun: vi.fn(),
+  readTaskAgentRun: vi.fn(),
   recordTaskAgentProgress: vi.fn(),
   recordTaskAgentSessionEvent: vi.fn(),
   recordTaskAgentResult: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock('./task-planning', () => ({
   ensureTaskAgentBinding: planningMocks.ensureTaskAgentBinding,
   createTaskAgentRun: planningMocks.createTaskAgentRun,
   finishTaskAgentRun: planningMocks.finishTaskAgentRun,
+  readTaskAgentRun: planningMocks.readTaskAgentRun,
   recordTaskAgentProgress: planningMocks.recordTaskAgentProgress,
   recordTaskAgentSessionEvent: planningMocks.recordTaskAgentSessionEvent,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
@@ -129,6 +131,20 @@ describe('task-claude-runner', () => {
         outputArtifactIds: ['art-result'],
         startedAt: '2026-01-01T00:00:00.000Z',
         endedAt: '2026-01-01T00:00:01.000Z',
+      },
+    });
+    planningMocks.readTaskAgentRun.mockReturnValue({
+      success: true,
+      data: {
+        runId: 'run-1',
+        taskId: 'task-1',
+        threadId: 'thread-1',
+        agentId: 'planner',
+        provider: 'claude',
+        status: 'running',
+        inputArtifactIds: [],
+        outputArtifactIds: [],
+        startedAt: '2026-01-01T00:00:00.000Z',
       },
     });
     planningMocks.recordTaskAgentResult.mockReturnValue({

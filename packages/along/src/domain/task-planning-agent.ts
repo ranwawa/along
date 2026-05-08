@@ -160,6 +160,9 @@ export async function runTaskPlanningAgent(
     agentId,
   });
   if (!result.success) return result;
+  if (result.data.run.status === 'cancelled') {
+    return failure('Planner Agent Run 已取消');
+  }
 
   const parsed = parseTaskPlannerTurnOutput(result.data);
   if (!parsed.success) return parsed;
