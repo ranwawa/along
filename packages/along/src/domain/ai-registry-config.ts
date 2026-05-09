@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
+import { migrateLegacyRegistryConfig } from './ai-registry-legacy-config';
 
 export type ProviderKind = 'openai-compatible' | 'anthropic' | 'custom';
 
@@ -315,6 +316,8 @@ function validateRegistryReferences(
 export function parseRegistryConfig(value: unknown): Result<RegistryConfig> {
   const parsed = registrySchema.safeParse(value);
   if (!parsed.success) {
+    const migrated = migrateLegacyRegistryConfig(value);
+    if (migrated) return validateRegistryReferences(migrated);
     return failure(`Registry 配置无效: ${getZodErrorMessage(parsed.error)}`);
   }
   return validateRegistryReferences(parsed.data);

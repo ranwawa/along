@@ -112,6 +112,41 @@ describe('ai-registry-config', () => {
     if (!result.success) expect(result.error).toContain('Registry 配置无效');
   });
 
+  it('兼容旧 providers/taskAgents 对象配置', () => {
+    const result = parseRegistryConfig({
+      taskAgents: {
+        '*': { editor: 'claude' },
+        planner: { editor: 'codex', model: 'gpt-5.5' },
+        implementer: { editor: 'codex', model: 'gpt-5.5' },
+      },
+      providers: {
+        deepseek: {
+          name: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com/v1',
+          token: 'secret',
+          models: ['deepseek-v4-flash'],
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.providers[0]).toMatchObject({
+        id: 'deepseek',
+        defaultCredentialId: 'deepseek-token',
+      });
+      expect(result.data.credentials[0]).toMatchObject({
+        id: 'deepseek-token',
+        providerId: 'deepseek',
+      });
+      expect(result.data.runtimes).toEqual([{ id: 'codex', kind: 'codex' }]);
+      expect(result.data.agents).toEqual([
+        { id: 'planner', runtimeId: 'codex', modelId: 'gpt-5.5' },
+        { id: 'implementer', runtimeId: 'codex', modelId: 'gpt-5.5' },
+      ]);
+    }
+  });
+
   it('拒绝 profile maxTokens 超过模型上限', () => {
     const registry = createRegistry();
     registry.profiles[0] = {

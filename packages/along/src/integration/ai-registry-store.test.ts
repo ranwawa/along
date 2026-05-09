@@ -60,6 +60,36 @@ describe('ai-registry-store', () => {
     if (result.success) expect(result.data.agents[0]?.id).toBe('planner');
   });
 
+  it('读取旧版 registry 配置时迁移为数组结构', () => {
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(
+      JSON.stringify({
+        taskAgents: {
+          planner: { editor: 'codex', model: 'gpt-5.5' },
+        },
+        providers: {
+          deepseek: {
+            baseUrl: 'https://api.deepseek.com/v1',
+            token: 'secret',
+            models: ['deepseek-v4-flash'],
+          },
+        },
+      }),
+    );
+
+    const result = readRegistryConfig();
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.providers[0]?.id).toBe('deepseek');
+      expect(result.data.agents[0]).toEqual({
+        id: 'planner',
+        runtimeId: 'codex',
+        modelId: 'gpt-5.5',
+      });
+    }
+  });
+
   it('非法 JSON 返回错误', () => {
     fsMock.existsSync.mockReturnValue(true);
     fsMock.readFileSync.mockReturnValue('{oops');
