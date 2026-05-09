@@ -3,24 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const configMocks = vi.hoisted(() => ({
   getTaskAgentConfig: vi.fn(),
 }));
-const claudeRunnerMock = vi.hoisted(() => vi.fn());
 const codexRunnerMock = vi.hoisted(() => vi.fn());
-const spawnRunnerMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../integration/agent-config', () => ({
   getTaskAgentConfig: configMocks.getTaskAgentConfig,
 }));
 
-vi.mock('./task-claude-runner', () => ({
-  runTaskClaudeTurn: claudeRunnerMock,
-}));
-
 vi.mock('./task-codex-runner', () => ({
   runTaskCodexTurn: codexRunnerMock,
-}));
-
-vi.mock('./task-spawn-runner', () => ({
-  runTaskSpawnTurn: spawnRunnerMock,
 }));
 
 import {
@@ -32,25 +22,6 @@ describe('task-agent-runtime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     configMocks.getTaskAgentConfig.mockReturnValue(null);
-    claudeRunnerMock.mockResolvedValue({
-      success: true,
-      data: {
-        run: {
-          runId: 'run-1',
-          taskId: 'task-1',
-          threadId: 'thread-1',
-          agentId: 'planner',
-          provider: 'claude',
-          status: 'succeeded',
-          inputArtifactIds: [],
-          outputArtifactIds: [],
-          startedAt: '2026-01-01T00:00:00.000Z',
-        },
-        usedResume: false,
-        assistantText: 'done',
-        outputArtifactIds: [],
-      },
-    });
     codexRunnerMock.mockResolvedValue({
       success: true,
       data: {
@@ -70,31 +41,12 @@ describe('task-agent-runtime', () => {
         outputArtifactIds: [],
       },
     });
-    spawnRunnerMock.mockResolvedValue({
-      success: true,
-      data: {
-        run: {
-          runId: 'run-1',
-          taskId: 'task-1',
-          threadId: 'thread-1',
-          agentId: 'planner',
-          provider: 'opencode',
-          status: 'succeeded',
-          inputArtifactIds: [],
-          outputArtifactIds: [],
-          startedAt: '2026-01-01T00:00:00.000Z',
-        },
-        usedResume: false,
-        assistantText: 'done',
-        outputArtifactIds: [],
-      },
-    });
   });
 
   it('请求级配置优先于全局配置', () => {
     configMocks.getTaskAgentConfig.mockReturnValue({
-      editor: 'claude',
-      model: 'sonnet',
+      editor: 'codex',
+      model: 'gpt-5.1',
     });
 
     expect(
@@ -111,7 +63,7 @@ describe('task-agent-runtime', () => {
     });
   });
 
-  it('默认使用 claude runner', async () => {
+  it('默认使用 Codex runner', async () => {
     const result = await runTaskAgentTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
@@ -121,7 +73,7 @@ describe('task-agent-runtime', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(claudeRunnerMock).toHaveBeenCalledWith(
+    expect(codexRunnerMock).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: 'planner',
         model: undefined,
@@ -129,8 +81,8 @@ describe('task-agent-runtime', () => {
     );
   });
 
-  it('codex editor 使用 Codex SDK runner', async () => {
-    configMocks.getTaskAgentConfig.mockReturnValue({ editor: 'codex' });
+  it('拒绝非 Codex editor', async () => {
+    configMocks.getTaskAgentConfig.mockReturnValue({ editor: 'missing' });
 
     const result = await runTaskAgentTurn({
       taskId: 'task-1',
@@ -140,35 +92,7 @@ describe('task-agent-runtime', () => {
       cwd: '/tmp/project',
     });
 
-    expect(result.success).toBe(true);
-    expect(claudeRunnerMock).not.toHaveBeenCalled();
-    expect(codexRunnerMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentId: 'planner',
-      }),
-    );
-    expect(spawnRunnerMock).not.toHaveBeenCalled();
-  });
-
-  it('其它 editor 使用 spawn runner', async () => {
-    configMocks.getTaskAgentConfig.mockReturnValue({ editor: 'opencode' });
-
-    const result = await runTaskAgentTurn({
-      taskId: 'task-1',
-      threadId: 'thread-1',
-      agentId: 'planner',
-      prompt: 'hello',
-      cwd: '/tmp/project',
-    });
-
-    expect(result.success).toBe(true);
-    expect(claudeRunnerMock).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
     expect(codexRunnerMock).not.toHaveBeenCalled();
-    expect(spawnRunnerMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentId: 'planner',
-        editor: 'opencode',
-      }),
-    );
   });
 });

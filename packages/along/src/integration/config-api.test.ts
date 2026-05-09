@@ -8,10 +8,7 @@ const agentConfigMocks = vi.hoisted(() => ({
 vi.mock('../core/config', () => ({
   config: {
     CONFIG_FILE: '/mock/.along/config.json',
-    EDITORS: [
-      { id: 'claude', name: 'Kira Code' },
-      { id: 'codex', name: 'Codex' },
-    ],
+    EDITORS: [{ id: 'codex', name: 'Codex' }],
   },
 }));
 
@@ -38,15 +35,7 @@ describe('config-api', () => {
       data: {
         webhookSecret: 'secret',
         taskAgents: {
-          planner: { editor: 'claude' },
-        },
-        providers: {
-          deepseek: {
-            name: 'DeepSeek',
-            baseUrl: 'https://api.deepseek.com',
-            token: 'sk-secret-token',
-            models: ['deepseek-v4-flash'],
-          },
+          planner: { editor: 'codex' },
         },
       },
     });
@@ -61,7 +50,7 @@ describe('config-api', () => {
     expect(isConfigApiPath('/api/tasks')).toBe(false);
   });
 
-  it('GET 返回 taskAgents 和可选 editor 列表', async () => {
+  it('GET 返回 taskAgents 和 Codex editor 列表', async () => {
     const response = await handleConfigApiRequest(
       new Request('http://localhost/api/config'),
     );
@@ -69,36 +58,19 @@ describe('config-api', () => {
       configPath: string;
       editors: Array<{ id: string; name: string }>;
       taskAgents: Record<string, { editor?: string }>;
-      providers: Record<
-        string,
-        { tokenConfigured?: boolean; tokenPreview?: string; token?: string }
-      >;
     };
 
     expect(response.status).toBe(200);
     expect(payload.configPath).toBe('/mock/.along/config.json');
-    expect(payload.editors.map((editor) => editor.id)).toEqual([
-      'claude',
-      'codex',
-    ]);
-    expect(payload.taskAgents.planner.editor).toBe('claude');
-    expect(payload.providers.deepseek.tokenConfigured).toBe(true);
-    expect(payload.providers.deepseek.tokenPreview).toBe('sk-s...oken');
-    expect(payload.providers.deepseek).not.toHaveProperty('token');
+    expect(payload.editors.map((editor) => editor.id)).toEqual(['codex']);
+    expect(payload.taskAgents.planner.editor).toBe('codex');
   });
 
-  it('PUT 更新 taskAgents/providers 并保留未回显 token', async () => {
+  it('PUT 更新 taskAgents', async () => {
     const response = await handleConfigApiRequest(
       jsonRequest({
         taskAgents: {
           planner: { editor: 'codex', model: 'gpt-5.2' },
-        },
-        providers: {
-          deepseek: {
-            name: 'DeepSeek',
-            baseUrl: 'https://api.deepseek.com',
-            models: ['deepseek-v4-flash'],
-          },
         },
       }),
     );
@@ -111,44 +83,6 @@ describe('config-api', () => {
           editor: 'codex',
           model: 'gpt-5.2',
           personalityVersion: undefined,
-        },
-      },
-      providers: {
-        deepseek: {
-          name: 'DeepSeek',
-          baseUrl: 'https://api.deepseek.com',
-          token: 'sk-secret-token',
-          models: ['deepseek-v4-flash'],
-        },
-      },
-    });
-  });
-
-  it('PUT 支持更新 provider token 和 models', async () => {
-    const response = await handleConfigApiRequest(
-      jsonRequest({
-        taskAgents: {},
-        providers: {
-          deepseek: {
-            name: 'DeepSeek',
-            baseUrl: 'https://api.deepseek.com',
-            token: 'sk-new-token',
-            models: ['deepseek-v4-flash', 'deepseek-chat'],
-          },
-        },
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(agentConfigMocks.writeGlobalConfig).toHaveBeenCalledWith({
-      webhookSecret: 'secret',
-      taskAgents: {},
-      providers: {
-        deepseek: {
-          name: 'DeepSeek',
-          baseUrl: 'https://api.deepseek.com',
-          token: 'sk-new-token',
-          models: ['deepseek-v4-flash', 'deepseek-chat'],
         },
       },
     });

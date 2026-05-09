@@ -50,6 +50,15 @@ function readJsonObject(filePath: string): JsonObject {
   return toJsonObject(JSON.parse(fs.readFileSync(filePath, 'utf-8')));
 }
 
+function normalizeEditorId(value: string): Result<string> {
+  const editor = config.EDITORS.find((item) => item.id === value);
+  return editor
+    ? success(editor.id)
+    : failure(
+        `仅支持 Codex Agent，请将 Agent 类型改为 codex（当前: ${value}）`,
+      );
+}
+
 export const config = {
   // @ranwawa/along 包根目录
   ROOT_DIR: alongPackageDir,
@@ -92,7 +101,8 @@ export const config = {
   // 日志标签识别
   getLogTag(): Result<string> {
     // 1. 最高优先级：环境变量
-    if (process.env.AGENT_TYPE) return success(process.env.AGENT_TYPE);
+    if (process.env.AGENT_TYPE)
+      return normalizeEditorId(process.env.AGENT_TYPE);
 
     // 2. 项目级配置文件：.along/setting.json 或 package.json 中的 along.agent
     const workingDir = process.cwd();
@@ -101,7 +111,7 @@ export const config = {
       try {
         const alongConfig = readJsonObject(settingConfigPath);
         if (typeof alongConfig.agent === 'string') {
-          return success(alongConfig.agent);
+          return normalizeEditorId(alongConfig.agent);
         }
       } catch {}
     }
@@ -110,7 +120,8 @@ export const config = {
       try {
         const pkg = readJsonObject(pkgPath);
         const along = toJsonObject(pkg.along);
-        if (typeof along.agent === 'string') return success(along.agent);
+        if (typeof along.agent === 'string')
+          return normalizeEditorId(along.agent);
       } catch {}
     }
 
@@ -138,87 +149,12 @@ export const config = {
   // 编辑器运行配置
   EDITORS: [
     {
-      id: 'opencode',
-      name: 'OpenCode',
-      detectDir: '.opencode',
-      runTemplate: '{tag} run --command {workflow} {num}',
-      mappings: [],
-      ensurePermissions: (worktreePath: string, userAlongDir: string) => {
-        const configPath = path.join(worktreePath, 'opencode.json');
-        let existing: JsonObject = {};
-        if (fs.existsSync(configPath)) {
-          try {
-            existing = readJsonObject(configPath);
-          } catch {
-            existing = {};
-          }
-        }
-        const alongPattern = `${userAlongDir}/**`;
-        const permission = toJsonObject(existing.permission);
-        const extDir = toJsonObject(permission.external_directory);
-        if (extDir[alongPattern] === 'allow') return;
-        extDir[alongPattern] = 'allow';
-        permission.external_directory = extDir;
-        existing.permission = permission;
-        if (!existing.$schema)
-          existing.$schema = 'https://opencode.ai/config.json';
-        fs.writeFileSync(configPath, `${JSON.stringify(existing, null, 2)}\n`);
-      },
-    },
-    {
-      id: 'pi',
-      name: 'PI',
-      detectDir: '.pi',
-      runTemplate: '{tag} --prompt-template {workflow} {num}',
-      mappings: [],
-    },
-    {
       id: 'codex',
       name: 'Codex',
       detectDir: '.codex',
       runTemplate:
         'codex exec "请解决 GitHub Issue #{num}，严格按照 .codex/prompts/{workflow}.md 工作流执行"',
       mappings: [],
-    },
-    {
-      id: 'claude',
-      name: 'Kira Code',
-      detectDir: '.claude',
-      runTemplate:
-        '{tag} "请解决 GitHub Issue #{num}，严格按照系统提示中的工作流执行" --append-system-prompt-file .claude/commands/{workflow}.md --dangerously-skip-permissions --output-format stream-json --verbose --print',
-      mappings: [],
-      ensurePermissions: (worktreePath: string, userAlongDir: string) => {
-        const claudeDir = path.join(worktreePath, '.claude');
-        if (!fs.existsSync(claudeDir))
-          fs.mkdirSync(claudeDir, { recursive: true });
-        const configPath = path.join(claudeDir, 'settings.local.json');
-        let existing: JsonObject = {};
-        if (fs.existsSync(configPath)) {
-          try {
-            existing = readJsonObject(configPath);
-          } catch {
-            existing = {};
-          }
-        }
-        const permissions = toJsonObject(existing.permissions);
-        const allow = Array.isArray(permissions.allow)
-          ? permissions.allow.filter((item): item is string => {
-              return typeof item === 'string';
-            })
-          : [];
-        const requiredPatterns = [
-          `Bash(along *)`,
-          `Read(${userAlongDir}/**)`,
-          `Edit(${userAlongDir}/**)`,
-          `Write(${userAlongDir}/**)`,
-        ];
-        const missing = requiredPatterns.filter((p) => !allow.includes(p));
-        if (missing.length === 0) return;
-        allow.push(...missing);
-        permissions.allow = allow;
-        existing.permissions = permissions;
-        fs.writeFileSync(configPath, `${JSON.stringify(existing, null, 2)}\n`);
-      },
     },
   ] as EditorConfig[],
 };

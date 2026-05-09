@@ -20,11 +20,7 @@ import {
   normalizeManagedProjectConfig,
 } from './project-config';
 import { ensureManagedProjectConfig } from './project-init';
-import {
-  renderAgentsDoc,
-  renderClaudeMd,
-  renderQualityGateAction,
-} from './render-docs';
+import { renderAgentsDoc, renderQualityGateAction } from './render-docs';
 import type { GeneratedFile, LoadedManagedProject } from './types';
 
 const logger = consola.withTag('preset');
@@ -129,13 +125,6 @@ function buildGeneratedFiles(project: LoadedManagedProject): GeneratedFile[] {
     ...collectPromptFiles(project),
     ...collectSkillFiles(project),
   ];
-
-  if (project.resolved.agent.editors.includes('claude')) {
-    files.push({
-      path: 'CLAUDE.md',
-      content: renderClaudeMd(),
-    });
-  }
 
   if (project.resolved.ci?.qualityGateAction?.enabled) {
     files.push({

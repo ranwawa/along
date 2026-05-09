@@ -65,14 +65,14 @@ describe('config.ts', () => {
 
   describe('getLogTag()', () => {
     it('AGENT_TYPE 环境变量优先级最高', () => {
-      process.env.AGENT_TYPE = 'opencode';
+      process.env.AGENT_TYPE = 'codex';
       const result = config.getLogTag();
-      expect(result).toEqual({ success: true, data: 'opencode' });
+      expect(result).toEqual({ success: true, data: 'codex' });
     });
 
     it('无法检测时返回 failure', () => {
       delete process.env.AGENT_TYPE;
-      // 由于 cwd 下不太可能有 .opencode/.pi/.claude，通常会返回 failure
+      // 由于 cwd 下不太可能有 .codex，通常会返回 failure
       const result = config.getLogTag();
       // 可能 success 也可能 failure，取决于当前目录
       expect(result).toHaveProperty('success');
@@ -80,13 +80,10 @@ describe('config.ts', () => {
   });
 
   describe('EDITORS', () => {
-    it('应包含 opencode, pi, codex, claude 四个编辑器', () => {
-      expect(config.EDITORS).toHaveLength(4);
+    it('只包含 codex 编辑器', () => {
+      expect(config.EDITORS).toHaveLength(1);
       const ids = config.EDITORS.map((e) => e.id);
-      expect(ids).toContain('opencode');
-      expect(ids).toContain('pi');
       expect(ids).toContain('codex');
-      expect(ids).toContain('claude');
     });
 
     it('每个编辑器都有 mappings, runTemplate 和 detectDir', () => {
@@ -98,11 +95,9 @@ describe('config.ts', () => {
       }
     });
 
-    it('opencode 和 claude 有 ensurePermissions 回调', () => {
-      const opencode = config.EDITORS.find((e) => e.id === 'opencode');
-      const claude = config.EDITORS.find((e) => e.id === 'claude');
-      expect(typeof opencode?.ensurePermissions).toBe('function');
-      expect(typeof claude?.ensurePermissions).toBe('function');
+    it('codex 不需要额外权限回调', () => {
+      const codex = config.EDITORS.find((e) => e.id === 'codex');
+      expect(codex?.ensurePermissions).toBeUndefined();
     });
   });
 });

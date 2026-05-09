@@ -2258,29 +2258,13 @@ function buildManualResume(
         };
   }
 
-  if (provider === 'claude') {
-    return sessionId
-      ? {
-          available: true,
-          cwd,
-          sessionId,
-          command: `${cdCommand}\nclaude --resume ${shellQuote(sessionId)}`,
-        }
-      : {
-          available: true,
-          cwd,
-          command: `${cdCommand}\nclaude`,
-          reason: '未记录 Claude 会话 ID，只能从工作目录手动接管',
-        };
-  }
-
   return {
-    available: true,
+    available: false,
     cwd,
     command: cdCommand,
     reason: provider
-      ? `${provider} 暂无自动恢复命令，请在工作目录中手动处理`
-      : '暂无可恢复的 editor 会话，请在工作目录中手动处理',
+      ? `仅支持 Codex 会话恢复，当前记录为 ${provider}`
+      : '暂无可恢复的 Codex 会话',
   };
 }
 
@@ -4005,7 +3989,7 @@ export function updateTaskAgentProviderSession(
     return success(undefined);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    return failure(`更新 provider session 失败: ${message}`);
+    return failure(`更新 Codex session 失败: ${message}`);
   }
 }
 

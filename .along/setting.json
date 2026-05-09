@@ -1,5 +1,5 @@
 {
-  "agent": "claude",
+  "agent": "codex",
   "distribution": {
     "quality": {
       "changedWorkspaceCheckTaskRef": "workspace:changed",
@@ -101,7 +101,6 @@
     },
     "agent": {
       "editors": [
-        "claude",
         "codex"
       ]
     },

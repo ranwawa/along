@@ -1389,13 +1389,13 @@ describe('task-planning', () => {
     const { taskId, plan } = createTaskWithPlan();
     const feedback = submitTaskMessage({
       taskId,
-      body: '需要明确 Claude session resume 不是事实源。',
+      body: '需要明确 Codex session resume 不是事实源。',
     });
     expect(feedback.success).toBe(true);
 
     const revised = publishTaskPlanRevision({
       taskId,
-      body: '## Plan v2\n\n新增 provider session 只是优化项的约束。',
+      body: '## Plan v2\n\n新增 Codex session 只是优化项的约束。',
     });
     expect(revised.success).toBe(true);
     if (!revised.success) throw new Error(revised.error);
@@ -1418,7 +1418,7 @@ describe('task-planning', () => {
     ]);
   });
 
-  it('当更新 Agent Binding 时，期望下次读取到同一个 provider session', () => {
+  it('当更新 Agent Binding 时，期望下次读取到同一个 Codex session', () => {
     const { taskId } = createTaskWithPlan();
     const snapshot = readTaskPlanningSnapshot(taskId);
     expect(snapshot.success).toBe(true);
@@ -1428,7 +1428,7 @@ describe('task-planning', () => {
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
       cwd: '/tmp/project',
     });
     expect(binding.success).toBe(true);
@@ -1438,7 +1438,7 @@ describe('task-planning', () => {
     const update = updateTaskAgentProviderSession(
       snapshot.data.thread.threadId,
       'planner',
-      'claude',
+      'codex',
       'session-1',
     );
     expect(update.success).toBe(true);
@@ -1446,7 +1446,7 @@ describe('task-planning', () => {
     const nextBinding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
     });
     expect(nextBinding.success).toBe(true);
     if (!nextBinding.success) throw new Error(nextBinding.error);
@@ -1483,7 +1483,7 @@ describe('task-planning', () => {
       runId: run.data.runId,
       status: AGENT_RUN_STATUS.FAILED,
       providerSessionIdAtEnd: 'codex-thread-failed',
-      error: 'provider failed',
+      error: 'Codex failed',
     });
     expect(failed.success).toBe(true);
 
@@ -1498,7 +1498,7 @@ describe('task-planning', () => {
     expect(nextBinding.data.providerSessionId).toBe('codex-thread-failed');
   });
 
-  it('当 Agent Binding 的 cwd 变化时，期望清空旧 provider session', () => {
+  it('当 Agent Binding 的 cwd 变化时，期望清空旧 Codex session', () => {
     const { taskId } = createTaskWithPlan();
     const snapshot = readTaskPlanningSnapshot(taskId);
     expect(snapshot.success).toBe(true);
@@ -1508,7 +1508,7 @@ describe('task-planning', () => {
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
       cwd: '/tmp/project-a',
     });
     expect(binding.success).toBe(true);
@@ -1516,7 +1516,7 @@ describe('task-planning', () => {
     const update = updateTaskAgentProviderSession(
       snapshot.data.thread.threadId,
       'planner',
-      'claude',
+      'codex',
       'session-1',
     );
     expect(update.success).toBe(true);
@@ -1524,7 +1524,7 @@ describe('task-planning', () => {
     const changed = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
       cwd: '/tmp/project-b',
     });
     expect(changed.success).toBe(true);
@@ -1534,7 +1534,7 @@ describe('task-planning', () => {
     const stored = readTaskAgentBinding(
       snapshot.data.thread.threadId,
       'planner',
-      'claude',
+      'codex',
     );
     expect(stored.success).toBe(true);
     if (!stored.success) throw new Error(stored.error);
@@ -1542,7 +1542,7 @@ describe('task-planning', () => {
     expect(stored.data?.providerSessionId).toBeUndefined();
   });
 
-  it('当记录 Agent Run 时，期望能保存开始和结束的 provider session', () => {
+  it('当记录 Agent Run 时，期望能保存开始和结束的 Codex session', () => {
     const { taskId } = createTaskWithPlan();
     const snapshot = readTaskPlanningSnapshot(taskId);
     expect(snapshot.success).toBe(true);
@@ -1553,7 +1553,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
       providerSessionIdAtStart: 'session-1',
       inputArtifactIds: ['art-1'],
     });
@@ -1585,7 +1585,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
     });
     expect(run.success).toBe(true);
     if (!run.success) throw new Error(run.error);
@@ -1595,7 +1595,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
       phase: TASK_AGENT_PROGRESS_PHASE.TOOL,
       summary: '正在执行工具或命令。',
       detail: '只保存用户可理解摘要。',
@@ -1612,7 +1612,7 @@ describe('task-planning', () => {
       expect.objectContaining({
         runId: run.data.runId,
         agentId: 'planner',
-        provider: 'claude',
+        provider: 'codex',
         phase: 'tool',
         summary: '正在执行工具或命令。',
         detail: '只保存用户可理解摘要。',
@@ -1631,7 +1631,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
     });
     expect(run.success).toBe(true);
     if (!run.success) throw new Error(run.error);
@@ -1641,7 +1641,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
       source: 'agent',
       kind: 'output',
       content: '执行中 TOKEN=secret-value',
@@ -1674,7 +1674,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'claude',
+      provider: 'codex',
       runId: 'run-1',
       body: '{"action":"plan_revision","body":"Plan"}',
     });

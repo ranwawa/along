@@ -1,12 +1,11 @@
-import type { Options as ClaudeSDKOptions } from '@anthropic-ai/claude-agent-sdk';
 import type { Result } from '../core/result';
+import { failure } from '../core/result';
 import { getTaskAgentConfig } from '../integration/agent-config';
 import {
-  type RunTaskClaudeTurnOutput,
-  runTaskClaudeTurn,
-} from './task-claude-runner';
-import { runTaskCodexTurn } from './task-codex-runner';
-import { runTaskSpawnTurn } from './task-spawn-runner';
+  type CodexOutputFormatOptions,
+  type RunTaskCodexTurnOutput,
+  runTaskCodexTurn,
+} from './task-codex-runner';
 
 export interface RunTaskAgentTurnInput {
   taskId: string;
@@ -23,10 +22,10 @@ export interface RunTaskAgentTurnInput {
     sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
     approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
   };
-  options?: Partial<ClaudeSDKOptions>;
+  options?: CodexOutputFormatOptions;
 }
 
-export type RunTaskAgentTurnOutput = RunTaskClaudeTurnOutput;
+export type RunTaskAgentTurnOutput = RunTaskCodexTurnOutput;
 
 export interface ResolvedTaskAgentRuntime {
   agentId: string;
@@ -44,7 +43,7 @@ export function resolveTaskAgentRuntime(input: {
   const configured = getTaskAgentConfig(input.agentId);
   return {
     agentId: input.agentId,
-    editor: input.editor || configured?.editor || 'claude',
+    editor: input.editor || configured?.editor || 'codex',
     model: input.model || configured?.model,
     personalityVersion:
       input.personalityVersion || configured?.personalityVersion,
@@ -67,13 +66,9 @@ export async function runTaskAgentTurn(
     personalityVersion: runtime.personalityVersion,
   };
 
-  if (runtime.editor === 'claude') {
-    return runTaskClaudeTurn(resolvedInput);
-  }
-
   if (runtime.editor === 'codex') {
     return runTaskCodexTurn(resolvedInput);
   }
 
-  return runTaskSpawnTurn({ ...resolvedInput, editor: runtime.editor });
+  return failure(`仅支持 Codex editor，当前配置为 ${runtime.editor}`);
 }

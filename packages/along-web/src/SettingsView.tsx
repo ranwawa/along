@@ -1,5 +1,4 @@
 import { AgentRowsTable } from './settings/AgentRowsTable';
-import { ProviderRowsTable } from './settings/ProviderRowsTable';
 import {
   type SettingsState,
   useSettingsController,
@@ -80,14 +79,6 @@ export function SettingsView() {
           onAdd={settings.agentActions.addRow}
           onUpdate={settings.agentActions.updateRow}
           onRemove={settings.agentActions.removeRow}
-        />
-        <ProviderRowsTable
-          rows={settings.rows.sortedProviderRows}
-          loading={settings.state.loading}
-          saving={settings.state.saving}
-          onAdd={settings.providerActions.addProviderRow}
-          onUpdate={settings.providerActions.updateProviderRow}
-          onRemove={settings.providerActions.removeProviderRow}
         />
       </div>
     </div>

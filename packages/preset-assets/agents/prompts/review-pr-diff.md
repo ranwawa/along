@@ -26,7 +26,7 @@ cat ../review-diff.json
 
 ### 第二步：理解项目上下文
 
-1. 读取 `CLAUDE.md` 了解项目规范和架构
+1. 读取 `AGENTS.md` 了解项目规范和架构
 2. 参考 `code-review` SKILL 了解审查标准
 3. 对每个变更文件，读取其完整源码以理解上下文（不仅仅看 diff）
 

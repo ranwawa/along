@@ -29,7 +29,6 @@ const CAMEL_TO_SNAKE: Record<string, string> = {
   agentCommand: 'agent_command',
   lastUpdate: 'last_update',
   ciResults: 'ci_results',
-  claudeSessionId: 'claude_session_id',
 };
 
 const SNAKE_TO_CAMEL = Object.fromEntries(

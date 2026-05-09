@@ -223,7 +223,7 @@ function resolveTaskBindingCwd(
   const bindingRes = readTaskAgentBinding(
     snapshot.thread.threadId,
     readStringField(payload, 'agentId') || 'planner',
-    'claude',
+    'codex',
   );
   if (!bindingRes.success) return bindingRes;
   return success(bindingRes.data?.cwd);

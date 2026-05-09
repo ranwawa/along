@@ -45,7 +45,6 @@ export interface SessionStatus {
   error?: SessionError;
   retryCount?: number;
   ciResults?: { passed: number; failed: number; lastSha?: string };
-  claudeSessionId?: string;
   environment?: {
     agentType: string;
     gitHeadSha: string;
@@ -275,13 +274,6 @@ export class SessionManager {
         ciResults: JSON.stringify({ passed, failed, lastSha: sha }),
       } as Partial<SessionContext>,
     });
-  }
-
-  updateClaudeSessionId(claudeSessionId: string): Result<void> {
-    return upsertSession(this.owner, this.repo, this.issueNumber, {
-      claudeSessionId,
-      lastUpdate: iso_timestamp(),
-    } as Partial<SessionStatus>);
   }
 
   getPathManager(): SessionPathManager {

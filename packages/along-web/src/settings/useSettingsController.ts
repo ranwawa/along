@@ -7,14 +7,8 @@ import {
   useState,
 } from 'react';
 import type { EditorOption, GlobalConfigResponse } from '../types';
-import {
-  configToProviderRows,
-  configToRows,
-  defaultRows,
-  rowsToProviders,
-  rowsToTaskAgents,
-} from './configMapping';
-import type { ConfigRow, ProviderRow } from './types';
+import { configToRows, defaultRows, rowsToTaskAgents } from './configMapping';
+import type { ConfigRow } from './types';
 
 interface ConfigApiError {
   error?: string;
@@ -24,7 +18,6 @@ export interface SettingsState {
   configPath: string;
   editors: EditorOption[];
   rows: ConfigRow[];
-  providerRows: ProviderRow[];
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -35,7 +28,6 @@ const initialSettingsState: SettingsState = {
   configPath: '',
   editors: [],
   rows: defaultRows,
-  providerRows: [],
   loading: false,
   saving: false,
   error: null,
@@ -73,7 +65,6 @@ function useSettingsData() {
         configPath: result.configPath,
         editors: result.editors,
         rows: configToRows(result),
-        providerRows: configToProviderRows(result),
         loading: false,
       }));
     } catch (err: unknown) {
@@ -98,14 +89,7 @@ function useSortedRows(state: SettingsState) {
       return left.key.localeCompare(right.key);
     });
   }, [state.rows]);
-  const sortedProviderRows = useMemo(
-    () =>
-      [...state.providerRows].sort((left, right) =>
-        left.id.localeCompare(right.id),
-      ),
-    [state.providerRows],
-  );
-  return { sortedRows, sortedProviderRows };
+  return { sortedRows };
 }
 
 function nextKey(prefix: string, existing: string[]) {
@@ -153,55 +137,9 @@ function useAgentRowActions(state: SettingsState, setState: SetSettingsState) {
 function createAgentRow(key: string, editors: EditorOption[]): ConfigRow {
   return {
     key,
-    editor: editors[0]?.id || 'claude',
+    editor: editors[0]?.id || 'codex',
     model: '',
     personalityVersion: '',
-  };
-}
-
-function useProviderRowActions(
-  state: SettingsState,
-  setState: SetSettingsState,
-) {
-  const updateProviderRow = (id: string, patch: Partial<ProviderRow>) => {
-    setState((previous) => ({
-      ...previous,
-      providerRows: previous.providerRows.map((row) =>
-        row.id === id ? { ...row, ...patch } : row,
-      ),
-      savedAt: null,
-    }));
-  };
-  const addProviderRow = () => {
-    const id = nextKey(
-      'provider',
-      state.providerRows.map((row) => row.id),
-    );
-    setState((previous) => ({
-      ...previous,
-      providerRows: [...previous.providerRows, createProviderRow(id)],
-      savedAt: null,
-    }));
-  };
-  const removeProviderRow = (id: string) => {
-    setState((previous) => ({
-      ...previous,
-      providerRows: previous.providerRows.filter((row) => row.id !== id),
-      savedAt: null,
-    }));
-  };
-  return { updateProviderRow, addProviderRow, removeProviderRow };
-}
-
-function createProviderRow(id: string): ProviderRow {
-  return {
-    id,
-    name: '',
-    baseUrl: '',
-    modelsText: '',
-    token: '',
-    tokenConfigured: false,
-    tokenPreview: '',
   };
 }
 
@@ -216,7 +154,6 @@ function useSaveConfig(state: SettingsState, setState: SetSettingsState) {
         configPath: result.configPath,
         editors: result.editors,
         rows: configToRows(result),
-        providerRows: configToProviderRows(result),
         saving: false,
         savedAt: new Date().toLocaleTimeString('zh-CN'),
       }));
@@ -236,7 +173,6 @@ async function putSettingsConfig(state: SettingsState) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       taskAgents: rowsToTaskAgents(state.rows),
-      providers: rowsToProviders(state.providerRows),
     }),
   });
   return readJsonResponse<GlobalConfigResponse>(response);
@@ -248,7 +184,6 @@ export function useSettingsController() {
     state,
     rows: useSortedRows(state),
     agentActions: useAgentRowActions(state, setState),
-    providerActions: useProviderRowActions(state, setState),
     loadConfig,
     saveConfig: useSaveConfig(state, setState),
   };

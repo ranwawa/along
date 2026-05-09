@@ -53,16 +53,20 @@ vi.mock('../logging/log-writer', () => ({
 }));
 
 vi.mock('../core/session-paths', () => ({
-  SessionPathManager: vi.fn(() => ({
-    getWorktreeDir: vi.fn(() => '/mock/worktree'),
-    getIssueDir: vi.fn(() => '/mock/issue'),
-  })),
+  SessionPathManager: vi.fn(function SessionPathManager() {
+    return {
+      getWorktreeDir: vi.fn(() => '/mock/worktree'),
+      getIssueDir: vi.fn(() => '/mock/issue'),
+    };
+  }),
 }));
 
 vi.mock('./session-manager', () => ({
-  SessionManager: vi.fn(() => ({
-    logEvent: sessionMocks.logEvent,
-  })),
+  SessionManager: vi.fn(function SessionManager() {
+    return {
+      logEvent: sessionMocks.logEvent,
+    };
+  }),
 }));
 
 vi.mock('../core/db', () => ({

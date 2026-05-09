@@ -1,21 +1,17 @@
 /**
  * issue-triage.ts - Issue 分类模块（内部模块，不作为 CLI 子命令）
  *
- * 在 webhook 收到 issues.opened 事件后，使用 AI 对 Issue 进行分类：
+ * 在 webhook 收到 issues.opened 事件后，对 Issue 进行本地分类：
  * - bug: 缺陷/回归/异常行为，需要代码修复
  * - feature: 新功能/增强/重构/文档改进，需要代码修改
  * - question: 提问/求助/咨询，不需要代码修改
  * - spam: 广告/无意义/测试内容
  */
 
-import { ChatOpenAI } from '@langchain/openai';
 import { consola } from 'consola';
-import {
-  TRIAGE_CLASSIFICATIONS,
-  TRIAGE_SYSTEM_PROMPT,
-  type TriageClassification,
-  type TriageResult,
-  TriageResultSchema,
+import type {
+  TriageClassification,
+  TriageResult,
 } from '../agents/issue-triage';
 import type { Result } from '../core/common';
 import { failure, success } from '../core/common';
@@ -25,52 +21,8 @@ import { LIFECYCLE } from './session-state-machine';
 
 const logger = consola.withTag('issue-triage');
 
-function buildTriageUserMessage(
-  issueTitle: string,
-  issueBody: string,
-  issueLabels: string[],
-): string {
-  const truncatedBody = (issueBody || '').slice(0, 4000);
-  const labelText =
-    issueLabels.length > 0 ? issueLabels.join(', ') : '（无标签）';
-  return `## Issue 标题\n${issueTitle}\n\n## Issue 正文\n${truncatedBody || '（空）'}\n\n## 标签\n${labelText}`;
-}
-
-function createTriageLlm(apiKey: string, modelName: string) {
-  const llm = new ChatOpenAI({
-    model: modelName,
-    temperature: 0,
-    maxTokens: 1024,
-    configuration: {
-      baseURL: 'https://api.deepseek.com',
-      apiKey,
-    },
-  });
-
-  return llm.withStructuredOutput(TriageResultSchema, {
-    name: 'classify_issue',
-    method: 'functionCalling',
-  });
-}
-
-function normalizeTriageResult(result: TriageResult): TriageResult {
-  if (TRIAGE_CLASSIFICATIONS.includes(result.classification)) {
-    return {
-      classification: result.classification,
-      reason: result.reason || '',
-      replyMessage: result.replyMessage,
-    };
-  }
-
-  logger.warn(`AI 返回未知分类: ${result.classification}，默认 bug`);
-  return {
-    classification: 'bug',
-    reason: '未知分类结果，默认为 bug',
-  };
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function includesAny(value: string, keywords: string[]): boolean {
+  return keywords.some((keyword) => value.includes(keyword));
 }
 
 export async function triageIssue(
@@ -78,37 +30,41 @@ export async function triageIssue(
   issueBody: string,
   issueLabels: string[],
 ): Promise<Result<TriageResult>> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-
-  if (!apiKey) {
-    logger.warn('未设置 DEEPSEEK_API_KEY，无法进行分类');
-    return failure('缺少 DEEPSEEK_API_KEY，无法进行 Issue 分类');
+  const labels = issueLabels.map((label) => label.toLowerCase());
+  if (labels.includes('bug') || labels.includes('feature')) {
+    return success({
+      classification: labels.includes('feature') ? 'feature' : 'bug',
+      reason: 'Issue 已包含可执行标签',
+    });
   }
 
-  const modelName = process.env.ALONG_TRIAGE_MODEL || 'deepseek-chat';
-  const userMessage = buildTriageUserMessage(
-    issueTitle,
-    issueBody,
-    issueLabels,
-  );
-
-  logger.info(`[triage] model=${modelName}, apiKey=${apiKey.slice(0, 8)}...`);
-
-  try {
-    const structuredLlm = createTriageLlm(apiKey, modelName);
-
-    const result = await structuredLlm.invoke([
-      { role: 'system', content: TRIAGE_SYSTEM_PROMPT },
-      { role: 'user', content: userMessage },
-    ]);
-
-    logger.info(`[triage] 分类结果: ${JSON.stringify(result)}`);
-    return success(normalizeTriageResult(result));
-  } catch (error: unknown) {
-    const message = getErrorMessage(error);
-    logger.error(`[triage] AI 分类失败: ${message}`);
-    return failure(`AI 分类异常: ${message}`);
+  const text = `${issueTitle}\n${issueBody}`.toLowerCase();
+  if (includesAny(text, ['spam', '广告', '推广', 'http://', 'https://'])) {
+    return success({
+      classification: 'spam',
+      reason: '本地规则判断为广告或无关内容',
+      replyMessage:
+        '该 Issue 看起来不像需要处理的代码任务，已按 spam 处理。\n\n---\n> 如果你认为这个 Issue 确实需要代码修改，请在 Issue 中评论 `/approve` 以重新触发处理流程。',
+    });
   }
+
+  if (
+    includesAny(text, ['?', '？', 'how', 'why', '如何', '怎么', '请问', '咨询'])
+  ) {
+    return success({
+      classification: 'question',
+      reason: '本地规则判断为咨询类 Issue',
+      replyMessage:
+        '该 Issue 看起来更像咨询或求助，暂不启动代码处理流程。\n\n---\n> 如果你认为这个 Issue 确实需要代码修改，请在 Issue 中评论 `/approve` 以重新触发处理流程。',
+    });
+  }
+
+  return success({
+    classification: includesAny(text, ['feature', '新增', '支持', '优化'])
+      ? 'feature'
+      : 'bug',
+    reason: '本地规则无法排除代码修改需求，默认进入 Codex 处理流程',
+  });
 }
 
 /**

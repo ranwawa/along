@@ -13,7 +13,7 @@ const TABLES = [
     pr_url TEXT, pr_number INTEGER, commit_shas TEXT DEFAULT '[]',
     last_message TEXT, current_step TEXT, error_message TEXT, exit_code INTEGER,
     crash_log TEXT, review_comment_count INTEGER, workflow_phase TEXT,
-    claude_session_id TEXT, UNIQUE(owner, repo, issue_number)
+    UNIQUE(owner, repo, issue_number)
   );`,
   `CREATE TABLE IF NOT EXISTS planning_threads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,7 +171,6 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE sessions ADD COLUMN error TEXT',
   'ALTER TABLE sessions ADD COLUMN phase_started_at TEXT',
   'ALTER TABLE sessions ADD COLUMN step_started_at TEXT',
-  'ALTER TABLE sessions ADD COLUMN claude_session_id TEXT',
   'ALTER TABLE task_items ADD COLUMN repo_owner TEXT',
   'ALTER TABLE task_items ADD COLUMN repo_name TEXT',
   'ALTER TABLE task_items ADD COLUMN cwd TEXT',

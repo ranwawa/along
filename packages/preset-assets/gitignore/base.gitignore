@@ -3,12 +3,8 @@
 .vscode/
 
 # Agent
-.claude/
 .codex/
-.opencode/
-.pi/
 AGENTS.md
-CLAUDE.md
 
 # Along 基础配置
 !.along/

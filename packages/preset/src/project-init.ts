@@ -15,18 +15,10 @@ import type {
 
 const logger = consola.withTag('preset-init');
 
-const EDITOR_OPTIONS: ManagedAgentEditor[] = [
-  'codex',
-  'claude',
-  'opencode',
-  'pi',
-];
+const EDITOR_OPTIONS: ManagedAgentEditor[] = ['codex'];
 
 const EDITOR_DETECT_DIRS: Record<ManagedAgentEditor, string> = {
-  opencode: '.opencode',
-  pi: '.pi',
   codex: '.codex',
-  claude: '.claude',
 };
 
 type QualityTemplate = 'single' | 'workspace';
@@ -472,10 +464,6 @@ function inferEditors(
 function normalizeEditor(value: string | undefined): ManagedAgentEditor | null {
   if (!value) {
     return null;
-  }
-
-  if (value === 'kira') {
-    return 'claude';
   }
 
   return EDITOR_OPTIONS.includes(value as ManagedAgentEditor)

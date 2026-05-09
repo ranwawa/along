@@ -1,5 +1,5 @@
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner keeps provider orchestration together.
-// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy runner keeps provider orchestration together.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: Codex runner keeps stream orchestration together.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: Codex runner keeps stream orchestration together.
 import type {
   ThreadEvent,
   ThreadItem,
@@ -23,10 +23,6 @@ import {
   startTaskAgentRun,
   startTaskAgentRunHeartbeat,
 } from './task-agent-run-lifecycle';
-import type {
-  RunTaskClaudeTurnInput,
-  RunTaskClaudeTurnOutput,
-} from './task-claude-runner';
 import { CodexStreamSessionEventMapper } from './task-codex-session-events';
 import {
   buildThreadOptions,
@@ -39,6 +35,7 @@ import {
 } from './task-codex-utils';
 import {
   TASK_AGENT_PROGRESS_PHASE,
+  type TaskAgentRunRecord,
   updateTaskAgentProviderSession,
 } from './task-planning';
 import {
@@ -74,17 +71,43 @@ export interface TaskCodexClient {
 
 export type CreateTaskCodexClient = () => TaskCodexClient;
 
+export interface CodexOutputFormatOptions {
+  outputFormat?: {
+    type: 'json_schema';
+    schema: unknown;
+  };
+}
+
 interface RunCodexPromptResult {
   turn: TaskCodexTurn;
   latestThreadId?: string;
 }
 
-export interface RunTaskCodexTurnInput extends RunTaskClaudeTurnInput {
+export interface RunTaskCodexTurnInput {
+  taskId: string;
+  threadId: string;
+  agentId: string;
+  prompt: string;
+  cwd: string;
+  model?: string;
+  personalityVersion?: string;
+  inputArtifactIds?: string[];
+  outputMetadata?: Record<string, unknown>;
+  options?: CodexOutputFormatOptions;
   createClient?: CreateTaskCodexClient;
   codexOptions?: {
     sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
     approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
   };
+}
+
+export interface RunTaskCodexTurnOutput {
+  run: TaskAgentRunRecord;
+  providerSessionId?: string;
+  usedResume: boolean;
+  assistantText: string;
+  structuredOutput?: unknown;
+  outputArtifactIds: string[];
 }
 
 function getErrorMessage(error: unknown): string {
@@ -93,7 +116,7 @@ function getErrorMessage(error: unknown): string {
 
 export async function runTaskCodexTurn(
   input: RunTaskCodexTurnInput,
-): Promise<Result<RunTaskClaudeTurnOutput>> {
+): Promise<Result<RunTaskCodexTurnOutput>> {
   const prompt = input.prompt.trim();
   if (!prompt) return failure('Codex prompt 不能为空');
 
@@ -106,7 +129,7 @@ async function runStartedCodexTurn(
   input: RunTaskCodexTurnInput,
   prompt: string,
   started: StartedTaskAgentRun,
-): Promise<Result<RunTaskClaudeTurnOutput>> {
+): Promise<Result<RunTaskCodexTurnOutput>> {
   const { binding, progressContext, usedResume } = started;
   const outputSchema = getCodexOutputSchema(input);
   let thread: TaskCodexThread | undefined;
@@ -124,7 +147,11 @@ async function runStartedCodexTurn(
         latestThreadId,
       );
     }
-    thread = openCodexThread(input, progressContext, binding.providerSessionId);
+    thread = createCodexThread(
+      input,
+      progressContext,
+      binding.providerSessionId,
+    );
     const turn = await runCodexPrompt(
       progressContext.runId,
       progressContext,
@@ -216,7 +243,7 @@ function failCodexTurn(
     : failure(failedRes.error);
 }
 
-function openCodexThread(
+function createCodexThread(
   input: RunTaskCodexTurnInput,
   context: TaskAgentProgressContext,
   providerSessionId?: string,
@@ -349,7 +376,7 @@ function completeCancelledCodexTurn(
   context: TaskAgentProgressContext,
   usedResume: boolean,
   latestThreadId?: string,
-): Result<RunTaskClaudeTurnOutput> {
+): Result<RunTaskCodexTurnOutput> {
   const runRes = completeTaskAgentCancellation(
     context,
     'Codex Agent 运行已中断，跳过保存输出。',
@@ -371,7 +398,7 @@ function completeCodexTurn(
   turn: TaskCodexTurn,
   outputSchema: unknown,
   latestThreadId?: string,
-): Result<RunTaskClaudeTurnOutput> {
+): Result<RunTaskCodexTurnOutput> {
   const sessionRes = saveCodexSession(input, context, latestThreadId);
   if (!sessionRes.success) return sessionRes;
   const assistantText = getCodexAssistantText(turn);

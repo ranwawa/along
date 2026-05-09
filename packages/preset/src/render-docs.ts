@@ -6,10 +6,6 @@ export function renderAgentsDoc(): string {
   return readText(getPresetTemplatePath('AGENTS.md'));
 }
 
-export function renderClaudeMd(): string {
-  return readText(getPresetTemplatePath('CLAUDE.md'));
-}
-
 export function renderQualityGateAction(project: LoadedManagedProject): string {
   const config = project.resolved;
 

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('./config', () => ({
   config: {
     USER_ALONG_DIR: '/mock/.along',
-    getLogTag: vi.fn(() => ({ success: true, data: 'opencode' })),
+    getLogTag: vi.fn(() => ({ success: true, data: 'codex' })),
   },
 }));
 

@@ -7,11 +7,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import {
-  type Options as ClaudeSDKOptions,
-  query,
-  type SDKMessage,
-} from '@anthropic-ai/claude-agent-sdk';
 import { consola } from 'consola';
 import type { Result } from '../core/common';
 import {
@@ -148,51 +143,6 @@ async function drainStream(
   }
 }
 
-const PERSISTED_MESSAGE_TYPES = new Set([
-  'assistant',
-  'user',
-  'result',
-  'tool_use_summary',
-  'rate_limit_event',
-]);
-
-const PERSISTED_SYSTEM_SUBTYPES = new Set(['compact_boundary', 'api_retry']);
-
-function shouldPersistMessage(msg: SDKMessage): boolean {
-  if (PERSISTED_MESSAGE_TYPES.has(msg.type)) return true;
-  if (msg.type === 'system') {
-    return PERSISTED_SYSTEM_SUBTYPES.has((msg as any).subtype);
-  }
-  return false;
-}
-
-function formatSDKMessage(message: SDKMessage): string | null {
-  if (message.type === 'assistant') {
-    const content = message.message?.content;
-    if (Array.isArray(content)) {
-      const texts = content
-        .filter((c: any) => c.type === 'text' && c.text)
-        .map((c: any) => c.text);
-      if (texts.length > 0) return `[assistant] ${texts.join('\n')}`;
-    }
-    return null;
-  }
-  if (message.type === 'result') {
-    const msgAny = message as any;
-    if (msgAny.is_error === true) {
-      const errors = Array.isArray(msgAny.errors)
-        ? msgAny.errors
-        : ['未知错误'];
-      return `[result] 错误: ${errors.join(', ')} (${message.num_turns} turns)`;
-    }
-    if (message.subtype === 'success') {
-      return `[result] 完成 (${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)})`;
-    }
-    return `[result] ${message.subtype} (${message.num_turns} turns)`;
-  }
-  return null;
-}
-
 export async function execAgent(
   worktreePath: string,
   issueNumber: number,
@@ -200,7 +150,7 @@ export async function execAgent(
   onPid?: (pid: number) => void,
   logFile?: string,
   sessionManager?: SessionManager,
-  conversationFile?: string,
+  _conversationFile?: string,
 ): Promise<Result<AgentExecutionSummary>> {
   const isPlanningSymlink = (() => {
     try {
@@ -221,18 +171,7 @@ export async function execAgent(
   const logTag = logTagRes.data;
   const editor = config.EDITORS.find((e) => e.id === logTag);
 
-  if (editor?.id === 'claude') {
-    return execClaudeAgent(
-      worktreePath,
-      issueNumber,
-      workflow,
-      sessionManager,
-      logFile,
-      conversationFile,
-    );
-  }
-
-  return execSpawnAgent(
+  return execCodexAgent(
     worktreePath,
     issueNumber,
     workflow,
@@ -244,136 +183,7 @@ export async function execAgent(
   );
 }
 
-async function execClaudeAgent(
-  worktreePath: string,
-  issueNumber: number,
-  workflow: string,
-  sessionManager?: SessionManager,
-  logFile?: string,
-  conversationFile?: string,
-): Promise<Result<AgentExecutionSummary>> {
-  const promptPath = path.join(worktreePath, `.claude/commands/${workflow}.md`);
-  if (!fs.existsSync(promptPath)) {
-    return failure(`workflow prompt 文件不存在: ${promptPath}`);
-  }
-  const appendPrompt = fs.readFileSync(promptPath, 'utf-8');
-
-  const options: ClaudeSDKOptions = {
-    cwd: worktreePath,
-    systemPrompt: {
-      type: 'preset',
-      preset: 'claude_code',
-      append: appendPrompt,
-    },
-    permissionMode: 'bypassPermissions',
-    allowDangerouslySkipPermissions: true,
-    allowedTools: [
-      `Bash(along *)`,
-      `Read(${config.USER_ALONG_DIR}/**)`,
-      `Edit(${config.USER_ALONG_DIR}/**)`,
-      `Write(${config.USER_ALONG_DIR}/**)`,
-    ],
-    debug: true,
-    maxTurns: 200,
-  };
-
-  const prompt = `请解决 GitHub Issue #${issueNumber}，严格按照系统提示中的工作流执行`;
-
-  logger.info(`启动 Claude Agent (SDK), workflow: ${workflow}`);
-
-  const targetLogFile = _dashboardMode ? logFile : undefined;
-  let fileHandle: { write(data: string): any; end(): void } | undefined;
-  let fileWriter: (WritableTarget & { flush(): void }) | undefined;
-
-  if (targetLogFile) {
-    const ws = fs.createWriteStream(targetLogFile, { flags: 'a' });
-    fileHandle = ws;
-    fileWriter = createTimestampedWriter(ws);
-  }
-
-  const out: WritableTarget = fileWriter || process.stdout;
-  let sessionId: string | undefined;
-
-  let convHandle: fs.WriteStream | undefined;
-  if (conversationFile) {
-    fs.mkdirSync(path.dirname(conversationFile), { recursive: true });
-    convHandle = fs.createWriteStream(conversationFile, { flags: 'a' });
-  }
-
-  try {
-    const conversation = query({ prompt, options });
-    let receivedResult = false;
-
-    for await (const message of conversation) {
-      if (!sessionId && 'session_id' in message) {
-        sessionId = message.session_id as string;
-      }
-
-      if (convHandle && shouldPersistMessage(message)) {
-        convHandle.write(`${JSON.stringify(message)}\n`);
-      }
-
-      const formatted = formatSDKMessage(message);
-      if (formatted) out.write(`${formatted}\n`);
-
-      if (message.type === 'result') {
-        receivedResult = true;
-
-        if (sessionId && sessionManager) {
-          sessionManager.updateClaudeSessionId(sessionId);
-          logger.info(`已捕获 Claude sessionId: ${sessionId}`);
-        }
-
-        const msgAny = message as any;
-        const isError = msgAny.is_error === true;
-        const hasErrors =
-          Array.isArray(msgAny.errors) && msgAny.errors.length > 0;
-
-        if (isError || hasErrors) {
-          const errorMessage = hasErrors
-            ? msgAny.errors.join(', ')
-            : 'Agent 执行出错';
-          logger.error(`Claude Agent SDK 报告错误: ${errorMessage}`);
-          return success({
-            exitCode: 1,
-            nativeError: {
-              message: errorMessage,
-              details: JSON.stringify(message),
-            },
-          });
-        }
-
-        if (message.subtype !== 'success') {
-          logger.warn(`Claude Agent 异常结束: ${message.subtype}`);
-          return success({ exitCode: 1 });
-        }
-
-        return success({ exitCode: 0 });
-      }
-    }
-
-    if (!receivedResult) {
-      const errorMessage = 'Agent 执行流结束但未收到结果';
-      logger.error(errorMessage);
-      return success({
-        exitCode: 1,
-        nativeError: { message: errorMessage },
-      });
-    }
-  } catch (error: any) {
-    logger.error(`Claude Agent SDK 执行异常: ${error.message}`);
-    return success({
-      exitCode: 1,
-      nativeError: { message: error.message, details: error.stack },
-    });
-  } finally {
-    fileWriter?.flush();
-    fileHandle?.end();
-    convHandle?.end();
-  }
-}
-
-async function execSpawnAgent(
+async function execCodexAgent(
   worktreePath: string,
   issueNumber: number,
   workflow: string,
@@ -389,7 +199,9 @@ async function execSpawnAgent(
     .replace('{workflow}', workflow)
     .replace('{num}', String(issueNumber));
 
-  logger.info(`启动 Agent (${editor?.name || logTag}), workflow: ${workflow}`);
+  logger.info(
+    `启动 Codex Agent (${editor?.name || logTag}), workflow: ${workflow}`,
+  );
   logger.info(`执行命令: ${cmd}`);
 
   const proc = Bun.spawn(['bash', '-c', cmd], {

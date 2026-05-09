@@ -1,5 +1,5 @@
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: Codex stream event mapping keeps provider cases explicit.
-// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: Codex stream event mapping keeps provider cases explicit.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: Codex stream event mapping keeps event cases explicit.
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: Codex stream event mapping keeps event cases explicit.
 import type { ThreadEvent, ThreadItem } from '@openai/codex-sdk';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';

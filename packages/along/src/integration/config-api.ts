@@ -3,7 +3,6 @@ import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
   type AlongGlobalConfig,
-  type ProviderConfig,
   readGlobalConfig,
   type TaskAgentConfig,
   writeGlobalConfig,
@@ -17,17 +16,9 @@ const JSON_HEADERS = {
 };
 
 const DEFAULT_TASK_AGENTS: Record<string, TaskAgentConfig> = {
-  '*': { editor: 'claude' },
-  planner: { editor: 'claude' },
-  implementer: { editor: 'claude' },
-};
-
-const DEFAULT_PROVIDERS: Record<string, ProviderConfig> = {
-  deepseek: {
-    name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com',
-    models: ['deepseek-v4-flash'],
-  },
+  '*': { editor: 'codex' },
+  planner: { editor: 'codex' },
+  implementer: { editor: 'codex' },
 };
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -103,91 +94,6 @@ function sanitizeTaskAgents(
   return success(result);
 }
 
-function sanitizeStringArray(
-  value: unknown,
-  fieldName: string,
-): Result<string[]> {
-  if (value === undefined) return success([]);
-  if (!Array.isArray(value)) return failure(`${fieldName} 必须是字符串数组`);
-  const result: string[] = [];
-  for (const item of value) {
-    if (typeof item !== 'string')
-      return failure(`${fieldName} 必须是字符串数组`);
-    const trimmed = item.trim();
-    if (trimmed) result.push(trimmed);
-  }
-  return success([...new Set(result)]);
-}
-
-function sanitizeProviders(
-  value: unknown,
-  existing: Record<string, ProviderConfig> = {},
-): Result<Record<string, ProviderConfig>> {
-  if (value === undefined) return success(existing);
-  if (!isRecord(value)) return failure('providers 必须是对象');
-
-  const result: Record<string, ProviderConfig> = {};
-  for (const [providerId, rawConfig] of Object.entries(value)) {
-    const trimmedProviderId = providerId.trim();
-    if (!trimmedProviderId) return failure('providerId 不能为空');
-    if (!isRecord(rawConfig)) {
-      return failure(`providers.${providerId} 必须是对象`);
-    }
-
-    const name = rawConfig.name;
-    if (name !== undefined && typeof name !== 'string') {
-      return failure(`providers.${providerId}.name 必须是字符串`);
-    }
-
-    const baseUrl = rawConfig.baseUrl;
-    if (baseUrl !== undefined && typeof baseUrl !== 'string') {
-      return failure(`providers.${providerId}.baseUrl 必须是字符串`);
-    }
-
-    const token = rawConfig.token;
-    if (token !== undefined && typeof token !== 'string') {
-      return failure(`providers.${providerId}.token 必须是字符串`);
-    }
-
-    const modelsRes = sanitizeStringArray(
-      rawConfig.models,
-      `providers.${providerId}.models`,
-    );
-    if (!modelsRes.success) return modelsRes;
-
-    result[trimmedProviderId] = {
-      name: name?.trim() || undefined,
-      baseUrl: baseUrl?.trim() || undefined,
-      token: token?.trim() || existing[trimmedProviderId]?.token,
-      models: modelsRes.data,
-    };
-  }
-
-  return success(result);
-}
-
-function maskToken(token?: string) {
-  if (!token) return undefined;
-  if (token.length <= 8) return '********';
-  return `${token.slice(0, 4)}...${token.slice(-4)}`;
-}
-
-function sanitizeProviderPayload(providers?: Record<string, ProviderConfig>) {
-  const source = providers || {};
-  return Object.fromEntries(
-    Object.entries(source).map(([providerId, provider]) => [
-      providerId,
-      {
-        name: provider.name,
-        baseUrl: provider.baseUrl,
-        models: provider.models || [],
-        tokenConfigured: Boolean(provider.token),
-        tokenPreview: maskToken(provider.token),
-      },
-    ]),
-  );
-}
-
 function buildConfigPayload(globalConfig?: AlongGlobalConfig | null) {
   return {
     configPath: config.CONFIG_FILE,
@@ -197,10 +103,8 @@ function buildConfigPayload(globalConfig?: AlongGlobalConfig | null) {
     })),
     defaults: {
       taskAgents: DEFAULT_TASK_AGENTS,
-      providers: sanitizeProviderPayload(DEFAULT_PROVIDERS),
     },
     taskAgents: globalConfig?.taskAgents || {},
-    providers: sanitizeProviderPayload(globalConfig?.providers),
   };
 }
 
@@ -225,16 +129,9 @@ export async function handleConfigApiRequest(req: Request): Promise<Response> {
     const readRes = readGlobalConfig();
     if (!readRes.success) return errorResponse(readRes.error, 500);
 
-    const providersRes = sanitizeProviders(
-      bodyRes.data.providers,
-      readRes.data?.providers || {},
-    );
-    if (!providersRes.success) return errorResponse(providersRes.error, 400);
-
     const writeRes = writeGlobalConfig({
       ...(readRes.data || {}),
       taskAgents: taskAgentsRes.data,
-      providers: providersRes.data,
     });
     if (!writeRes.success) return errorResponse(writeRes.error, 500);
 

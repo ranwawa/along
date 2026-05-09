@@ -6,14 +6,14 @@ vi.mock('../core/config', () => ({
     USER_ALONG_DIR: '/mock/home/.along',
     EDITORS: [
       {
-        id: 'claude',
-        name: 'Kira Code',
-        detectDir: '.claude',
-        mappings: [{ from: 'skills', to: '.claude/skills' }],
+        id: 'codex',
+        name: 'Codex',
+        detectDir: '.codex',
+        mappings: [{ from: 'skills', to: '.codex/skills' }],
         runTemplate: '',
       },
     ],
-    getLogTag: vi.fn(() => ({ success: true, data: 'claude' })),
+    getLogTag: vi.fn(() => ({ success: true, data: 'codex' })),
     ensureDataDirs: vi.fn(),
   },
 }));
@@ -57,7 +57,7 @@ vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn(),
     mkdirSync: vi.fn(),
-    readFileSync: vi.fn(() => '{"agent":"claude"}\n'),
+    readFileSync: vi.fn(() => '{"agent":"codex"}\n'),
     rmSync: vi.fn(),
     writeFileSync: vi.fn(),
   },
@@ -94,7 +94,7 @@ describe('bootstrap.ts', () => {
       expect(result.success).toBe(true);
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining('.along/setting.json'),
-        expect.stringContaining('"agent": "claude"'),
+        expect.stringContaining('"agent": "codex"'),
       );
     });
 

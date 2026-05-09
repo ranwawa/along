@@ -15,13 +15,13 @@ vi.mock('../core/config', () => ({
     ROOT_DIR: '/mock/along',
     EDITORS: [
       {
-        id: 'opencode',
-        name: 'OpenCode',
-        detectDir: '.opencode',
-        mappings: [{ from: 'skills', to: '.opencode/skills' }],
+        id: 'codex',
+        name: 'Codex',
+        detectDir: '.codex',
+        mappings: [{ from: 'skills', to: '.codex/skills' }],
       },
     ],
-    getLogTag: vi.fn(() => ({ success: true, data: 'opencode' })),
+    getLogTag: vi.fn(() => ({ success: true, data: 'codex' })),
   },
 }));
 
@@ -89,20 +89,20 @@ describe('worktree-init.ts', () => {
       );
 
       const result = syncEditorMappings('/mock/worktree', {
-        id: 'opencode',
-        name: 'OpenCode',
-        detectDir: '.opencode',
-        mappings: [{ from: 'skills', to: '.opencode/skills' }],
+        id: 'codex',
+        name: 'Codex',
+        detectDir: '.codex',
+        mappings: [{ from: 'skills', to: '.codex/skills' }],
         runTemplate: '',
       });
 
       expect(result.success).toBe(true);
-      expect(fs.mkdirSync).toHaveBeenCalledWith('/mock/worktree/.opencode', {
+      expect(fs.mkdirSync).toHaveBeenCalledWith('/mock/worktree/.codex', {
         recursive: true,
       });
       expect(fs.symlinkSync).toHaveBeenCalledWith(
-        path.relative('/mock/worktree/.opencode', '/mock/along/skills'),
-        '/mock/worktree/.opencode/skills',
+        path.relative('/mock/worktree/.codex', '/mock/along/skills'),
+        '/mock/worktree/.codex/skills',
         'dir',
       );
     });

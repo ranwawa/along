@@ -518,7 +518,7 @@ describe('task-codex-runner', () => {
           { type: 'thread.started', thread_id: 'codex-thread-1' },
           {
             type: 'turn.failed',
-            error: { message: 'provider unavailable' },
+            error: { message: 'Codex unavailable' },
           },
         ]),
       }),
@@ -542,7 +542,7 @@ describe('task-codex-runner', () => {
       expect.objectContaining({
         source: 'system',
         kind: 'error',
-        content: 'Codex turn 失败：provider unavailable',
+        content: 'Codex turn 失败：Codex unavailable',
         metadata: expect.objectContaining({
           provider_event_type: 'turn.failed',
         }),
@@ -552,7 +552,7 @@ describe('task-codex-runner', () => {
       runId: 'run-1',
       status: 'failed',
       providerSessionIdAtEnd: 'codex-thread-1',
-      error: 'provider unavailable',
+      error: 'Codex unavailable',
     });
   });
 
@@ -602,7 +602,7 @@ describe('task-codex-runner', () => {
     });
   });
 
-  it('存在 provider session 时恢复 Codex thread', async () => {
+  it('存在 Codex session 时恢复 Codex thread', async () => {
     planningMocks.ensureTaskAgentBinding.mockReturnValueOnce({
       success: true,
       data: {
@@ -645,7 +645,7 @@ describe('task-codex-runner', () => {
   it('当 Codex thread 执行失败但已有 session 时，期望保存 session 供下次恢复', async () => {
     const thread = {
       id: 'codex-thread-failed',
-      runStreamed: vi.fn().mockRejectedValue(new Error('provider unavailable')),
+      runStreamed: vi.fn().mockRejectedValue(new Error('Codex unavailable')),
     };
     const client = {
       startThread: vi.fn().mockReturnValue(thread),
@@ -672,7 +672,7 @@ describe('task-codex-runner', () => {
       runId: 'run-1',
       status: 'failed',
       providerSessionIdAtEnd: 'codex-thread-failed',
-      error: 'provider unavailable',
+      error: 'Codex unavailable',
     });
   });
 
@@ -697,10 +697,10 @@ describe('task-codex-runner', () => {
     });
   });
 
-  it('当 provider session 更新失败时，期望 run 被标记为失败', async () => {
+  it('当 Codex session 更新失败时，期望 run 被标记为失败', async () => {
     planningMocks.updateTaskAgentProviderSession.mockReturnValueOnce({
       success: false,
-      error: '更新 provider session 失败',
+      error: '更新 Codex session 失败',
     });
     const thread = {
       id: 'codex-thread-1',
@@ -727,7 +727,7 @@ describe('task-codex-runner', () => {
       runId: 'run-1',
       status: 'failed',
       providerSessionIdAtEnd: 'codex-thread-1',
-      error: '更新 provider session 失败',
+      error: '更新 Codex session 失败',
     });
   });
 

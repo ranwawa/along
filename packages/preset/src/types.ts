@@ -1,4 +1,4 @@
-export type ManagedAgentEditor = 'opencode' | 'pi' | 'codex' | 'claude';
+export type ManagedAgentEditor = 'codex';
 
 export interface ManagedProjectTooling {
   installCommand: string;
