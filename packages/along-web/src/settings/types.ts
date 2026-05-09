@@ -1,6 +1,7 @@
-export interface ConfigRow {
-  key: string;
-  editor: string;
-  model: string;
+export interface AgentRow {
+  id: string;
+  runtimeId: string;
+  modelId: string;
+  credentialId: string;
   personalityVersion: string;
 }

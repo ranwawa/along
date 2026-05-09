@@ -1,3 +1,8 @@
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy issue agent orchestration remains out of scope for this migration.
+// biome-ignore-all lint/suspicious/noExplicitAny: legacy process and session payloads use external untyped shapes.
+// biome-ignore-all lint/style/noMagicNumbers: legacy identifiers and time constants are unchanged by this migration.
+// biome-ignore-all lint/correctness/noUndeclaredVariables: Bun runtime globals are used by the existing CLI process runner.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy orchestration functions are outside this migration.
 /**
  * issue-agent.ts - Issue Agent 共享启动模块
  *
@@ -11,7 +16,7 @@ import { consola } from 'consola';
 import type { Result } from '../core/common';
 import {
   check_process_running,
-  ensureEditorPermissions,
+  ensureRuntimePermissions,
   failure,
   get_repo_root,
   getGit,
@@ -50,7 +55,7 @@ import {
   initSessionFiles,
   setupPlanningWorkspace,
   setupWorktree,
-  syncEditorMappings,
+  syncRuntimeMappings,
 } from './worktree-init';
 
 const MAX_PLANNING_CONTINUATIONS = 10;
@@ -74,7 +79,7 @@ const logger = consola.withTag('issue-agent');
 // ─── syncPromptsToWorktree ─────────────────────────────────
 
 /**
- * 刷新编辑器运行时映射。
+ * 刷新运行时运行时映射。
  * 项目通用 prompts / skills 已由 preset 同步进仓库，这里只保留 along 自身的运行时注入点。
  */
 export function syncPromptsToWorktree(worktreePath: string): Result<void> {
@@ -82,13 +87,13 @@ export function syncPromptsToWorktree(worktreePath: string): Result<void> {
   if (!logTagRes.success) return logTagRes;
   const logTag = logTagRes.data;
 
-  const editor =
-    config.EDITORS.find((e) => e.id === logTag) || config.EDITORS[0];
+  const runtime =
+    config.RUNTIMES.find((e) => e.id === logTag) || config.RUNTIMES[0];
 
-  const syncRes = syncEditorMappings(worktreePath, editor);
+  const syncRes = syncRuntimeMappings(worktreePath, runtime);
   if (!syncRes.success) return syncRes;
 
-  logger.info(`已检查编辑器运行时映射 (${editor.name})`);
+  logger.info(`已检查运行时运行时映射 (${runtime.name})`);
   return success(undefined);
 }
 
@@ -163,20 +168,20 @@ export async function execAgent(
   if (!isPlanningSymlink) {
     const syncRes = syncPromptsToWorktree(worktreePath);
     if (!syncRes.success) return syncRes;
-    ensureEditorPermissions(worktreePath);
+    ensureRuntimePermissions(worktreePath);
   }
 
   const logTagRes = config.getLogTag();
   if (!logTagRes.success) return logTagRes;
   const logTag = logTagRes.data;
-  const editor = config.EDITORS.find((e) => e.id === logTag);
+  const runtime = config.RUNTIMES.find((e) => e.id === logTag);
 
   return execCodexAgent(
     worktreePath,
     issueNumber,
     workflow,
     logTag,
-    editor,
+    runtime,
     onPid,
     logFile,
     sessionManager,
@@ -188,19 +193,19 @@ async function execCodexAgent(
   issueNumber: number,
   workflow: string,
   logTag: string,
-  editor: (typeof config.EDITORS)[number] | undefined,
+  runtime: (typeof config.RUNTIMES)[number] | undefined,
   onPid?: (pid: number) => void,
   logFile?: string,
   _sessionManager?: SessionManager,
 ): Promise<Result<AgentExecutionSummary>> {
-  let cmd = editor?.runTemplate || '{tag} --prompt-template {workflow} {num}';
+  let cmd = runtime?.runTemplate || '{tag} --prompt-template {workflow} {num}';
   cmd = cmd
     .replace('{tag}', logTag)
     .replace('{workflow}', workflow)
     .replace('{num}', String(issueNumber));
 
   logger.info(
-    `启动 Codex Agent (${editor?.name || logTag}), workflow: ${workflow}`,
+    `启动 Codex Agent (${runtime?.name || logTag}), workflow: ${workflow}`,
   );
   logger.info(`执行命令: ${cmd}`);
 
@@ -415,7 +420,7 @@ export async function launchIssueAgent(
   }
 
   if (!isPlanning) {
-    ensureEditorPermissions(worktreePath);
+    ensureRuntimePermissions(worktreePath);
   }
 
   // 3. 写入 .along-mode 文件
@@ -447,9 +452,9 @@ export async function launchIssueAgent(
     const tagRes = config.getLogTag();
     if (tagRes.success) {
       const tag = tagRes.data;
-      const editor = config.EDITORS.find((e) => e.id === tag);
+      const runtime = config.RUNTIMES.find((e) => e.id === tag);
       const agentCommand = (
-        editor?.runTemplate || '{tag} --prompt-template {workflow} {num}'
+        runtime?.runTemplate || '{tag} --prompt-template {workflow} {num}'
       )
         .replace('{tag}', tag)
         .replace('{workflow}', workflow)

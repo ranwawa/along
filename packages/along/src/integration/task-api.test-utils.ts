@@ -240,8 +240,7 @@ export function expectScheduledRunner(
       cwd,
       reason,
       agentId: undefined,
-      editor: undefined,
-      model: undefined,
+      modelId: undefined,
       personalityVersion: undefined,
     },
   ]);

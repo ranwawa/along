@@ -6,9 +6,9 @@ import {
   useMemo,
   useState,
 } from 'react';
-import type { EditorOption, GlobalConfigResponse } from '../types';
-import { configToRows, defaultRows, rowsToTaskAgents } from './configMapping';
-import type { ConfigRow } from './types';
+import type { RegistryConfig } from '../types';
+import { registryToRows, rowsToAgents } from './configMapping';
+import type { AgentRow } from './types';
 
 interface ConfigApiError {
   error?: string;
@@ -16,18 +16,27 @@ interface ConfigApiError {
 
 export interface SettingsState {
   configPath: string;
-  editors: EditorOption[];
-  rows: ConfigRow[];
+  registry: RegistryConfig | null;
+  rows: AgentRow[];
   loading: boolean;
   saving: boolean;
   error: string | null;
   savedAt: string | null;
 }
 
+const emptyRegistry: RegistryConfig = {
+  providers: [],
+  credentials: [],
+  models: [],
+  runtimes: [],
+  agents: [],
+  profiles: [],
+};
+
 const initialSettingsState: SettingsState = {
-  configPath: '',
-  editors: [],
-  rows: defaultRows,
+  configPath: '~/.along/config.json',
+  registry: null,
+  rows: [],
   loading: false,
   saving: false,
   error: null,
@@ -57,14 +66,13 @@ function useSettingsData() {
   const loadConfig = useCallback(async () => {
     setState((previous) => ({ ...previous, loading: true, error: null }));
     try {
-      const result = await readJsonResponse<GlobalConfigResponse>(
-        await fetch('/api/config'),
+      const result = await readJsonResponse<RegistryConfig>(
+        await fetch('/api/registry'),
       );
       setState((previous) => ({
         ...previous,
-        configPath: result.configPath,
-        editors: result.editors,
-        rows: configToRows(result),
+        registry: result,
+        rows: registryToRows(result),
         loading: false,
       }));
     } catch (err: unknown) {
@@ -83,62 +91,61 @@ function useSettingsData() {
 
 function useSortedRows(state: SettingsState) {
   const sortedRows = useMemo(() => {
-    return [...state.rows].sort((left, right) => {
-      if (left.key === '*') return -1;
-      if (right.key === '*') return 1;
-      return left.key.localeCompare(right.key);
-    });
+    return [...state.rows].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
   }, [state.rows]);
   return { sortedRows };
 }
 
-function nextKey(prefix: string, existing: string[]) {
+function nextId(prefix: string, existing: string[]) {
   let index = 1;
-  let key = `${prefix}-${index}`;
-  const keys = new Set(existing);
-  while (keys.has(key)) {
+  let id = `${prefix}-${index}`;
+  const ids = new Set(existing);
+  while (ids.has(id)) {
     index += 1;
-    key = `${prefix}-${index}`;
+    id = `${prefix}-${index}`;
   }
-  return key;
+  return id;
 }
 
 function useAgentRowActions(state: SettingsState, setState: SetSettingsState) {
-  const updateRow = (key: string, patch: Partial<ConfigRow>) => {
+  const updateRow = (id: string, patch: Partial<AgentRow>) => {
     setState((previous) => ({
       ...previous,
       rows: previous.rows.map((row) =>
-        row.key === key ? { ...row, ...patch } : row,
+        row.id === id ? { ...row, ...patch } : row,
       ),
       savedAt: null,
     }));
   };
   const addRow = () => {
-    const key = nextKey(
+    const id = nextId(
       'agent',
-      state.rows.map((row) => row.key),
+      state.rows.map((row) => row.id),
     );
     setState((previous) => ({
       ...previous,
-      rows: [...previous.rows, createAgentRow(key, state.editors)],
+      rows: [...previous.rows, createAgentRow(id, state.registry)],
       savedAt: null,
     }));
   };
-  const removeRow = (key: string) => {
+  const removeRow = (id: string) => {
     setState((previous) => ({
       ...previous,
-      rows: previous.rows.filter((row) => row.key !== key),
+      rows: previous.rows.filter((row) => row.id !== id),
       savedAt: null,
     }));
   };
   return { updateRow, addRow, removeRow };
 }
 
-function createAgentRow(key: string, editors: EditorOption[]): ConfigRow {
+function createAgentRow(id: string, registry: RegistryConfig | null): AgentRow {
   return {
-    key,
-    editor: editors[0]?.id || 'codex',
-    model: '',
+    id,
+    runtimeId: registry?.runtimes[0]?.id || 'codex',
+    modelId: '',
+    credentialId: '',
     personalityVersion: '',
   };
 }
@@ -151,9 +158,8 @@ function useSaveConfig(state: SettingsState, setState: SetSettingsState) {
       const result = await putSettingsConfig(state);
       setState((previous) => ({
         ...previous,
-        configPath: result.configPath,
-        editors: result.editors,
-        rows: configToRows(result),
+        registry: result,
+        rows: registryToRows(result),
         saving: false,
         savedAt: new Date().toLocaleTimeString('zh-CN'),
       }));
@@ -168,14 +174,16 @@ function useSaveConfig(state: SettingsState, setState: SetSettingsState) {
 }
 
 async function putSettingsConfig(state: SettingsState) {
-  const response = await fetch('/api/config', {
+  const registry = state.registry || emptyRegistry;
+  const response = await fetch('/api/registry', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      taskAgents: rowsToTaskAgents(state.rows),
+      ...registry,
+      agents: rowsToAgents(state.rows),
     }),
   });
-  return readJsonResponse<GlobalConfigResponse>(response);
+  return readJsonResponse<RegistryConfig>(response);
 }
 
 export function useSettingsController() {

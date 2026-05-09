@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing settings view uses inline UI copy.
 import { AgentRowsTable } from './settings/AgentRowsTable';
 import {
   type SettingsState,
@@ -73,7 +74,7 @@ export function SettingsView() {
         <SettingsAlerts state={settings.state} />
         <AgentRowsTable
           rows={settings.rows.sortedRows}
-          editors={settings.state.editors}
+          runtimes={settings.state.registry?.runtimes || []}
           loading={settings.state.loading}
           saving={settings.state.saving}
           onAdd={settings.agentActions.addRow}

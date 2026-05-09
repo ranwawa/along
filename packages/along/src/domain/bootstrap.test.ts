@@ -4,7 +4,7 @@ vi.mock('../core/config', () => ({
   config: {
     ROOT_DIR: '/mock/along',
     USER_ALONG_DIR: '/mock/home/.along',
-    EDITORS: [
+    RUNTIMES: [
       {
         id: 'codex',
         name: 'Codex',
@@ -26,11 +26,11 @@ vi.mock('../core/result', () => ({
 vi.mock('../core/common', () => ({
   success: (data: unknown) => ({ success: true, data }),
   failure: (error: string) => ({ success: false, error }),
-  ensureEditorPermissions: vi.fn(),
+  ensureRuntimePermissions: vi.fn(),
 }));
 
 vi.mock('./worktree-init', () => ({
-  syncEditorMappings: vi.fn(() => ({ success: true, data: undefined })),
+  syncRuntimeMappings: vi.fn(() => ({ success: true, data: undefined })),
 }));
 
 vi.mock('../integration/agent-config', () => ({

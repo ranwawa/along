@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: test mocks intentionally use compact generic helpers.
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,7 +14,7 @@ vi.mock('../core/common', () => ({
 vi.mock('../core/config', () => ({
   config: {
     ROOT_DIR: '/mock/along',
-    EDITORS: [
+    RUNTIMES: [
       {
         id: 'codex',
         name: 'Codex',
@@ -56,7 +57,7 @@ import { git } from '../core/common';
 import {
   getDefaultBranch,
   setupWorktree,
-  syncEditorMappings,
+  syncRuntimeMappings,
 } from './worktree-init';
 
 describe('worktree-init.ts', () => {
@@ -82,13 +83,13 @@ describe('worktree-init.ts', () => {
     });
   });
 
-  describe('syncEditorMappings()', () => {
+  describe('syncRuntimeMappings()', () => {
     it('按映射创建目录软链', () => {
       vi.mocked(fs.existsSync).mockImplementation(
         (target: any) => target === '/mock/along/skills',
       );
 
-      const result = syncEditorMappings('/mock/worktree', {
+      const result = syncRuntimeMappings('/mock/worktree', {
         id: 'codex',
         name: 'Codex',
         detectDir: '.codex',

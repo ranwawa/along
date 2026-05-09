@@ -1,14 +1,15 @@
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: existing GitHub App guide is intentionally printed inline.
 import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 import { consola } from 'consola';
-import { ensureEditorPermissions } from '../core/common';
+import { ensureRuntimePermissions } from '../core/common';
 import { config } from '../core/config';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import { getWebhookSecret, getWorkspaces } from '../integration/agent-config';
 import { readRepoInfo } from '../integration/github-client';
-import { syncEditorMappings } from './worktree-init';
+import { syncRuntimeMappings } from './worktree-init';
 
 const logger = consola.withTag('bootstrap');
 
@@ -38,13 +39,13 @@ export async function ensureProjectBootstrap(): Promise<Result<void>> {
     return failure(tagRes.error);
   }
 
-  const editor = config.EDITORS.find((e) => e.id === tagRes.data);
-  if (editor) {
-    const syncRes = syncEditorMappings(workingDir, editor);
+  const runtime = config.RUNTIMES.find((e) => e.id === tagRes.data);
+  if (runtime) {
+    const syncRes = syncRuntimeMappings(workingDir, runtime);
     if (!syncRes.success) {
-      logger.warn(`编辑器映射同步失败: ${syncRes.error}`);
+      logger.warn(`运行时映射同步失败: ${syncRes.error}`);
     }
-    ensureEditorPermissions(workingDir);
+    ensureRuntimePermissions(workingDir);
   }
 
   return success(undefined);
@@ -69,9 +70,6 @@ export async function ensureWebhookSecret(opts: {
   console.log(
     `  2. 设置环境变量 ${chalk.cyan('ALONG_WEBHOOK_SECRET=<secret>')}`,
   );
-  console.log(
-    `  3. 在 ${chalk.cyan('~/.along/config.json')} 中添加 ${chalk.cyan('"webhookSecret": "<secret>"')}`,
-  );
   console.log('');
   console.log('如果你还没有创建 GitHub App，请按以下步骤操作:');
   console.log('');
@@ -88,15 +86,13 @@ export function ensureWorkspaces(): Result<string[]> {
   console.log(chalk.bold.red('错误: 未配置 workspaces'));
   console.log('');
   console.log(
-    'webhook-server 需要知道本地仓库的位置，请在配置文件中添加 workspaces 字段:',
+    'webhook-server 需要知道本地仓库的位置，请设置 ALONG_WORKSPACES:',
   );
   console.log('');
-  console.log(`  在 ${chalk.cyan('~/.along/config.json')} 中添加:`);
-  console.log('');
-  console.log(chalk.cyan('  "workspaces": ["/path/to/your/projects"]'));
+  console.log(chalk.cyan('  ALONG_WORKSPACES=/path/to/repo,/path/to/projects'));
   console.log('');
   console.log(
-    'workspaces 是一个目录路径数组，webhook-server 会扫描这些目录下的 git 仓库。',
+    'ALONG_WORKSPACES 是逗号分隔的路径列表，webhook-server 会扫描这些目录下的 git 仓库。',
   );
   console.log('每个路径可以是:');
   console.log(

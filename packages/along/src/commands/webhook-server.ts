@@ -57,9 +57,9 @@ import { recoverInterruptedTaskAgentRuns } from '../domain/task-planning';
 import { runTaskPlanningAgent } from '../domain/task-planning-agent';
 import { runTaskTitleSummary } from '../domain/task-title-summary';
 import {
-  handleConfigApiRequest,
-  isConfigApiPath,
-} from '../integration/config-api';
+  handleRegistryApiRequest,
+  isRegistryApiPath,
+} from '../integration/ai-registry-api';
 import {
   get_gh_client,
   syncLifecycleLabel,
@@ -456,8 +456,7 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
         taskId: input.taskId,
         agentId: input.agentId,
         cwd: input.cwd,
-        editor: input.editor,
-        model: input.model,
+        modelId: input.modelId,
         personalityVersion: input.personalityVersion,
       });
       if (!result.success) {
@@ -500,8 +499,7 @@ function enqueueTaskImplementationRun(input: ScheduledTaskImplementationRun) {
         taskId: input.taskId,
         agentId: input.agentId,
         cwd: input.cwd,
-        editor: input.editor,
-        model: input.model,
+        modelId: input.modelId,
         personalityVersion: input.personalityVersion,
       });
       if (!result.success) {
@@ -1279,9 +1277,9 @@ async function main() {
         });
       }
 
-      // ── API: /api/config ──
-      if (isConfigApiPath(url.pathname)) {
-        return handleConfigApiRequest(req);
+      // ── API: /api/registry ──
+      if (isRegistryApiPath(url.pathname)) {
+        return handleRegistryApiRequest(req);
       }
 
       // ── API: /api/repositories ──

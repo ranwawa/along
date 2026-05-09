@@ -416,7 +416,7 @@ it('当人工标记实现阶段已处理时，期望返回更新后的 snapshot'
   const response = await handleTaskApiRequest(
     jsonRequest('/api/tasks/task-1/manual-complete', {
       stage: 'implementation',
-      message: '已在 editor 中完成验证。',
+      message: '已在 Runtime 中完成验证。',
     }),
     new URL('http://localhost/api/tasks/task-1/manual-complete'),
     { defaultCwd: '/tmp/default' },
@@ -431,7 +431,7 @@ it('当人工标记实现阶段已处理时，期望返回更新后的 snapshot'
   expect(planningMocks.completeTaskAgentStageManually).toHaveBeenCalledWith({
     taskId: 'task-1',
     stage: 'implementation',
-    message: '已在 editor 中完成验证。',
+    message: '已在 Runtime 中完成验证。',
     prUrl: undefined,
     prNumber: undefined,
   });

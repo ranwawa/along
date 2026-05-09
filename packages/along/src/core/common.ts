@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: legacy shared helper keeps external error shapes untyped.
+// biome-ignore-all lint/style/noMagicNumbers: legacy time formatting constants are outside this migration.
 import { createRequire } from 'node:module';
 import { consola } from 'consola';
 import { config } from './config';
@@ -85,23 +87,23 @@ export function iso_timestamp(): string {
 const commonLogger = consola.withTag('common');
 
 /**
- * 确保 worktree 中的编辑器配置包含 ~/.along/ 目录的访问权限
+ * 确保 worktree 中的运行时配置包含 ~/.along/ 目录的访问权限
  */
-export function ensureEditorPermissions(worktreePath: string) {
-  const editorRes = config.getLogTag();
-  if (!editorRes.success) {
-    commonLogger.error(editorRes.error);
+export function ensureRuntimePermissions(worktreePath: string) {
+  const runtimeRes = config.getLogTag();
+  if (!runtimeRes.success) {
+    commonLogger.error(runtimeRes.error);
     return;
   }
-  const editor = config.EDITORS.find((e) => e.id === editorRes.data);
-  if (!editor?.ensurePermissions) return;
+  const runtime = config.RUNTIMES.find((e) => e.id === runtimeRes.data);
+  if (!runtime?.ensurePermissions) return;
 
   try {
-    editor.ensurePermissions(worktreePath, config.USER_ALONG_DIR);
+    runtime.ensurePermissions(worktreePath, config.USER_ALONG_DIR);
     commonLogger.info(
-      `已自动授权 ${editor.name} 访问 ${config.USER_ALONG_DIR}/`,
+      `已自动授权 ${runtime.name} 访问 ${config.USER_ALONG_DIR}/`,
     );
   } catch (e: any) {
-    commonLogger.warn(`自动授权 ${editor.name} 失败: ${e.message}`);
+    commonLogger.warn(`自动授权 ${runtime.name} 失败: ${e.message}`);
   }
 }

@@ -74,8 +74,7 @@ async function runAutoCommitFixTurn(input: {
       maxAttempts: input.maxAttempts,
     }),
     cwd: input.worktree.worktreePath,
-    editor: input.taskInput.editor,
-    model: input.taskInput.model,
+    modelId: input.taskInput.modelId,
     personalityVersion: input.taskInput.personalityVersion,
     inputArtifactIds: [
       input.approvedPlan.artifactId,

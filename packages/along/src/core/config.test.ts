@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: test mocks intentionally use compact generic helpers.
+// biome-ignore-all lint/style/noMagicNumbers: test fixture values are literal examples.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock fs 和 path 的依赖，避免真实文件系统操作
@@ -79,24 +81,24 @@ describe('config.ts', () => {
     });
   });
 
-  describe('EDITORS', () => {
-    it('只包含 codex 编辑器', () => {
-      expect(config.EDITORS).toHaveLength(1);
-      const ids = config.EDITORS.map((e) => e.id);
+  describe('RUNTIMES', () => {
+    it('只包含 codex 运行时', () => {
+      expect(config.RUNTIMES).toHaveLength(1);
+      const ids = config.RUNTIMES.map((e) => e.id);
       expect(ids).toContain('codex');
     });
 
-    it('每个编辑器都有 mappings, runTemplate 和 detectDir', () => {
-      for (const editor of config.EDITORS) {
-        expect(Array.isArray(editor.mappings)).toBe(true);
-        expect(editor.runTemplate).toBeTruthy();
-        expect(editor.name).toBeTruthy();
-        expect(editor.detectDir).toMatch(/^\./);
+    it('每个运行时都有 mappings, runTemplate 和 detectDir', () => {
+      for (const runtime of config.RUNTIMES) {
+        expect(Array.isArray(runtime.mappings)).toBe(true);
+        expect(runtime.runTemplate).toBeTruthy();
+        expect(runtime.name).toBeTruthy();
+        expect(runtime.detectDir).toMatch(/^\./);
       }
     });
 
     it('codex 不需要额外权限回调', () => {
-      const codex = config.EDITORS.find((e) => e.id === 'codex');
+      const codex = config.RUNTIMES.find((e) => e.id === 'codex');
       expect(codex?.ensurePermissions).toBeUndefined();
     });
   });

@@ -1,22 +1,24 @@
-import type { EditorOption } from '../types';
-import type { ConfigRow } from './types';
+// biome-ignore-all lint/style/noJsxLiterals: settings table uses compact inline labels.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: table rendering is kept together for readability.
+import type { RuntimeConfig } from '../types';
+import type { AgentRow } from './types';
 
 export function AgentRowsTable({
   rows,
-  editors,
+  runtimes,
   loading,
   saving,
   onAdd,
   onUpdate,
   onRemove,
 }: {
-  rows: ConfigRow[];
-  editors: EditorOption[];
+  rows: AgentRow[];
+  runtimes: RuntimeConfig[];
   loading: boolean;
   saving: boolean;
   onAdd: () => void;
-  onUpdate: (key: string, patch: Partial<ConfigRow>) => void;
-  onRemove: (key: string) => void;
+  onUpdate: (id: string, patch: Partial<AgentRow>) => void;
+  onRemove: (id: string) => void;
 }) {
   return (
     <section className="rounded-lg border border-border-color bg-black/25 overflow-hidden">
@@ -36,7 +38,7 @@ export function AgentRowsTable({
 
       <div className="hidden md:grid grid-cols-[180px_180px_minmax(0,1fr)_180px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
         <span>Agent</span>
-        <span>Editor</span>
+        <span>Runtime</span>
         <span>Model</span>
         <span>Personality</span>
         <span />
@@ -45,45 +47,42 @@ export function AgentRowsTable({
       <div className="divide-y divide-white/5">
         {rows.map((row) => (
           <div
-            key={row.key}
+            key={row.id}
             className="grid grid-cols-1 md:grid-cols-[180px_180px_minmax(0,1fr)_180px_84px] gap-3 p-4 items-center"
           >
             <input
               type="text"
-              value={row.key}
-              disabled={row.key === '*'}
-              onChange={(event) =>
-                onUpdate(row.key, { key: event.target.value })
-              }
-              className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60 disabled:opacity-60"
+              value={row.id}
+              onChange={(event) => onUpdate(row.id, { id: event.target.value })}
+              className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
             />
             <select
-              value={row.editor}
+              value={row.runtimeId}
               onChange={(event) =>
-                onUpdate(row.key, { editor: event.target.value })
+                onUpdate(row.id, { runtimeId: event.target.value })
               }
               className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
             >
-              {editors.map((editor) => (
-                <option key={editor.id} value={editor.id}>
-                  {editor.name}
+              {runtimes.map((runtime) => (
+                <option key={runtime.id} value={runtime.id}>
+                  {runtime.name || runtime.id}
                 </option>
               ))}
             </select>
             <input
               type="text"
-              value={row.model}
+              value={row.modelId}
               onChange={(event) =>
-                onUpdate(row.key, { model: event.target.value })
+                onUpdate(row.id, { modelId: event.target.value })
               }
-              placeholder="model"
+              placeholder="model id"
               className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
             />
             <input
               type="text"
               value={row.personalityVersion}
               onChange={(event) =>
-                onUpdate(row.key, {
+                onUpdate(row.id, {
                   personalityVersion: event.target.value,
                 })
               }
@@ -92,8 +91,8 @@ export function AgentRowsTable({
             />
             <button
               type="button"
-              onClick={() => onRemove(row.key)}
-              disabled={row.key === '*' || loading || saving}
+              onClick={() => onRemove(row.id)}
+              disabled={loading || saving}
               className="px-3 py-2 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               删除

@@ -1,143 +1,39 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  getAgentRole,
+  getWebhookSecret,
+  getWorkspaces,
+  resolveAgentToken,
+} from './agent-config';
 
-vi.mock('../core/config', () => ({
-  config: {
-    CONFIG_FILE: '/mock/.along/config.json',
-  },
-}));
-
-vi.mock('../core/result', () => ({
-  success: (data: any) => ({ success: true, data }),
-  failure: (error: string) => ({ success: false, error }),
-}));
-
-vi.mock('consola', () => ({
-  consola: {
-    withTag: () => ({
-      debug: vi.fn(),
-      info: vi.fn(),
-      error: vi.fn(),
-    }),
-  },
-}));
-
-const mockFs = {
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-};
-vi.mock('fs', () => ({ default: mockFs }));
-
-// 每次 import 都需要 fresh module 因为有 cachedConfig 状态
-let agentConfig: typeof import('./agent-config');
-
-describe('agent-config.ts', () => {
+describe('agent-config', () => {
   const originalEnv = process.env;
 
-  beforeEach(async () => {
-    vi.restoreAllMocks();
+  beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.ALONG_AGENT_ROLE;
-
-    // 由于 cachedConfig 是模块级变量，需要每次重新导入
-    vi.resetModules();
-    agentConfig = await import('./agent-config');
   });
 
   afterEach(() => {
     process.env = originalEnv;
   });
 
-  describe('getAgentRole()', () => {
-    it('环境变量 ALONG_AGENT_ROLE 优先', () => {
-      process.env.ALONG_AGENT_ROLE = 'bot-alice';
-      expect(agentConfig.getAgentRole()).toBe('bot-alice');
-    });
-
-    it('无环境变量时从配置文件读取 defaultAgent', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({ defaultAgent: 'bot-bob' }),
-      );
-
-      expect(agentConfig.getAgentRole()).toBe('bot-bob');
-    });
-
-    it('无配置时返回 null', () => {
-      mockFs.existsSync.mockReturnValue(false);
-      expect(agentConfig.getAgentRole()).toBeNull();
-    });
+  it('从环境变量读取 agent role', () => {
+    process.env.ALONG_AGENT_ROLE = 'planner';
+    expect(getAgentRole()).toBe('planner');
   });
 
-  describe('getAgentToken()', () => {
-    it('从配置文件读取指定角色的 token', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({
-          agents: {
-            'bot-alice': { name: 'Alice', githubToken: 'ghp_alice123' },
-          },
-        }),
-      );
-
-      expect(agentConfig.getAgentToken('bot-alice')).toBe('ghp_alice123');
-    });
-
-    it('角色不存在时返回 null', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(JSON.stringify({ agents: {} }));
-
-      expect(agentConfig.getAgentToken('nonexistent')).toBeNull();
-    });
-
-    it('配置文件不存在时返回 null', () => {
-      mockFs.existsSync.mockReturnValue(false);
-      expect(agentConfig.getAgentToken('any')).toBeNull();
-    });
+  it('从环境变量读取 GitHub token', () => {
+    process.env.ALONG_GITHUB_TOKEN = 'ghp_secret';
+    expect(resolveAgentToken()).toBe('ghp_secret');
   });
 
-  describe('getAgentName()', () => {
-    it('返回角色显示名称', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({
-          agents: {
-            'bot-alice': { name: 'Alice Bot', githubToken: 'xxx' },
-          },
-        }),
-      );
-
-      expect(agentConfig.getAgentName('bot-alice')).toBe('Alice Bot');
-    });
+  it('从环境变量读取 webhook secret', () => {
+    process.env.ALONG_WEBHOOK_SECRET = 'secret';
+    expect(getWebhookSecret()).toBe('secret');
   });
 
-  describe('resolveAgentToken()', () => {
-    it('有角色且有 token 时返回 token', () => {
-      process.env.ALONG_AGENT_ROLE = 'bot-alice';
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({
-          agents: {
-            'bot-alice': { name: 'Alice', githubToken: 'ghp_resolved' },
-          },
-        }),
-      );
-
-      expect(agentConfig.resolveAgentToken()).toBe('ghp_resolved');
-    });
-
-    it('无角色时返回 null', () => {
-      delete process.env.ALONG_AGENT_ROLE;
-      mockFs.existsSync.mockReturnValue(false);
-
-      expect(agentConfig.resolveAgentToken()).toBeNull();
-    });
-
-    it('有角色但无 token 时返回 null', () => {
-      process.env.ALONG_AGENT_ROLE = 'bot-alice';
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(JSON.stringify({ agents: {} }));
-
-      expect(agentConfig.resolveAgentToken()).toBeNull();
-    });
+  it('从环境变量读取 workspace 列表', () => {
+    process.env.ALONG_WORKSPACES = '/repo/a, /repo/b';
+    expect(getWorkspaces()).toEqual(['/repo/a', '/repo/b']);
   });
 });

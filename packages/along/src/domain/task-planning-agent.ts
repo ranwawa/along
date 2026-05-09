@@ -23,8 +23,7 @@ export interface RunTaskPlanningAgentInput {
   taskId: string;
   agentId?: string;
   cwd: string;
-  editor?: string;
-  model?: string;
+  modelId?: string;
   personalityVersion?: string;
 }
 
@@ -128,8 +127,7 @@ async function runPlannerAgentTurn(input: {
     agentId: input.agentId,
     prompt: buildPlannerPrompt(input.snapshot),
     cwd: input.taskInput.cwd,
-    editor: input.taskInput.editor,
-    model: input.taskInput.model,
+    modelId: input.taskInput.modelId,
     personalityVersion: input.taskInput.personalityVersion,
     inputArtifactIds: input.snapshot.artifacts.map(
       (artifact) => artifact.artifactId,

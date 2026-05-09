@@ -22,8 +22,7 @@ export interface ScheduledTaskPlanningRun {
   cwd: string;
   reason: 'task_created' | 'user_message' | 'manual' | 'autonomous';
   agentId?: string;
-  editor?: string;
-  model?: string;
+  modelId?: string;
   personalityVersion?: string;
 }
 
@@ -32,8 +31,7 @@ export interface ScheduledTaskImplementationRun {
   cwd: string;
   reason: 'manual' | 'autonomous';
   agentId?: string;
-  editor?: string;
-  model?: string;
+  modelId?: string;
   personalityVersion?: string;
 }
 

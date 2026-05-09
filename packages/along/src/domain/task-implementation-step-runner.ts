@@ -20,8 +20,7 @@ export async function runImplementationStepsTurn(input: {
     agentId: input.agentId,
     prompt: buildImplementationStepsPrompt(input.snapshot, input.approvedPlan),
     cwd: input.taskInput.cwd,
-    editor: input.taskInput.editor,
-    model: input.taskInput.model,
+    modelId: input.taskInput.modelId,
     personalityVersion: input.taskInput.personalityVersion,
     inputArtifactIds: [
       input.approvedPlan.artifactId,

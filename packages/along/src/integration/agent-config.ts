@@ -1,143 +1,28 @@
-import fs from 'node:fs';
-import { consola } from 'consola';
-import { config } from '../core/config';
-import type { Result } from '../core/result';
-import { failure, success } from '../core/result';
-
-const logger = consola.withTag('agent-config');
-
-export interface AgentRoleConfig {
-  name: string;
-  githubToken: string;
-}
-
-export interface TaskAgentConfig {
-  editor?: string;
-  model?: string;
-  personalityVersion?: string;
-}
-
-export interface AlongGlobalConfig {
-  agents?: Record<string, AgentRoleConfig>;
-  defaultAgent?: string;
-  webhookSecret?: string;
-  workspaces?: string[];
-  taskAgents?: Record<string, TaskAgentConfig>;
-}
-
-let cachedConfig: AlongGlobalConfig | null = null;
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
- * 读取全局配置文件 ~/.along/config.json
+ * Environment-backed GitHub integration helpers.
+ *
+ * AI runtime configuration lives in ai-registry-store.ts. This module no longer
+ * reads ~/.along/config.json registry data.
  */
-export function readGlobalConfig(): Result<AlongGlobalConfig | null> {
-  if (cachedConfig) return success(cachedConfig);
 
-  const configFile = config.CONFIG_FILE;
-  if (!fs.existsSync(configFile)) return success(null);
-
-  try {
-    cachedConfig = JSON.parse(fs.readFileSync(configFile, 'utf-8'));
-    return success(cachedConfig);
-  } catch (error: unknown) {
-    return failure(`读取全局配置文件失败: ${getErrorMessage(error)}`);
-  }
-}
-
-export function writeGlobalConfig(
-  input: AlongGlobalConfig,
-): Result<AlongGlobalConfig> {
-  try {
-    config.ensureDataDirs();
-    fs.writeFileSync(config.CONFIG_FILE, `${JSON.stringify(input, null, 2)}\n`);
-    cachedConfig = input;
-    return success(input);
-  } catch (error: unknown) {
-    return failure(`写入全局配置文件失败: ${getErrorMessage(error)}`);
-  }
-}
-
-export function clearGlobalConfigCache() {
-  cachedConfig = null;
-}
-
-/**
- * 获取当前 agent 角色名称
- * 优先级: ALONG_AGENT_ROLE 环境变量 → 配置文件 defaultAgent
- */
 export function getAgentRole(): string | null {
-  if (process.env.ALONG_AGENT_ROLE) return process.env.ALONG_AGENT_ROLE;
-
-  const res = readGlobalConfig();
-  if (res.success && res.data?.defaultAgent) return res.data.defaultAgent;
-
-  return null;
+  return process.env.ALONG_AGENT_ROLE || null;
 }
 
-/**
- * 获取指定角色的 GitHub Token
- */
-export function getAgentToken(role: string): string | null {
-  const res = readGlobalConfig();
-  if (res.success) {
-    return res.data?.agents?.[role]?.githubToken || null;
-  }
-  return null;
-}
-
-/**
- * 获取指定角色的显示名称
- */
-export function getAgentName(role: string): string | null {
-  const res = readGlobalConfig();
-  if (res.success) {
-    return res.data?.agents?.[role]?.name || null;
-  }
-  return null;
-}
-
-/**
- * 尝试获取当前角色对应的 GitHub Token
- * 如果设置了角色且配置了对应 token，返回该 token；否则返回 null
- */
 export function resolveAgentToken(): string | null {
-  const role = getAgentRole();
-  if (!role) return null;
-
-  const token = getAgentToken(role);
-  if (!token) {
-    logger.debug(`角色 "${role}" 未配置 githubToken，将回退到默认认证`);
-    return null;
-  }
-
-  return token;
+  return process.env.ALONG_GITHUB_TOKEN || null;
 }
 
 export function getWebhookSecret(): string | null {
-  const res = readGlobalConfig();
-  if (res.success) {
-    return res.data?.webhookSecret || null;
-  }
-  return null;
+  return process.env.ALONG_WEBHOOK_SECRET || null;
 }
 
 export function getWorkspaces(): string[] | null {
-  const res = readGlobalConfig();
-  if (res.success) {
-    const ws = res.data?.workspaces;
-    if (ws && Array.isArray(ws) && ws.length > 0) return ws;
-  }
-  return null;
-}
-
-export function getTaskAgentConfig(agentId: string): TaskAgentConfig | null {
-  const res = readGlobalConfig();
-  if (!res.success) return null;
-  const taskAgents = res.data?.taskAgents;
-  if (!taskAgents) return null;
-  return taskAgents[agentId] || taskAgents['*'] || null;
+  const raw = process.env.ALONG_WORKSPACES;
+  if (!raw) return null;
+  const workspaces = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return workspaces.length > 0 ? workspaces : null;
 }

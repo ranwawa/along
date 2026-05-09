@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: legacy worktree command errors and session payloads remain untyped.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy worktree setup functions are outside this migration.
 /**
  * worktree-init.ts - Worktree 初始化核心逻辑
  * 供 run.ts 直接调用
@@ -12,7 +14,7 @@ import { failure, getGit, git, success } from '../core/common';
 const logger = consola.withTag('worktree-init');
 
 import type { Result } from '../core/common';
-import type { EditorConfig } from '../core/config';
+import type { RuntimeConfig } from '../core/config';
 import { config } from '../core/config';
 import { upsertSession } from '../core/db';
 import type { SessionPathManager } from '../core/session-paths';
@@ -173,22 +175,22 @@ function ensureMappingSymlink(
   return success(undefined);
 }
 
-export function syncEditorMappings(
+export function syncRuntimeMappings(
   worktreePath: string,
-  editor: EditorConfig,
+  runtime: RuntimeConfig,
 ): Result<void> {
-  if (editor.mappings.length === 0) {
+  if (runtime.mappings.length === 0) {
     return success(undefined);
   }
 
-  for (const mapping of editor.mappings) {
+  for (const mapping of runtime.mappings) {
     const sourceDir = path.join(config.ROOT_DIR, mapping.from);
     const targetPath = path.join(worktreePath, mapping.to);
 
     const linkRes = ensureMappingSymlink(sourceDir, targetPath);
     if (!linkRes.success) {
       logger.error(`  同步失败 (${mapping.to}): ${linkRes.error}`);
-      return failure(`同步编辑器环境 ${mapping.to} 失败: ${linkRes.error}`);
+      return failure(`同步运行时环境 ${mapping.to} 失败: ${linkRes.error}`);
     }
 
     logger.info(`  已软链: ${chalk.cyan(mapping.to)}`);
@@ -248,18 +250,18 @@ export async function initSessionFiles(
     fs.writeFileSync(path.join(worktreePath, '.along/issue-mark'), issueNumber);
     console.log(chalk.green('✓'), '创建 worktree 标记完成');
 
-    // 2. 自动环境同步（按编辑器映射软链 skills 和 prompts）
-    logger.info('同步编辑器环境...');
+    // 2. 自动环境同步（按运行时映射软链 skills 和 prompts）
+    logger.info('同步运行时环境...');
     const tagRes = config.getLogTag();
     if (!tagRes.success) return tagRes;
     const currentTag = tagRes.data;
 
-    const currentEditor =
-      config.EDITORS.find((e) => e.id === currentTag) || config.EDITORS[0];
-    logger.info(`检测到编辑器环境: ${currentEditor.name}`);
-    const syncRes = syncEditorMappings(worktreePath, currentEditor);
+    const currentRuntime =
+      config.RUNTIMES.find((e) => e.id === currentTag) || config.RUNTIMES[0];
+    logger.info(`检测到运行时环境: ${currentRuntime.name}`);
+    const syncRes = syncRuntimeMappings(worktreePath, currentRuntime);
     if (!syncRes.success) return syncRes;
-    console.log(chalk.green('✓'), '同步编辑器环境完成');
+    console.log(chalk.green('✓'), '同步运行时环境完成');
 
     logger.info('创建会话状态...');
     const ensureRes = paths.ensureDir();
@@ -282,8 +284,8 @@ export async function initSessionFiles(
     session?.logEvent('session-initialized', {
       issueNumber,
       worktreePath,
-      editor: currentEditor.name,
-      mappingCount: currentEditor.mappings.length,
+      runtime: currentRuntime.name,
+      mappingCount: currentRuntime.mappings.length,
     });
     return success(undefined);
   } catch (e: any) {

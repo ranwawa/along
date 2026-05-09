@@ -29,8 +29,7 @@ export interface RunTaskImplementationAgentInput {
   taskId: string;
   agentId?: string;
   cwd: string;
-  editor?: string;
-  model?: string;
+  modelId?: string;
   personalityVersion?: string;
   commandRunner?: TaskWorktreeCommandRunner;
   readDefaultBranch?: (repoPath: string) => Promise<Result<string>>;
@@ -104,8 +103,7 @@ async function runImplementationTurn(input: {
       input.worktree.worktreePath,
     ),
     cwd: input.worktree.worktreePath,
-    editor: input.taskInput.editor,
-    model: input.taskInput.model,
+    modelId: input.taskInput.modelId,
     personalityVersion: input.taskInput.personalityVersion,
     inputArtifactIds: [
       input.approvedPlan.artifactId,

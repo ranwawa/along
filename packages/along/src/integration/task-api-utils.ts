@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noMagicNumbers: legacy task API title truncation is outside this migration.
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import type { TaskAttachmentUploadInput } from '../domain/task-attachments';
@@ -234,7 +235,7 @@ export function schedulePlannerIfNeeded(
   context: TaskApiContext,
   input: Omit<
     ScheduledTaskPlanningRun,
-    'cwd' | 'agentId' | 'model' | 'personalityVersion'
+    'cwd' | 'agentId' | 'modelId' | 'personalityVersion'
   >,
 ): Result<boolean> {
   const autoRun = readBooleanField(payload, 'autoRun');
@@ -256,7 +257,7 @@ export function scheduleImplementationIfNeeded(
   context: TaskApiContext,
   input: Omit<
     ScheduledTaskImplementationRun,
-    'cwd' | 'agentId' | 'model' | 'personalityVersion'
+    'cwd' | 'agentId' | 'modelId' | 'personalityVersion'
   >,
 ): Result<boolean> {
   if (!context.scheduleImplementation) return success(false);
@@ -275,8 +276,7 @@ export function scheduleImplementationIfNeeded(
 function readRunnerOptions(payload: UnknownRecord) {
   return {
     agentId: readStringField(payload, 'agentId'),
-    editor: readStringField(payload, 'editor'),
-    model: readStringField(payload, 'model'),
+    modelId: readStringField(payload, 'modelId'),
     personalityVersion: readStringField(payload, 'personalityVersion'),
   };
 }

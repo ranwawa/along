@@ -17,16 +17,16 @@ const alongPackageDir = path.dirname(sourceDir);
 const userHome = os.homedir();
 const userAlongDir = path.join(userHome, '.along');
 
-export interface EditorMapping {
+export interface RuntimeMapping {
   from: string;
   to: string;
 }
 
-export interface EditorConfig {
+export interface RuntimeConfig {
   id: string;
   name: string;
   detectDir: string;
-  mappings: EditorMapping[];
+  mappings: RuntimeMapping[];
   runTemplate: string;
   ensurePermissions?: (worktreePath: string, userAlongDir: string) => void;
 }
@@ -50,10 +50,10 @@ function readJsonObject(filePath: string): JsonObject {
   return toJsonObject(JSON.parse(fs.readFileSync(filePath, 'utf-8')));
 }
 
-function normalizeEditorId(value: string): Result<string> {
-  const editor = config.EDITORS.find((item) => item.id === value);
-  return editor
-    ? success(editor.id)
+function normalizeRuntimeId(value: string): Result<string> {
+  const runtime = config.RUNTIMES.find((item) => item.id === value);
+  return runtime
+    ? success(runtime.id)
     : failure(
         `仅支持 Codex Agent，请将 Agent 类型改为 codex（当前: ${value}）`,
       );
@@ -102,7 +102,7 @@ export const config = {
   getLogTag(): Result<string> {
     // 1. 最高优先级：环境变量
     if (process.env.AGENT_TYPE)
-      return normalizeEditorId(process.env.AGENT_TYPE);
+      return normalizeRuntimeId(process.env.AGENT_TYPE);
 
     // 2. 项目级配置文件：.along/setting.json 或 package.json 中的 along.agent
     const workingDir = process.cwd();
@@ -111,7 +111,7 @@ export const config = {
       try {
         const alongConfig = readJsonObject(settingConfigPath);
         if (typeof alongConfig.agent === 'string') {
-          return normalizeEditorId(alongConfig.agent);
+          return normalizeRuntimeId(alongConfig.agent);
         }
       } catch {}
     }
@@ -121,33 +121,33 @@ export const config = {
         const pkg = readJsonObject(pkgPath);
         const along = toJsonObject(pkg.along);
         if (typeof along.agent === 'string')
-          return normalizeEditorId(along.agent);
+          return normalizeRuntimeId(along.agent);
       } catch {}
     }
 
     // 3. 目录特征检测
     const execPath = process.argv[1] || '';
-    for (const editor of config.EDITORS) {
+    for (const runtime of config.RUNTIMES) {
       if (
-        fs.existsSync(path.join(workingDir, editor.detectDir)) ||
-        execPath.includes(editor.detectDir)
+        fs.existsSync(path.join(workingDir, runtime.detectDir)) ||
+        execPath.includes(runtime.detectDir)
       ) {
-        return success(editor.id);
+        return success(runtime.id);
       }
     }
 
     // 4. 无法检测时报错，不再静默回退为 "along"
-    const editorIds = config.EDITORS.map((e) => e.id).join('|');
+    const runtimeIds = config.RUNTIMES.map((e) => e.id).join('|');
     return failure(
       `无法检测 Agent 类型。请通过以下方式之一指定：\n` +
-        `  1. 设置环境变量 AGENT_TYPE=${editorIds}\n` +
-        `  2. 在项目根目录创建 .along/setting.json，内容为 {"agent": "${editorIds}"}\n` +
-        `  3. 在 package.json 中添加 "along": {"agent": "${editorIds}"}`,
+        `  1. 设置环境变量 AGENT_TYPE=${runtimeIds}\n` +
+        `  2. 在项目根目录创建 .along/setting.json，内容为 {"agent": "${runtimeIds}"}\n` +
+        `  3. 在 package.json 中添加 "along": {"agent": "${runtimeIds}"}`,
     );
   },
 
-  // 编辑器运行配置
-  EDITORS: [
+  // 运行时运行配置
+  RUNTIMES: [
     {
       id: 'codex',
       name: 'Codex',
@@ -156,5 +156,5 @@ export const config = {
         'codex exec "请解决 GitHub Issue #{num}，严格按照 .codex/prompts/{workflow}.md 工作流执行"',
       mappings: [],
     },
-  ] as EditorConfig[],
+  ] as RuntimeConfig[],
 };
