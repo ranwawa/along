@@ -107,15 +107,12 @@ function renderPanel(
         executionMode: 'manual',
       }}
       repositories={repositories}
-      selectedRepository={repositories[0]}
-      repositoriesRefreshing={false}
       error={null}
       tasks={[makeSnapshot()]}
       loading={false}
       selectedTaskId={undefined}
       isNewTaskOpen={false}
       onDraftChange={() => undefined}
-      onRefreshRepositories={() => undefined}
       onNewTask={() => undefined}
       onSelect={() => undefined}
       {...overrides}
@@ -242,13 +239,14 @@ describe('TaskListPanel', () => {
     expect(emptyHtml).toContain('暂无任务。');
   });
 
-  it('在列表头部展示仓库下拉和刷新入口，不使用原生 title', () => {
+  it('在列表头部展示仓库下拉和新任务提示，不展示刷新入口和仓库路径', () => {
     const html = renderPanel();
 
     expect(html).toContain('aria-label="仓库"');
     expect(html).toContain('ranwawa/along');
-    expect(html).toContain('/workspace/along');
-    expect(html).toContain('刷新');
+    expect(html).not.toContain('/workspace/along');
+    expect(html).not.toContain('刷新');
+    expect(html).toContain('aria-label="新任务"');
     expect(html).toContain('role="tooltip"');
     expect(html).not.toContain('主入口');
     expect(html).not.toContain('title="/workspace/along"');
