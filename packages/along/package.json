@@ -10,7 +10,7 @@
   },
   "files": ["bin", "src", "types"],
   "scripts": {
-    "dev:server": "bun --watch src/commands/webhook-server.ts --port 9876",
+    "dev:server": "bun --env-file=../../.env --watch src/commands/webhook-server.ts --port 9876",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts"
   },
