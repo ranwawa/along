@@ -93,7 +93,6 @@ function makeInput(
     draft: { title: '', body: '', repository: '' },
     messageBody: '',
     busyAction: null,
-    repositoriesRefreshing: false,
     canApprove: false,
     canImplement: false,
     canDeliver: false,
@@ -104,9 +103,7 @@ function makeInput(
     setSelectedSnapshot: makeDispatch(),
     setMessageBody: makeDispatch(),
     setBusyAction: makeDispatch(),
-    setRepositoriesRefreshing: makeDispatch(),
     setError: makeDispatch(),
-    loadRepositories: vi.fn(),
     loadSelectedTask: vi.fn(),
     ...overrides,
   };

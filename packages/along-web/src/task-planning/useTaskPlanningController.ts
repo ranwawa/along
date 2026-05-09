@@ -34,7 +34,6 @@ function usePlanningBaseState() {
   const [messageExecutionMode, setMessageExecutionMode] =
     useState<TaskExecutionMode>('manual');
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [repositoriesRefreshing, setRepositoriesRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return {
     taskState,
@@ -47,8 +46,6 @@ function usePlanningBaseState() {
     setMessageExecutionMode,
     busyAction,
     setBusyAction,
-    repositoriesRefreshing,
-    setRepositoriesRefreshing,
     error,
     setError,
   };
@@ -137,7 +134,6 @@ function usePlanningActions(
     messageAttachments: base.messageAttachments,
     messageExecutionMode: base.messageExecutionMode,
     busyAction: base.busyAction,
-    repositoriesRefreshing: base.repositoriesRefreshing,
     ...flowFlags,
     setDraft: base.repositoryState.setDraft,
     setTasks: base.taskState.setTasks,
@@ -148,9 +144,7 @@ function usePlanningActions(
     setMessageAttachments: base.setMessageAttachments,
     setMessageExecutionMode: base.setMessageExecutionMode,
     setBusyAction: base.setBusyAction,
-    setRepositoriesRefreshing: base.setRepositoriesRefreshing,
     setError: base.setError,
-    loadRepositories: base.repositoryState.loadRepositories,
     loadSelectedTask: loaders.loadSelectedTask,
   });
   return actions;
@@ -170,7 +164,6 @@ export function useTaskPlanningController() {
     messageExecutionMode: base.messageExecutionMode,
     loading: loadState.loading,
     busyAction: base.busyAction,
-    repositoriesRefreshing: base.repositoriesRefreshing,
     error: base.error,
     setMessageBody: base.setMessageBody,
     setMessageAttachments: base.setMessageAttachments,

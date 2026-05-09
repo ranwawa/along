@@ -26,7 +26,6 @@ export interface UseTaskPlanningActionsInput {
   messageAttachments: File[];
   messageExecutionMode: TaskExecutionMode;
   busyAction: string | null;
-  repositoriesRefreshing: boolean;
   canApprove: boolean;
   canImplement: boolean;
   canDeliver: boolean;
@@ -43,8 +42,6 @@ export interface UseTaskPlanningActionsInput {
     React.SetStateAction<TaskExecutionMode>
   >;
   setBusyAction: React.Dispatch<React.SetStateAction<string | null>>;
-  setRepositoriesRefreshing: React.Dispatch<React.SetStateAction<boolean>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
-  loadRepositories: () => Promise<void>;
   loadSelectedTask: (taskId: string) => Promise<void>;
 }

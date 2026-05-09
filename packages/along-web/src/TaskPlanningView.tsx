@@ -76,11 +76,8 @@ function TaskPlanningSidebar({
       <TaskListPanel
         draft={taskPlanning.draft}
         repositories={taskPlanning.repositories}
-        selectedRepository={taskPlanning.selectedRepository}
-        repositoriesRefreshing={taskPlanning.repositoriesRefreshing}
         error={taskPlanning.error}
         onDraftChange={taskPlanning.updateDraft}
-        onRefreshRepositories={taskPlanning.refreshRepositories}
         tasks={taskPlanning.tasks}
         loading={taskPlanning.loading}
         selectedTaskId={taskPlanning.selected?.task.taskId}

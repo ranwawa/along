@@ -37,26 +37,6 @@ async function runBusy(
   }
 }
 
-function useRepositoryActions(input: UseTaskPlanningActionsInput) {
-  const refreshRepositories = async () => {
-    if (input.repositoriesRefreshing) return;
-    input.setRepositoriesRefreshing(true);
-    input.setError(null);
-    try {
-      await readJsonResponse<unknown>(
-        await fetch('/api/rescan', { method: 'POST' }),
-      );
-      input.setDraft((previous) => ({ ...previous, repository: '' }));
-      await input.loadRepositories();
-    } catch (err: unknown) {
-      input.setError(getErrorMessage(err));
-    } finally {
-      input.setRepositoriesRefreshing(false);
-    }
-  };
-  return { refreshRepositories };
-}
-
 function useSelectionActions(input: UseTaskPlanningActionsInput) {
   const selectTask = (snapshot: TaskPlanningSnapshot) => {
     input.setIsNewTaskOpen(false);
@@ -289,7 +269,6 @@ function useFlowActions(input: UseTaskPlanningActionsInput) {
 export function useTaskPlanningActions(input: UseTaskPlanningActionsInput) {
   return {
     ...useDraftActions(input, runBusy),
-    ...useRepositoryActions(input),
     ...useSelectionActions(input),
     ...useFlowActions(input),
   };
