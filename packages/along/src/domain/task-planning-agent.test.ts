@@ -216,6 +216,11 @@ describe('task-planning-agent', () => {
     expect(callInput?.prompt).toContain('Planner contract');
     expect(callInput?.prompt).toContain('Builder Handoff');
     expect(callInput?.prompt).toContain('Acceptance Criteria');
+    expect(callInput?.prompt).toContain('Along Task / Thread / Artifact');
+    expect(callInput?.prompt).toContain('Codex session 只用于提升连续性');
+    expect(callInput?.prompt).toContain(
+      '即使当前 Codex session 看不到前序对话',
+    );
     expect(callInput?.prompt).toContain(
       '不要把“梳理、调研、明确现状、确认哪些节点”',
     );

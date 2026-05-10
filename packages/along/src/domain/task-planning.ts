@@ -466,6 +466,7 @@ export interface PublishPlanningUpdateInput {
 }
 
 export interface EnsureTaskAgentBindingInput {
+  taskId?: string;
   threadId: string;
   agentId: string;
   provider: string;
@@ -3593,16 +3594,24 @@ export function ensureTaskAgentBinding(
       ) as TaskAgentBindingRow | null;
 
     if (!existing) {
+      const fallbackProviderSession = readLatestRunProviderSession({
+        taskId: input.taskId,
+        threadId: input.threadId,
+        agentId: input.agentId,
+        provider: input.provider,
+      });
       db.prepare(
         `
           INSERT INTO task_agent_bindings (
-            thread_id, agent_id, provider, cwd, model, personality_version, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            thread_id, agent_id, provider, provider_session_id,
+            cwd, model, personality_version, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
       ).run(
         input.threadId,
         input.agentId,
         input.provider,
+        fallbackProviderSession || null,
         input.cwd || null,
         input.model || null,
         input.personalityVersion || null,
@@ -3614,11 +3623,12 @@ export function ensureTaskAgentBinding(
       );
       const fallbackProviderSession = shouldResetProviderSession
         ? undefined
-        : readLatestRunProviderSession(
-            input.threadId,
-            input.agentId,
-            input.provider,
-          );
+        : readLatestRunProviderSession({
+            taskId: input.taskId,
+            threadId: input.threadId,
+            agentId: input.agentId,
+            provider: input.provider,
+          });
       db.prepare(
         `
           UPDATE task_agent_bindings
@@ -3667,11 +3677,12 @@ export function ensureTaskAgentBinding(
   }
 }
 
-function readLatestRunProviderSession(
-  threadId: string,
-  agentId: string,
-  provider: string,
-): string | undefined {
+function readLatestRunProviderSession(input: {
+  taskId?: string;
+  threadId: string;
+  agentId: string;
+  provider: string;
+}): string | undefined {
   const dbRes = getDb();
   if (!dbRes.success) return undefined;
   const row = dbRes.data
@@ -3679,7 +3690,7 @@ function readLatestRunProviderSession(
       `
         SELECT provider_session_id_at_end
         FROM task_agent_runs
-        WHERE thread_id = ?
+        WHERE (thread_id = ? OR (? IS NOT NULL AND task_id = ?))
           AND agent_id = ?
           AND provider = ?
           AND provider_session_id_at_end IS NOT NULL
@@ -3687,7 +3698,13 @@ function readLatestRunProviderSession(
         LIMIT 1
       `,
     )
-    .get(threadId, agentId, provider) as LatestProviderSessionRow | null;
+    .get(
+      input.threadId,
+      input.taskId || null,
+      input.taskId || null,
+      input.agentId,
+      input.provider,
+    ) as LatestProviderSessionRow | null;
   return row?.provider_session_id_at_end || undefined;
 }
 

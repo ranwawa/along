@@ -154,9 +154,10 @@ const mockDbState = vi.hoisted(() => {
             state.runs
               .filter(
                 (row) =>
-                  row.thread_id === args[0] &&
-                  row.agent_id === args[1] &&
-                  row.provider === args[2] &&
+                  (row.thread_id === args[0] ||
+                    (args[1] !== null && row.task_id === args[2])) &&
+                  row.agent_id === args[3] &&
+                  row.provider === args[4] &&
                   row.provider_session_id_at_end,
               )
               .sort((left, right) =>
@@ -694,6 +695,7 @@ const mockDbState = vi.hoisted(() => {
             threadId,
             agentId,
             provider,
+            providerSessionId,
             cwd,
             model,
             personalityVersion,
@@ -703,7 +705,7 @@ const mockDbState = vi.hoisted(() => {
             thread_id: threadId,
             agent_id: agentId,
             provider,
-            provider_session_id: null,
+            provider_session_id: providerSessionId,
             cwd,
             model,
             personality_version: personalityVersion,
@@ -1496,6 +1498,41 @@ describe('task-planning', () => {
     expect(nextBinding.success).toBe(true);
     if (!nextBinding.success) throw new Error(nextBinding.error);
     expect(nextBinding.data.providerSessionId).toBe('codex-thread-failed');
+  });
+
+  it('当同一 Task 切到新的 planning thread 时，期望继承历史 Codex session', () => {
+    const { taskId } = createTaskWithPlan();
+    const snapshot = readTaskPlanningSnapshot(taskId);
+    expect(snapshot.success).toBe(true);
+    if (!snapshot.success || !snapshot.data)
+      throw new Error('missing snapshot');
+
+    const run = createTaskAgentRun({
+      taskId,
+      threadId: snapshot.data.thread.threadId,
+      agentId: 'planner',
+      provider: 'codex',
+    });
+    expect(run.success).toBe(true);
+    if (!run.success) throw new Error(run.error);
+
+    const finished = finishTaskAgentRun({
+      runId: run.data.runId,
+      status: AGENT_RUN_STATUS.SUCCEEDED,
+      providerSessionIdAtEnd: 'codex-thread-task-latest',
+    });
+    expect(finished.success).toBe(true);
+
+    const nextBinding = ensureTaskAgentBinding({
+      taskId,
+      threadId: 'thread-fork',
+      agentId: 'planner',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    });
+    expect(nextBinding.success).toBe(true);
+    if (!nextBinding.success) throw new Error(nextBinding.error);
+    expect(nextBinding.data.providerSessionId).toBe('codex-thread-task-latest');
   });
 
   it('当 Agent Binding 的 cwd 变化时，期望清空旧 Codex session', () => {

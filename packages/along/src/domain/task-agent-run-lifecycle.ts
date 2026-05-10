@@ -95,6 +95,7 @@ export function startTaskAgentRun(
   provider: string,
 ): Result<StartedTaskAgentRun> {
   const bindingRes = ensureTaskAgentBinding({
+    taskId: input.taskId,
     threadId: input.threadId,
     agentId: input.agentId,
     provider,
