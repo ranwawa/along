@@ -1,21 +1,13 @@
 import type {
   TaskAgentProgressPhase,
   TaskAgentStageRecord,
-  TaskAgentStageStatus,
   TaskArtifactType,
   TaskFlowSnapshot,
   TaskPlanningSnapshot,
   TaskStatus,
   TaskThreadStatus,
 } from '../types';
-import {
-  getTaskAgentStageStatusStyle,
-  getTaskLegacyStatusStyle,
-} from './statusStyles';
-
-const MIN_DURATION_SECONDS = 1;
-const MILLISECONDS_PER_SECOND = 1000;
-const SECONDS_PER_MINUTE = 60;
+import { getTaskLegacyStatusStyle } from './statusStyles';
 
 export function formatTime(value: string): string {
   const date = new Date(value);
@@ -26,22 +18,6 @@ export function formatTime(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
-}
-
-export function formatDuration(startedAt: string, endedAt?: string): string {
-  const started = new Date(startedAt).getTime();
-  const ended = endedAt ? new Date(endedAt).getTime() : Date.now();
-  if (Number.isNaN(started) || Number.isNaN(ended) || ended < started) {
-    return '-';
-  }
-  const totalSeconds = Math.max(
-    MIN_DURATION_SECONDS,
-    Math.round((ended - started) / MILLISECONDS_PER_SECOND),
-  );
-  const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
-  const seconds = totalSeconds % SECONDS_PER_MINUTE;
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
 }
 
 export function getThreadStatusLabel(status: TaskThreadStatus): string {
@@ -100,27 +76,6 @@ export function getTaskStatusLabel(status: TaskStatus): string {
 
 export function getTaskStatusClass(status: TaskStatus): string {
   return getTaskLegacyStatusStyle(status).badgeClass;
-}
-
-export function getStageStatusLabel(status: TaskAgentStageStatus): string {
-  switch (status) {
-    case 'idle':
-      return '未运行';
-    case 'running':
-      return '运行中';
-    case 'succeeded':
-      return '已完成';
-    case 'failed':
-      return '失败';
-    case 'cancelled':
-      return '已取消';
-    default:
-      return status;
-  }
-}
-
-export function getStageStatusClass(status: TaskAgentStageStatus): string {
-  return getTaskAgentStageStatusStyle(status).badgeClass;
 }
 
 export function getProgressPhaseLabel(phase: TaskAgentProgressPhase): string {

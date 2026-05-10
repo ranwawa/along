@@ -14,7 +14,6 @@ import type {
   TaskFlowAction,
   TaskPlanningSnapshot,
 } from '../types';
-import { AgentStagesPanel } from './AgentStagesPanel';
 import type { DraftTaskInput, RepositoryOption } from './api';
 import { ExistingTaskComposer } from './ExistingTaskComposer';
 import { TaskComposerInput } from './TaskComposerInput';
@@ -233,7 +232,6 @@ function SelectedTaskMain({
       >
         <TaskDetailHeader onOpenDialog={onOpenDialog} />
         <div className="min-w-0 flex flex-col gap-5 p-4 md:p-6">
-          <AgentStagesPanel stages={selected.agentStages || []} />
           <TaskRecordsPanel artifacts={detail.sortedArtifacts} />
         </div>
       </div>

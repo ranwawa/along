@@ -4,10 +4,8 @@ import { useEffect } from 'react';
 import type { TaskPlanningSnapshot } from '../types';
 import { formatTime, getTaskStatusLabel, getThreadStatusLabel } from './format';
 import { FlowHistory } from './TaskFlowPanel';
-import {
-  TaskProgressEventsView,
-  TaskSessionTailView,
-} from './TaskProgressPanel';
+import { TaskProgressEventsView } from './TaskProgressPanel';
+import { TaskSessionTailView } from './TaskSessionTailView';
 
 export type TaskDetailDialogKind = 'progress' | 'tail' | 'metadata' | 'history';
 
