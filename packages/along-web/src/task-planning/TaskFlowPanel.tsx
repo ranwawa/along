@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing task flow panel uses inline labels.
 import { useEffect, useState } from 'react';
 import type {
   TaskFlowAction,
@@ -106,9 +107,18 @@ export function CurrentPlanDialog({
   );
 }
 
-export function FlowHistory({ flow }: { flow: TaskFlowSnapshot }) {
+export function FlowHistory({
+  flow,
+  defaultOpen = false,
+}: {
+  flow: TaskFlowSnapshot;
+  defaultOpen?: boolean;
+}) {
   return (
-    <details className="rounded-lg border border-border-color bg-black/20">
+    <details
+      className="rounded-lg border border-border-color bg-black/20"
+      open={defaultOpen || undefined}
+    >
       <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-text-secondary">
         历史流转
       </summary>

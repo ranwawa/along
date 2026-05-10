@@ -330,7 +330,7 @@ function ProgressEventsPanel({
   );
 }
 
-export function TaskProgressPanel({
+export function TaskProgressEventsView({
   snapshot,
   nowMs = Date.now(),
 }: {
@@ -338,7 +338,6 @@ export function TaskProgressPanel({
   nowMs?: number;
 }) {
   const events = sortProgressEvents(snapshot.agentProgressEvents || []);
-  const sessionEvents = sortSessionEvents(snapshot.agentSessionEvents || []);
   const runningRun = getLatestRunningRun(snapshot.agentRuns || []);
 
   return (
@@ -362,11 +361,36 @@ export function TaskProgressPanel({
         runningRun={runningRun}
         nowMs={nowMs}
       />
-      <SessionTail
-        events={sessionEvents}
-        runningRun={runningRun}
-        nowMs={nowMs}
-      />
+    </section>
+  );
+}
+
+export function TaskSessionTailView({
+  snapshot,
+  nowMs = Date.now(),
+}: {
+  snapshot: TaskPlanningSnapshot;
+  nowMs?: number;
+}) {
+  const sessionEvents = sortSessionEvents(snapshot.agentSessionEvents || []);
+  const runningRun = getLatestRunningRun(snapshot.agentRuns || []);
+
+  return (
+    <SessionTail events={sessionEvents} runningRun={runningRun} nowMs={nowMs} />
+  );
+}
+
+export function TaskProgressPanel({
+  snapshot,
+  nowMs = Date.now(),
+}: {
+  snapshot: TaskPlanningSnapshot;
+  nowMs?: number;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <TaskProgressEventsView snapshot={snapshot} nowMs={nowMs} />
+      <TaskSessionTailView snapshot={snapshot} nowMs={nowMs} />
     </section>
   );
 }

@@ -17,128 +17,14 @@ import type {
 import { AgentStagesPanel } from './AgentStagesPanel';
 import type { DraftTaskInput, RepositoryOption } from './api';
 import { ExistingTaskComposer } from './ExistingTaskComposer';
-import { formatTime, getTaskStatusLabel, getThreadStatusLabel } from './format';
 import { TaskComposerInput } from './TaskComposerInput';
-import { FlowHistory, TaskFlowPanel } from './TaskFlowPanel';
-import { TaskProgressPanel } from './TaskProgressPanel';
+import {
+  TaskDetailDialog,
+  type TaskDetailDialogKind,
+  TaskDetailHeader,
+} from './TaskDetailPanels';
+import { TaskFlowPanel } from './TaskFlowPanel';
 import { TaskRecordsPanel } from './TaskRecords';
-
-function TaskInfoPanel({ selected }: { selected: TaskPlanningSnapshot }) {
-  const [isExpanded, setIsExpanded] = useState(true);
-  const statusLabel =
-    selected.display?.label || getTaskStatusLabel(selected.task.status);
-  return (
-    <aside className="min-w-0 rounded-lg border border-border-color bg-black/25">
-      <button
-        type="button"
-        aria-expanded={isExpanded}
-        onClick={() => setIsExpanded((value) => !value)}
-        className="w-full px-4 py-3 text-left outline-none focus:ring-1 focus:ring-brand/60"
-      >
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0 flex items-center gap-2">
-            <span className="text-sm font-semibold text-text-secondary">
-              任务元信息
-            </span>
-            {!isExpanded && (
-              <span className="truncate text-xs text-text-muted">
-                {statusLabel} · {formatTime(selected.task.updatedAt)}
-              </span>
-            )}
-          </div>
-          <span className="shrink-0 text-xs text-text-muted">
-            {isExpanded ? '收起' : '展开'}
-          </span>
-        </div>
-      </button>
-      {isExpanded && (
-        <TaskInfoRows selected={selected} statusLabel={statusLabel} />
-      )}
-    </aside>
-  );
-}
-
-function TaskInfoRows({
-  selected,
-  statusLabel,
-}: {
-  selected: TaskPlanningSnapshot;
-  statusLabel: string;
-}) {
-  const executionMode =
-    selected.task.executionMode === 'autonomous' ? '全自动' : '人工确认';
-  return (
-    <div className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-2 px-4 pb-4 text-sm">
-      <span className="text-text-muted">ID</span>
-      <span className="truncate">{selected.task.taskId}</span>
-      {selected.task.seq != null && (
-        <>
-          <span className="text-text-muted">Seq</span>
-          <span>#{selected.task.seq}</span>
-        </>
-      )}
-      {selected.task.type && (
-        <>
-          <span className="text-text-muted">Type</span>
-          <span>{selected.task.type}</span>
-        </>
-      )}
-      <span className="text-text-muted">Thread</span>
-      <span className="truncate">{selected.thread.threadId}</span>
-      <span className="text-text-muted">Plan Status</span>
-      <span>{getThreadStatusLabel(selected.thread.status)}</span>
-      <span className="text-text-muted">Workflow</span>
-      <span>{selected.task.currentWorkflowKind}</span>
-      <span className="text-text-muted">Source</span>
-      <span>{selected.task.source}</span>
-      <span className="text-text-muted">Mode</span>
-      <span>{executionMode}</span>
-      <span className="text-text-muted">Status</span>
-      <span>{statusLabel}</span>
-      <TaskInfoOptionalRows selected={selected} />
-      <span className="text-text-muted">Updated</span>
-      <span>{formatTime(selected.task.updatedAt)}</span>
-    </div>
-  );
-}
-
-function TaskInfoOptionalRows({
-  selected,
-}: {
-  selected: TaskPlanningSnapshot;
-}) {
-  return (
-    <>
-      {selected.task.branchName && (
-        <>
-          <span className="text-text-muted">Branch</span>
-          <span className="truncate">{selected.task.branchName}</span>
-        </>
-      )}
-      {selected.task.worktreePath && (
-        <>
-          <span className="text-text-muted">Worktree</span>
-          <span className="truncate" title={selected.task.worktreePath}>
-            {selected.task.worktreePath}
-          </span>
-        </>
-      )}
-      {selected.task.prUrl && (
-        <>
-          <span className="text-text-muted">PR</span>
-          <a
-            href={selected.task.prUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="truncate text-brand hover:text-brand-hover"
-          >
-            #{selected.task.prNumber || selected.task.prUrl}
-          </a>
-        </>
-      )}
-    </>
-  );
-}
 
 function NewTaskComposer({
   draft,
@@ -302,54 +188,91 @@ function SelectedTaskDetail({
   scrollRef: RefObject<HTMLDivElement | null>;
   onScroll: (element: HTMLDivElement) => void;
 }) {
+  const [activeDialog, setActiveDialog] = useState<TaskDetailDialogKind | null>(
+    null,
+  );
+
   return (
     <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(260px,40vh)] 2xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-rows-1">
-      <section className="min-h-0 min-w-0 flex flex-col">
-        <div
-          ref={scrollRef}
-          onScroll={(event) => onScroll(event.currentTarget)}
-          className="flex-1 min-h-0 overflow-auto p-4 md:p-6"
-        >
-          <div className="min-w-0 flex flex-col gap-5">
-            <TaskProgressPanel snapshot={selected} />
-            <AgentStagesPanel stages={selected.agentStages || []} />
-            <TaskRecordsPanel artifacts={detail.sortedArtifacts} />
-          </div>
-        </div>
-        <div className="shrink-0 border-t border-border-color bg-bg-secondary p-3 md:p-4">
-          <ExistingTaskComposer
-            snapshot={selected}
-            flow={selected.flow}
-            messageBody={detail.messageBody}
-            attachments={detail.messageAttachments}
-            executionMode={detail.messageExecutionMode}
-            busyAction={detail.busyAction}
-            onMessageChange={detail.onMessageChange}
-            onAttachmentsChange={detail.onMessageAttachmentsChange}
-            onExecutionModeChange={detail.onMessageExecutionModeChange}
-            onSubmitMessage={detail.onSubmitMessage}
-            onCancelAgentRun={detail.onCancelAgentRun}
-          />
-        </div>
-      </section>
-      <aside className="min-h-0 min-w-0 overflow-hidden border-t border-border-color 2xl:border-l 2xl:border-t-0">
-        <div className="flex h-full min-w-0 flex-col">
-          <div className="shrink-0 p-4 pb-3 md:p-5 md:pb-3">
-            <TaskInfoPanel selected={selected} />
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto px-4 pb-4 md:px-5 md:pb-5">
-            <TaskFlowPanel
-              flow={selected.flow}
-              currentPlan={selected.currentPlan}
-              busyAction={detail.busyAction}
-              onAction={detail.onAction}
-            />
-          </div>
-          <div className="max-h-[45%] shrink-0 overflow-auto border-t border-border-color bg-bg-secondary p-4 md:p-5">
-            <FlowHistory flow={selected.flow} />
-          </div>
-        </div>
-      </aside>
+      <SelectedTaskMain
+        detail={detail}
+        selected={selected}
+        scrollRef={scrollRef}
+        onScroll={onScroll}
+        onOpenDialog={setActiveDialog}
+      />
+      <SelectedTaskFlowAside detail={detail} selected={selected} />
+      <TaskDetailDialog
+        kind={activeDialog}
+        selected={selected}
+        onClose={() => setActiveDialog(null)}
+      />
     </div>
+  );
+}
+
+function SelectedTaskMain({
+  detail,
+  selected,
+  scrollRef,
+  onScroll,
+  onOpenDialog,
+}: {
+  detail: TaskDetailProps;
+  selected: TaskPlanningSnapshot;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  onScroll: (element: HTMLDivElement) => void;
+  onOpenDialog: (kind: TaskDetailDialogKind) => void;
+}) {
+  return (
+    <section className="min-h-0 min-w-0 flex flex-col">
+      <div
+        ref={scrollRef}
+        onScroll={(event) => onScroll(event.currentTarget)}
+        className="flex-1 min-h-0 overflow-auto"
+      >
+        <TaskDetailHeader onOpenDialog={onOpenDialog} />
+        <div className="min-w-0 flex flex-col gap-5 p-4 md:p-6">
+          <AgentStagesPanel stages={selected.agentStages || []} />
+          <TaskRecordsPanel artifacts={detail.sortedArtifacts} />
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-border-color bg-bg-secondary p-3 md:p-4">
+        <ExistingTaskComposer
+          snapshot={selected}
+          flow={selected.flow}
+          messageBody={detail.messageBody}
+          attachments={detail.messageAttachments}
+          executionMode={detail.messageExecutionMode}
+          busyAction={detail.busyAction}
+          onMessageChange={detail.onMessageChange}
+          onAttachmentsChange={detail.onMessageAttachmentsChange}
+          onExecutionModeChange={detail.onMessageExecutionModeChange}
+          onSubmitMessage={detail.onSubmitMessage}
+          onCancelAgentRun={detail.onCancelAgentRun}
+        />
+      </div>
+    </section>
+  );
+}
+
+function SelectedTaskFlowAside({
+  detail,
+  selected,
+}: {
+  detail: TaskDetailProps;
+  selected: TaskPlanningSnapshot;
+}) {
+  return (
+    <aside className="min-h-0 min-w-0 overflow-hidden border-t border-border-color 2xl:border-l 2xl:border-t-0">
+      <div className="h-full min-w-0 overflow-auto p-4 md:p-5">
+        <TaskFlowPanel
+          flow={selected.flow}
+          currentPlan={selected.currentPlan}
+          busyAction={detail.busyAction}
+          onAction={detail.onAction}
+        />
+      </div>
+    </aside>
   );
 }
