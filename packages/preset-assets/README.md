@@ -15,4 +15,5 @@
 
 - `.along/preset/` 是 `biome.json` 和质量脚本依赖的基础配置，必须可被 Git 跟踪，确保 `git worktree add` 后自然存在。
 - agent 工作流提示词统一维护在 `agents/prompts/`，同步时分发到目标编辑器的 prompt 目录，不再维护旧的顶层 `prompts/` 入口。
+- Along Web Task 的 Planner / Builder / Tester 等节点角色是 Along runtime 内部细节，不通过 preset-assets 分发到业务项目。
 - `node_modules/` 始终是 bun 管理的本地安装产物，不复制、不软链、不入库。

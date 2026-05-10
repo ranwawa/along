@@ -233,12 +233,13 @@ describe('task-implementation-agent', () => {
         cwd: '/tmp/kinkeeper',
         outputMetadata: expect.objectContaining({
           kind: 'implementation_steps',
+          artifactRole: 'builder_tactical_plan',
           planId: 'plan-1',
         }),
         codexOptions: expect.objectContaining({
           sandboxMode: 'read-only',
         }),
-        prompt: expect.stringContaining('产出可执行的详细实施步骤'),
+        prompt: expect.stringContaining('Builder tactical plan'),
       }),
     );
   });
@@ -363,7 +364,7 @@ describe('task-implementation-agent', () => {
     expect(runnerMock).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        prompt: expect.stringContaining('auto-commit 子步骤'),
+        prompt: expect.stringContaining('Auto Commit Fix Workflow Prompt'),
         inputArtifactIds: expect.arrayContaining(['art-commit-failure']),
       }),
     );

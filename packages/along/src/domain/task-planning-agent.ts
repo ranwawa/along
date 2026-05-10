@@ -1,10 +1,14 @@
 import {
   buildPlannerPrompt,
+  PLANNER_CONTRACT_KIND,
+  PLANNER_NODE_PROMPT_ID,
+  PLANNER_NODE_PROMPT_VERSION,
   PLANNER_OUTPUT_FORMAT_SCHEMA,
   PLANNER_OUTPUT_SCHEMA,
   type TaskPlannerAction,
   type TaskPlannerOutput,
 } from '../agents/task-planning';
+import { loadWorkflowNodePrompt } from '../agents/workflow-node-prompt-loader';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
@@ -82,6 +86,7 @@ function parseTaskPlannerTurnOutput(
 function publishPlannerOutput(input: {
   taskId: string;
   agentId: string;
+  nodePrompt: { name: string; version: string; sourcePath?: string };
   output: TaskPlannerOutput;
 }): Result<unknown> {
   if (input.output.action === 'plan_revision') {
@@ -90,6 +95,10 @@ function publishPlannerOutput(input: {
       agentId: input.agentId,
       body: input.output.body,
       type: input.output.type,
+      metadata: {
+        kind: PLANNER_CONTRACT_KIND,
+        nodePrompt: input.nodePrompt,
+      },
     });
   }
 
@@ -97,6 +106,7 @@ function publishPlannerOutput(input: {
     taskId: input.taskId,
     agentId: input.agentId,
     body: input.output.body,
+    kind: 'planner_clarification',
   });
 }
 
@@ -121,17 +131,31 @@ async function runPlannerAgentTurn(input: {
   snapshot: TaskPlanningSnapshot;
   agentId: string;
 }) {
+  const promptTemplate = loadWorkflowNodePrompt({
+    name: PLANNER_NODE_PROMPT_ID,
+  });
+
   return runTaskAgentTurn({
     taskId: input.taskInput.taskId,
     threadId: input.snapshot.thread.threadId,
     agentId: input.agentId,
-    prompt: buildPlannerPrompt(input.snapshot),
+    prompt: buildPlannerPrompt(input.snapshot, {
+      template: promptTemplate.content,
+    }),
     cwd: input.taskInput.cwd,
     modelId: input.taskInput.modelId,
     personalityVersion: input.taskInput.personalityVersion,
     inputArtifactIds: input.snapshot.artifacts.map(
       (artifact) => artifact.artifactId,
     ),
+    outputMetadata: {
+      kind: 'planner_turn',
+      nodePrompt: {
+        name: promptTemplate.name,
+        version: PLANNER_NODE_PROMPT_VERSION,
+        sourcePath: promptTemplate.sourcePath,
+      },
+    },
     options: {
       outputFormat: {
         type: 'json_schema',
@@ -168,6 +192,10 @@ export async function runTaskPlanningAgent(
   const publishRes = publishPlannerOutput({
     taskId: input.taskId,
     agentId,
+    nodePrompt: {
+      name: PLANNER_NODE_PROMPT_ID,
+      version: PLANNER_NODE_PROMPT_VERSION,
+    },
     output: parsed.data,
   });
   if (!publishRes.success) return publishRes;

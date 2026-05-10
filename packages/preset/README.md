@@ -9,6 +9,8 @@
 
 agent 工作流提示词的源头是 `packages/preset-assets/agents/prompts`。`along project-sync` 会从该集中目录读取并分发到目标仓库的编辑器 prompt 目录。
 
+Along Web Task 的 Planner / Builder / Tester 等节点角色和 runtime prompt 是 Along runtime 内部实现，不通过 `project-sync` 分发到目标仓库。
+
 对外入口只保留：
 
 ```bash

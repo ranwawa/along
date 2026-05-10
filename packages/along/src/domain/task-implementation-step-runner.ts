@@ -2,7 +2,10 @@ import { buildImplementationStepsPrompt } from '../agents/task-implementation';
 import { failure } from '../core/result';
 import { runTaskAgentTurn } from './task-agent-runtime';
 import type { RunTaskImplementationAgentInput } from './task-implementation-agent';
-import { IMPLEMENTATION_STEPS_KIND } from './task-implementation-steps';
+import {
+  BUILDER_TACTICAL_PLAN_ROLE,
+  IMPLEMENTATION_STEPS_KIND,
+} from './task-implementation-steps';
 import type {
   TaskPlanningSnapshot,
   TaskPlanRevisionRecord,
@@ -28,6 +31,7 @@ export async function runImplementationStepsTurn(input: {
     ],
     outputMetadata: {
       kind: IMPLEMENTATION_STEPS_KIND,
+      artifactRole: BUILDER_TACTICAL_PLAN_ROLE,
       planId: input.approvedPlan.planId,
       planVersion: input.approvedPlan.version,
     },

@@ -5,6 +5,7 @@ import type {
 } from './task-planning';
 
 export const IMPLEMENTATION_STEPS_KIND = 'implementation_steps';
+export const BUILDER_TACTICAL_PLAN_ROLE = 'builder_tactical_plan';
 export const IMPLEMENTATION_STEPS_APPROVAL_KIND =
   'implementation_steps_approval';
 

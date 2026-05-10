@@ -455,6 +455,7 @@ export interface PublishTaskPlanInput {
   body: string;
   agentId?: string;
   type?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PublishPlanningUpdateInput {
@@ -3105,6 +3106,7 @@ export function publishTaskPlanRevision(
           version: nextVersion,
           basedOnPlanId: snapshot.currentPlan?.planId,
           roundId: snapshot.openRound?.roundId,
+          ...(input.metadata || {}),
         },
         createdAt: now,
       });
