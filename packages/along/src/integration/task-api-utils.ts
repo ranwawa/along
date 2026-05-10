@@ -1,3 +1,4 @@
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy task API utilities are kept together outside this migration.
 // biome-ignore-all lint/style/noMagicNumbers: legacy task API title truncation is outside this migration.
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
@@ -7,9 +8,11 @@ import {
   readTaskPlanningSnapshot,
   TASK_AGENT_STAGE,
   TASK_EXECUTION_MODE,
+  TASK_RUNTIME_EXECUTION_MODE,
   type TaskAgentStage,
   type TaskExecutionMode,
   type TaskPlanningSnapshot,
+  type TaskRuntimeExecutionMode,
 } from '../domain/task-planning';
 import type {
   ScheduledTaskDeliveryRun,
@@ -134,6 +137,26 @@ export function readTaskExecutionModeField(
     return success(value);
   }
   return failure('executionMode 必须是 manual 或 autonomous');
+}
+
+export function readTaskRuntimeExecutionModeField(
+  payload: UnknownRecord,
+  key: string,
+): Result<TaskRuntimeExecutionMode | undefined> {
+  const rawValue = payload[key];
+  const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+  if (value === undefined || value === null || value === '') {
+    return success(undefined);
+  }
+  if (
+    value === TASK_RUNTIME_EXECUTION_MODE.AUTO ||
+    value === TASK_RUNTIME_EXECUTION_MODE.ASK ||
+    value === TASK_RUNTIME_EXECUTION_MODE.PLAN ||
+    value === TASK_RUNTIME_EXECUTION_MODE.BUILD
+  ) {
+    return success(value);
+  }
+  return failure('runtimeExecutionMode 必须是 auto、ask、plan 或 build');
 }
 
 export function readTaskAgentStageField(
@@ -274,11 +297,26 @@ export function scheduleImplementationIfNeeded(
 }
 
 function readRunnerOptions(payload: UnknownRecord) {
+  const runtimeExecutionMode = readStringField(payload, 'runtimeExecutionMode');
   return {
     agentId: readStringField(payload, 'agentId'),
     modelId: readStringField(payload, 'modelId'),
     personalityVersion: readStringField(payload, 'personalityVersion'),
+    runtimeExecutionMode: isTaskRuntimeExecutionMode(runtimeExecutionMode)
+      ? runtimeExecutionMode
+      : undefined,
   };
+}
+
+function isTaskRuntimeExecutionMode(
+  value: string | undefined,
+): value is TaskRuntimeExecutionMode {
+  return (
+    value === TASK_RUNTIME_EXECUTION_MODE.AUTO ||
+    value === TASK_RUNTIME_EXECUTION_MODE.ASK ||
+    value === TASK_RUNTIME_EXECUTION_MODE.PLAN ||
+    value === TASK_RUNTIME_EXECUTION_MODE.BUILD
+  );
 }
 
 export function scheduleDeliveryIfNeeded(

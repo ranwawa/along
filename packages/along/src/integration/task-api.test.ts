@@ -36,6 +36,12 @@ vi.mock('../domain/task-planning', () => ({
     MANUAL: 'manual',
     AUTONOMOUS: 'autonomous',
   },
+  TASK_RUNTIME_EXECUTION_MODE: {
+    AUTO: 'auto',
+    ASK: 'ask',
+    PLAN: 'plan',
+    BUILD: 'build',
+  },
   TASK_AGENT_STAGE: {
     PLANNING: 'planning',
     IMPLEMENTATION: 'implementation',
@@ -574,6 +580,7 @@ function expectCreatedTaskFields(cwd: string) {
     repoName: 'along',
     cwd,
     executionMode: undefined,
+    runtimeExecutionMode: undefined,
   });
 }
 
@@ -591,5 +598,6 @@ function expectDefaultCreatedTaskFields() {
     repoName: 'along',
     cwd: '/tmp/along/packages/along',
     executionMode: undefined,
+    runtimeExecutionMode: undefined,
   });
 }

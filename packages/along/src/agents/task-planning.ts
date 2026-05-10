@@ -148,14 +148,16 @@ export function buildPlannerPrompt(
   snapshot: TaskPlanningSnapshot,
   input: {
     template: string;
+    runtimeExecutionMode?: string;
   },
 ): string {
   const hasCurrentPlan = Boolean(snapshot.currentPlan);
   const hasOpenRound = Boolean(snapshot.openRound);
+  const runtimeExecutionMode = input.runtimeExecutionMode || 'auto';
 
   return renderAgentMarkdownTemplate(input.template, {
     workflowIntro: `当前 workflow: ${snapshot.task.currentWorkflowKind}`,
-    stateSummary: `workflowKind=${snapshot.task.currentWorkflowKind}, hasCurrentPlan=${hasCurrentPlan}, hasOpenRound=${hasOpenRound}`,
+    stateSummary: `workflowKind=${snapshot.task.currentWorkflowKind}, runtimeExecutionMode=${runtimeExecutionMode}, hasCurrentPlan=${hasCurrentPlan}, hasOpenRound=${hasOpenRound}`,
     snapshotJson: buildSnapshotSummary(snapshot),
   });
 }

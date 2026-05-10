@@ -39,6 +39,12 @@ const mockTaskConstants = vi.hoisted(() => ({
     MANUAL: 'manual',
     AUTONOMOUS: 'autonomous',
   },
+  TASK_RUNTIME_EXECUTION_MODE: {
+    AUTO: 'auto',
+    ASK: 'ask',
+    PLAN: 'plan',
+    BUILD: 'build',
+  },
   TASK_LIFECYCLE: {
     CANCELLED: 'cancelled',
     READY: 'ready',
@@ -59,6 +65,7 @@ const mockTaskConstants = vi.hoisted(() => ({
 vi.mock('../domain/task-planning', () => ({
   TASK_AGENT_STAGE: mockTaskConstants.TASK_AGENT_STAGE,
   TASK_EXECUTION_MODE: mockTaskConstants.TASK_EXECUTION_MODE,
+  TASK_RUNTIME_EXECUTION_MODE: mockTaskConstants.TASK_RUNTIME_EXECUTION_MODE,
   TASK_LIFECYCLE: mockTaskConstants.TASK_LIFECYCLE,
   WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,

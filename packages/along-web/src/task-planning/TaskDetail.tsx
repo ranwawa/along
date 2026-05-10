@@ -13,6 +13,7 @@ import type {
   TaskExecutionMode,
   TaskFlowAction,
   TaskPlanningSnapshot,
+  TaskRuntimeExecutionMode,
 } from '../types';
 import type { DraftTaskInput, RepositoryOption } from './api';
 import { ExistingTaskComposer } from './ExistingTaskComposer';
@@ -47,12 +48,16 @@ function NewTaskComposer({
       body={draft.body}
       busy={busyAction === 'create'}
       executionMode={draft.executionMode}
+      runtimeExecutionMode={draft.runtimeExecutionMode}
       placeholder={selectedRepository ? '输入任务目标或问题' : '请先选择仓库'}
       submitDisabled={!selectedRepository || !hasDraft || Boolean(busyAction)}
       submitTitle="创建任务"
       onAttachmentsChange={onDraftAttachmentsChange}
       onBodyChange={(value) => onDraftChange('body', value)}
       onExecutionModeChange={(value) => onDraftChange('executionMode', value)}
+      onRuntimeExecutionModeChange={(value) =>
+        onDraftChange('runtimeExecutionMode', value)
+      }
       onSubmit={onCreateTask}
     />
   );
@@ -72,6 +77,7 @@ type TaskDetailProps = {
   messageBody: string;
   messageAttachments: File[];
   messageExecutionMode: TaskExecutionMode;
+  messageRuntimeExecutionMode: TaskRuntimeExecutionMode;
   busyAction: string | null;
   onDraftChange: (key: keyof DraftTaskInput, value: string) => void;
   onDraftAttachmentsChange: (files: File[]) => void;
@@ -79,6 +85,9 @@ type TaskDetailProps = {
   onMessageChange: (value: string) => void;
   onMessageAttachmentsChange: (files: File[]) => void;
   onMessageExecutionModeChange: (value: TaskExecutionMode) => void;
+  onMessageRuntimeExecutionModeChange: (
+    value: TaskRuntimeExecutionMode,
+  ) => void;
   onSubmitMessage: () => void;
   onCancelAgentRun: (runId?: string) => void;
   onAction: (action: TaskFlowAction) => void;
@@ -242,10 +251,14 @@ function SelectedTaskMain({
           messageBody={detail.messageBody}
           attachments={detail.messageAttachments}
           executionMode={detail.messageExecutionMode}
+          runtimeExecutionMode={detail.messageRuntimeExecutionMode}
           busyAction={detail.busyAction}
           onMessageChange={detail.onMessageChange}
           onAttachmentsChange={detail.onMessageAttachmentsChange}
           onExecutionModeChange={detail.onMessageExecutionModeChange}
+          onRuntimeExecutionModeChange={
+            detail.onMessageRuntimeExecutionModeChange
+          }
           onSubmitMessage={detail.onSubmitMessage}
           onCancelAgentRun={detail.onCancelAgentRun}
         />

@@ -1,4 +1,8 @@
-import type { TaskExecutionMode, TaskPlanningSnapshot } from '../types';
+import type {
+  TaskExecutionMode,
+  TaskPlanningSnapshot,
+  TaskRuntimeExecutionMode,
+} from '../types';
 
 export interface CreateTaskResponse {
   taskId: string;
@@ -71,6 +75,7 @@ export interface DraftTaskInput {
   body: string;
   repository: string;
   executionMode: TaskExecutionMode;
+  runtimeExecutionMode: TaskRuntimeExecutionMode;
   attachments: File[];
 }
 
@@ -82,6 +87,7 @@ export const emptyDraft: DraftTaskInput = {
   body: '',
   repository: '',
   executionMode: 'manual',
+  runtimeExecutionMode: 'auto',
   attachments: [],
 };
 

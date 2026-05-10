@@ -33,7 +33,7 @@ function TaskInfoRows({
   statusLabel: string;
 }) {
   const executionMode =
-    selected.task.executionMode === 'autonomous' ? '全自动' : '人工确认';
+    selected.task.executionMode === 'autonomous' ? '自动模式' : '人工确认';
   return (
     <div className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-2 px-4 pb-4 text-sm">
       <span className="text-text-muted">ID</span>

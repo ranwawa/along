@@ -12,7 +12,11 @@ import {
 } from './taskPlanningActionUtils';
 
 function buildCreatePayload(input: UseTaskPlanningActionsInput, body: string) {
-  const payload: Record<string, string | boolean> = { body, autoRun: true };
+  const payload: Record<string, string | boolean> = {
+    body,
+    autoRun: true,
+    runtimeExecutionMode: input.draft.runtimeExecutionMode,
+  };
   if (input.draft.executionMode === 'autonomous') {
     payload.executionMode = 'autonomous';
   }
@@ -48,6 +52,7 @@ function clearSelectedTask(input: UseTaskPlanningActionsInput) {
   input.setMessageBody('');
   input.setMessageAttachments([]);
   input.setMessageExecutionMode('manual');
+  input.setMessageRuntimeExecutionMode('auto');
 }
 
 function resetDraft(input: UseTaskPlanningActionsInput) {

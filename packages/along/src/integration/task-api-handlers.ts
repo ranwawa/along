@@ -40,6 +40,7 @@ import {
   readTaskAgentStageField,
   readTaskExecutionModeField,
   readTaskRequestPayload,
+  readTaskRuntimeExecutionModeField,
   resolveTaskCwd,
   scheduleDeliveryIfNeeded,
   scheduleImplementationIfNeeded,
@@ -111,6 +112,11 @@ function createTaskFromPayload(
   if (!cwdRes.success) return cwdRes;
   const executionModeRes = readTaskExecutionModeField(payload, 'executionMode');
   if (!executionModeRes.success) return executionModeRes;
+  const runtimeExecutionModeRes = readTaskRuntimeExecutionModeField(
+    payload,
+    'runtimeExecutionMode',
+  );
+  if (!runtimeExecutionModeRes.success) return runtimeExecutionModeRes;
   const repository = getTaskRepositoryFields(payload, context, cwdRes.data);
   return createPlanningTask({
     title: deriveTitle(taskBody),
@@ -120,6 +126,7 @@ function createTaskFromPayload(
     repoName: repository.repoName,
     cwd: cwdRes.data,
     executionMode: executionModeRes.data,
+    runtimeExecutionMode: runtimeExecutionModeRes.data,
     ...(attachments.length ? { attachments } : {}),
   });
 }
@@ -143,10 +150,18 @@ export async function handleTaskMessageRequest(
     readStringField(bodyRes.data.payload, 'body') ||
     (bodyRes.data.attachments.length > 0 ? '（用户上传了图片）' : undefined);
   if (!message) return errorResponse('用户消息不能为空', 400);
+  const runtimeExecutionModeRes = readTaskRuntimeExecutionModeField(
+    bodyRes.data.payload,
+    'runtimeExecutionMode',
+  );
+  if (!runtimeExecutionModeRes.success) {
+    return errorResponse(runtimeExecutionModeRes.error, 400);
+  }
 
   const submitRes = submitTaskMessage({
     taskId,
     body: message,
+    runtimeExecutionMode: runtimeExecutionModeRes.data,
     ...(bodyRes.data.attachments.length
       ? { attachments: bodyRes.data.attachments }
       : {}),

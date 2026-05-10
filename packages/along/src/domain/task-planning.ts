@@ -56,6 +56,16 @@ export const TASK_EXECUTION_MODE = {
 export type TaskExecutionMode =
   (typeof TASK_EXECUTION_MODE)[keyof typeof TASK_EXECUTION_MODE];
 
+export const TASK_RUNTIME_EXECUTION_MODE = {
+  AUTO: 'auto',
+  ASK: 'ask',
+  PLAN: 'plan',
+  BUILD: 'build',
+} as const;
+
+export type TaskRuntimeExecutionMode =
+  (typeof TASK_RUNTIME_EXECUTION_MODE)[keyof typeof TASK_RUNTIME_EXECUTION_MODE];
+
 export const THREAD_PURPOSE = {
   ASK: 'ask',
   PLANNING: 'planning',
@@ -435,6 +445,7 @@ export interface CreatePlanningTaskInput {
   repoName?: string;
   cwd?: string;
   executionMode?: TaskExecutionMode;
+  runtimeExecutionMode?: TaskRuntimeExecutionMode;
   workflowKind?: WorkflowKind;
   attachments?: TaskAttachmentUploadInput[];
 }
@@ -447,6 +458,7 @@ export interface UpdatePlanningTaskTitleInput {
 export interface SubmitTaskMessageInput {
   taskId: string;
   body: string;
+  runtimeExecutionMode?: TaskRuntimeExecutionMode;
   attachments?: TaskAttachmentUploadInput[];
 }
 
@@ -2629,6 +2641,7 @@ export function createPlanningTask(
           repoOwner: input.repoOwner,
           repoName: input.repoName,
           cwd: input.cwd,
+          runtimeExecutionMode: input.runtimeExecutionMode,
           attachmentCount: preparedAttachments.length,
         },
         createdAt: now,
@@ -2936,10 +2949,12 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
           ? {
               kind: 'planning_feedback',
               basedOnPlanId: thread.current_plan_id,
+              runtimeExecutionMode: input.runtimeExecutionMode,
               attachmentCount: preparedAttachments.length,
             }
           : {
               kind: 'additional_context',
+              runtimeExecutionMode: input.runtimeExecutionMode,
               attachmentCount: preparedAttachments.length,
             },
         createdAt: now,

@@ -3,6 +3,7 @@ import type {
   TaskExecutionMode,
   TaskFlowActionId,
   TaskPlanningSnapshot,
+  TaskRuntimeExecutionMode,
 } from '../types';
 import type { RepositoryOption } from './api';
 import { useTaskPlanningActions } from './useTaskPlanningActions';
@@ -33,6 +34,8 @@ function usePlanningBaseState() {
   const [messageAttachments, setMessageAttachments] = useState<File[]>([]);
   const [messageExecutionMode, setMessageExecutionMode] =
     useState<TaskExecutionMode>('manual');
+  const [messageRuntimeExecutionMode, setMessageRuntimeExecutionMode] =
+    useState<TaskRuntimeExecutionMode>('auto');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   return {
@@ -44,6 +47,8 @@ function usePlanningBaseState() {
     setMessageAttachments,
     messageExecutionMode,
     setMessageExecutionMode,
+    messageRuntimeExecutionMode,
+    setMessageRuntimeExecutionMode,
     busyAction,
     setBusyAction,
     error,
@@ -133,6 +138,7 @@ function usePlanningActions(
     messageBody: base.messageBody,
     messageAttachments: base.messageAttachments,
     messageExecutionMode: base.messageExecutionMode,
+    messageRuntimeExecutionMode: base.messageRuntimeExecutionMode,
     busyAction: base.busyAction,
     ...flowFlags,
     setDraft: base.repositoryState.setDraft,
@@ -143,6 +149,7 @@ function usePlanningActions(
     setMessageBody: base.setMessageBody,
     setMessageAttachments: base.setMessageAttachments,
     setMessageExecutionMode: base.setMessageExecutionMode,
+    setMessageRuntimeExecutionMode: base.setMessageRuntimeExecutionMode,
     setBusyAction: base.setBusyAction,
     setError: base.setError,
     loadSelectedTask: loaders.loadSelectedTask,
@@ -162,12 +169,14 @@ export function useTaskPlanningController() {
     messageBody: base.messageBody,
     messageAttachments: base.messageAttachments,
     messageExecutionMode: base.messageExecutionMode,
+    messageRuntimeExecutionMode: base.messageRuntimeExecutionMode,
     loading: loadState.loading,
     busyAction: base.busyAction,
     error: base.error,
     setMessageBody: base.setMessageBody,
     setMessageAttachments: base.setMessageAttachments,
     setMessageExecutionMode: base.setMessageExecutionMode,
+    setMessageRuntimeExecutionMode: base.setMessageRuntimeExecutionMode,
     ...actions,
   };
 }

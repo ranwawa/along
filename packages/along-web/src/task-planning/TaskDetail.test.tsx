@@ -11,6 +11,7 @@ const draft: DraftTaskInput = {
   body: '',
   attachments: [],
   executionMode: 'manual',
+  runtimeExecutionMode: 'auto',
 };
 
 function makeTask(): TaskPlanningSnapshot['task'] {
@@ -126,6 +127,7 @@ function renderDetail(snapshot = makeSnapshot()): string {
       messageBody=""
       messageAttachments={[]}
       messageExecutionMode="manual"
+      messageRuntimeExecutionMode="auto"
       busyAction={null}
       onDraftChange={() => undefined}
       onDraftAttachmentsChange={() => undefined}
@@ -133,6 +135,7 @@ function renderDetail(snapshot = makeSnapshot()): string {
       onMessageChange={() => undefined}
       onMessageAttachmentsChange={() => undefined}
       onMessageExecutionModeChange={() => undefined}
+      onMessageRuntimeExecutionModeChange={() => undefined}
       onSubmitMessage={() => undefined}
       onCancelAgentRun={() => undefined}
       onAction={() => undefined}

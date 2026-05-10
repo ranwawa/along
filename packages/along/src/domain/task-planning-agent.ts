@@ -21,6 +21,7 @@ import {
   readTaskPlanningSnapshot,
   TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
+  type TaskRuntimeExecutionMode,
 } from './task-planning';
 
 export interface RunTaskPlanningAgentInput {
@@ -29,6 +30,7 @@ export interface RunTaskPlanningAgentInput {
   cwd: string;
   modelId?: string;
   personalityVersion?: string;
+  runtimeExecutionMode?: TaskRuntimeExecutionMode;
 }
 
 export interface RunTaskPlanningAgentOutput {
@@ -141,6 +143,7 @@ async function runPlannerAgentTurn(input: {
     agentId: input.agentId,
     prompt: buildPlannerPrompt(input.snapshot, {
       template: promptTemplate.content,
+      runtimeExecutionMode: input.taskInput.runtimeExecutionMode,
     }),
     cwd: input.taskInput.cwd,
     modelId: input.taskInput.modelId,

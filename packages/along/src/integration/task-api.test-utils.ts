@@ -242,6 +242,7 @@ export function expectScheduledRunner(
       agentId: undefined,
       modelId: undefined,
       personalityVersion: undefined,
+      runtimeExecutionMode: undefined,
     },
   ]);
 }

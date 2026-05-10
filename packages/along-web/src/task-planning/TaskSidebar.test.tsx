@@ -105,6 +105,7 @@ function renderPanel(
         body: '',
         attachments: [],
         executionMode: 'manual',
+        runtimeExecutionMode: 'auto',
       }}
       repositories={repositories}
       error={null}

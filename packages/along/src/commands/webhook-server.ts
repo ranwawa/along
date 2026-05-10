@@ -458,6 +458,7 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
         cwd: input.cwd,
         modelId: input.modelId,
         personalityVersion: input.personalityVersion,
+        runtimeExecutionMode: input.runtimeExecutionMode,
       });
       if (!result.success) {
         if (isTaskAgentCancellationError(result.error)) {

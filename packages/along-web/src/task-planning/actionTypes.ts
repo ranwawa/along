@@ -1,4 +1,8 @@
-import type { TaskExecutionMode, TaskPlanningSnapshot } from '../types';
+import type {
+  TaskExecutionMode,
+  TaskPlanningSnapshot,
+  TaskRuntimeExecutionMode,
+} from '../types';
 import type {
   ApproveTaskPlanResponse,
   CloseTaskResponse,
@@ -25,6 +29,7 @@ export interface UseTaskPlanningActionsInput {
   messageBody: string;
   messageAttachments: File[];
   messageExecutionMode: TaskExecutionMode;
+  messageRuntimeExecutionMode: TaskRuntimeExecutionMode;
   busyAction: string | null;
   canApprove: boolean;
   canImplement: boolean;
@@ -40,6 +45,9 @@ export interface UseTaskPlanningActionsInput {
   setMessageAttachments: React.Dispatch<React.SetStateAction<File[]>>;
   setMessageExecutionMode: React.Dispatch<
     React.SetStateAction<TaskExecutionMode>
+  >;
+  setMessageRuntimeExecutionMode: React.Dispatch<
+    React.SetStateAction<TaskRuntimeExecutionMode>
   >;
   setBusyAction: React.Dispatch<React.SetStateAction<string | null>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;

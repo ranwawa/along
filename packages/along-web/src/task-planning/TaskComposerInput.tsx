@@ -1,6 +1,12 @@
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: composer controls are kept together for this interaction.
 // biome-ignore-all lint/style/noJsxLiterals: existing composer controls use inline UI labels.
+// biome-ignore-all lint/style/noMagicNumbers: existing composer controls use fixed UI timings and sizes.
 import { type FormEvent, type KeyboardEvent, useState } from 'react';
-import type { TaskAgentRunRecord, TaskExecutionMode } from '../types-task';
+import type {
+  TaskAgentRunRecord,
+  TaskExecutionMode,
+  TaskRuntimeExecutionMode,
+} from '../types-task';
 import {
   ImageAttachmentPicker,
   type ImageAttachmentPickerRenderProps,
@@ -12,6 +18,7 @@ interface TaskComposerInputProps {
   busy?: boolean;
   disabled?: boolean;
   executionMode: TaskExecutionMode;
+  runtimeExecutionMode: TaskRuntimeExecutionMode;
   placeholder: string;
   rows?: number;
   runningRun?: TaskAgentRunRecord | null;
@@ -21,6 +28,7 @@ interface TaskComposerInputProps {
   onAttachmentsChange: (files: File[]) => void;
   onBodyChange: (value: string) => void;
   onExecutionModeChange: (value: TaskExecutionMode) => void;
+  onRuntimeExecutionModeChange: (value: TaskRuntimeExecutionMode) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -91,8 +99,110 @@ function SpinnerIcon() {
   );
 }
 
-function isTaskExecutionMode(value: string): value is TaskExecutionMode {
-  return value === 'manual' || value === 'autonomous';
+const RUNTIME_MODE_OPTIONS: {
+  value: TaskRuntimeExecutionMode;
+  command: string;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 'auto',
+    command: '/auto',
+    label: '自动',
+    description: '让 runtime 判断路径',
+  },
+  {
+    value: 'ask',
+    command: '/ask',
+    label: 'Ask',
+    description: '优先澄清需求',
+  },
+  {
+    value: 'plan',
+    command: '/plan',
+    label: 'Plan',
+    description: '先产出计划',
+  },
+  {
+    value: 'build',
+    command: '/build',
+    label: 'Build',
+    description: '优先直接构建',
+  },
+];
+
+function getRuntimeModeLabel(value: TaskRuntimeExecutionMode) {
+  return RUNTIME_MODE_OPTIONS.find((option) => option.value === value)?.label;
+}
+
+function getSlashQuery(body: string): string | null {
+  if (!body.startsWith('/')) return null;
+  return body.slice(1).split(/\s|\n/)[0].toLowerCase();
+}
+
+function matchesSlashQuery(
+  option: (typeof RUNTIME_MODE_OPTIONS)[number],
+  query: string,
+) {
+  return (
+    option.value.startsWith(query) || option.command.slice(1).startsWith(query)
+  );
+}
+
+function stripSlashCommand(body: string): string {
+  return body.replace(/^\/(?:auto|ask|plan|build)(?:\s+|$)/i, '');
+}
+
+function stripSlashTrigger(body: string): string {
+  return body.replace(/^\/\S*\s*/i, '');
+}
+
+function SlashModeMenu({
+  body,
+  options,
+  onBodyChange,
+  onRuntimeExecutionModeChange,
+}: {
+  body: string;
+  options: typeof RUNTIME_MODE_OPTIONS;
+  onBodyChange: (value: string) => void;
+  onRuntimeExecutionModeChange: (value: TaskRuntimeExecutionMode) => void;
+}) {
+  return (
+    <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-lg border border-border-color bg-bg-secondary p-1 shadow-xl">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onRuntimeExecutionModeChange(option.value);
+            onBodyChange(stripSlashTrigger(body));
+          }}
+          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm text-text-secondary transition-colors hover:bg-black/30 hover:text-text-primary focus:bg-black/30 focus:text-text-primary focus:outline-none"
+        >
+          <span className="font-semibold text-text-primary">
+            {option.command}
+          </span>
+          <span className="truncate text-xs">{option.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function applyTypedSlashCommand(
+  value: string,
+  onBodyChange: (value: string) => void,
+  onRuntimeExecutionModeChange: (value: TaskRuntimeExecutionMode) => void,
+) {
+  const option = RUNTIME_MODE_OPTIONS.find((item) =>
+    new RegExp(`^${item.command}(?:\\s+|$)`, 'i').test(value),
+  );
+  if (!option) return false;
+  onRuntimeExecutionModeChange(option.value);
+  onBodyChange(stripSlashCommand(value));
+  return true;
 }
 
 function AttachmentPopover({
@@ -145,6 +255,7 @@ function AttachmentPopover({
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: textarea owns keyboard, slash menu, and focus state together.
 function ComposerTextarea({
   body,
   busy,
@@ -152,7 +263,9 @@ function ComposerTextarea({
   placeholder,
   rows,
   runningRun,
+  runtimeExecutionMode,
   onBodyChange,
+  onRuntimeExecutionModeChange,
   onSubmitShortcut,
 }: Pick<
   TaskComposerInputProps,
@@ -162,30 +275,74 @@ function ComposerTextarea({
   | 'placeholder'
   | 'rows'
   | 'runningRun'
+  | 'runtimeExecutionMode'
   | 'onBodyChange'
+  | 'onRuntimeExecutionModeChange'
 > & {
   onSubmitShortcut: (form: HTMLFormElement | null) => void;
 }) {
+  const [isFocused, setIsFocused] = useState(false);
+  const slashQuery = getSlashQuery(body);
+  const slashOptions =
+    slashQuery == null
+      ? []
+      : RUNTIME_MODE_OPTIONS.filter((option) =>
+          matchesSlashQuery(option, slashQuery),
+        );
+  const showSlashMenu = isFocused && slashOptions.length > 0;
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    if (showSlashMenu && slashOptions[0]) {
+      event.preventDefault();
+      onRuntimeExecutionModeChange(slashOptions[0].value);
+      onBodyChange(stripSlashCommand(slashOptions[0].command));
+      return;
+    }
     if (event.ctrlKey || event.altKey || event.shiftKey || runningRun) return;
     event.preventDefault();
     onSubmitShortcut(event.currentTarget.form);
   };
   return (
-    <textarea
-      value={body}
-      onChange={(event) => onBodyChange(event.target.value)}
-      onKeyDown={handleKeyDown}
-      placeholder={placeholder}
-      rows={rows}
-      disabled={disabled || busy}
-      className="min-w-0 resize-none rounded-lg border border-border-color bg-black/35 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
-    />
+    <div className="relative min-w-0">
+      <textarea
+        value={body}
+        onChange={(event) => {
+          const value = event.target.value;
+          if (
+            !applyTypedSlashCommand(
+              value,
+              onBodyChange,
+              onRuntimeExecutionModeChange,
+            )
+          )
+            onBodyChange(value);
+        }}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => {
+          window.setTimeout(() => setIsFocused(false), 120);
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        rows={rows}
+        disabled={disabled || busy}
+        className="block w-full min-w-0 resize-none rounded-lg border border-border-color bg-black/35 px-3 pt-2 pr-16 pb-7 text-sm outline-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
+      />
+      {showSlashMenu && (
+        <SlashModeMenu
+          body={body}
+          options={slashOptions}
+          onBodyChange={onBodyChange}
+          onRuntimeExecutionModeChange={onRuntimeExecutionModeChange}
+        />
+      )}
+      <div className="pointer-events-none absolute right-2 bottom-2 rounded-md border border-border-color bg-black/35 px-2 py-0.5 text-[11px] text-text-muted">
+        {getRuntimeModeLabel(runtimeExecutionMode)}
+      </div>
+    </div>
   );
 }
 
-function ExecutionModeSelect({
+function AutomaticModeCheckbox({
   busy,
   disabled,
   executionMode,
@@ -195,20 +352,17 @@ function ExecutionModeSelect({
   'busy' | 'disabled' | 'executionMode' | 'onExecutionModeChange'
 >) {
   return (
-    <label className="min-w-0 shrink text-xs text-text-muted">
-      <span className="sr-only">执行模式</span>
-      <select
-        value={executionMode}
+    <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border-color bg-black/25 px-3 text-sm text-text-secondary">
+      <input
+        type="checkbox"
+        checked={executionMode === 'autonomous'}
         disabled={disabled || busy}
         onChange={(event) => {
-          const value = event.target.value;
-          if (isTaskExecutionMode(value)) onExecutionModeChange(value);
+          onExecutionModeChange(event.target.checked ? 'autonomous' : 'manual');
         }}
-        className="h-9 max-w-[132px] rounded-lg border border-border-color bg-black/25 px-3 text-sm text-text-primary outline-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
-      >
-        <option value="manual">人工确认</option>
-        <option value="autonomous">全自动</option>
-      </select>
+        className="h-4 w-4 accent-brand disabled:opacity-50"
+      />
+      <span>自动模式</span>
     </label>
   );
 }
@@ -255,7 +409,7 @@ function ComposerActionRow({
         maxCount={controls.maxCount}
         openPicker={controls.openPicker}
       />
-      <ExecutionModeSelect {...props} />
+      <AutomaticModeCheckbox {...props} />
       <div className="min-w-0 flex-1" />
       <SubmitIconButton {...props} />
     </div>

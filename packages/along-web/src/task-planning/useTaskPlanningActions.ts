@@ -45,6 +45,7 @@ function useSelectionActions(input: UseTaskPlanningActionsInput) {
     input.setMessageBody('');
     input.setMessageAttachments([]);
     input.setMessageExecutionMode(snapshot.task.executionMode);
+    input.setMessageRuntimeExecutionMode('auto');
   };
   return { selectTask };
 }
@@ -113,6 +114,7 @@ function postTaskMessage(
     body,
     autoRun: true,
     executionMode: input.messageExecutionMode,
+    runtimeExecutionMode: input.messageRuntimeExecutionMode,
   };
   return input.messageAttachments.length > 0
     ? postSelectedMultipart<SubmitTaskMessageResponse>(

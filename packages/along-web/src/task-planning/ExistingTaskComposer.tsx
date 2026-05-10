@@ -3,6 +3,7 @@ import type {
   TaskExecutionMode,
   TaskFlowAction,
   TaskPlanningSnapshot,
+  TaskRuntimeExecutionMode,
 } from '../types';
 import { TaskComposerInput } from './TaskComposerInput';
 
@@ -43,16 +44,30 @@ function getLatestRunningRun(
   );
 }
 
+function isSubmitDisabled(input: {
+  busyAction: string | null;
+  canSubmitMessage: boolean;
+  hasDraft: boolean;
+  runningRun: TaskAgentRunRecord | null;
+}) {
+  return input.runningRun
+    ? input.busyAction === 'cancel-agent'
+    : !input.canSubmitMessage || !input.hasDraft || Boolean(input.busyAction);
+}
+
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: composer wiring stays explicit for prop flow readability.
 export function ExistingTaskComposer({
   snapshot,
   flow,
   messageBody,
   attachments,
   executionMode,
+  runtimeExecutionMode,
   busyAction,
   onMessageChange,
   onAttachmentsChange,
   onExecutionModeChange,
+  onRuntimeExecutionModeChange,
   onSubmitMessage,
   onCancelAgentRun,
 }: {
@@ -61,10 +76,12 @@ export function ExistingTaskComposer({
   messageBody: string;
   attachments: File[];
   executionMode: TaskExecutionMode;
+  runtimeExecutionMode: TaskRuntimeExecutionMode;
   busyAction: string | null;
   onMessageChange: (value: string) => void;
   onAttachmentsChange: (files: File[]) => void;
   onExecutionModeChange: (value: TaskExecutionMode) => void;
+  onRuntimeExecutionModeChange: (value: TaskRuntimeExecutionMode) => void;
   onSubmitMessage: () => void;
   onCancelAgentRun: (runId?: string) => void;
 }) {
@@ -81,17 +98,20 @@ export function ExistingTaskComposer({
       busy={busyAction === 'message'}
       disabled={!canSubmitMessage && !runningRun}
       executionMode={executionMode}
+      runtimeExecutionMode={runtimeExecutionMode}
       placeholder="补充反馈、继续提问或说明交付后的修改要求"
       runningRun={runningRun}
-      submitDisabled={
-        runningRun
-          ? busyAction === 'cancel-agent'
-          : !canSubmitMessage || !hasDraft || Boolean(busyAction)
-      }
+      submitDisabled={isSubmitDisabled({
+        busyAction,
+        canSubmitMessage,
+        hasDraft,
+        runningRun,
+      })}
       submitTitle={submitAction?.description || submitAction?.label || '发送'}
       onAttachmentsChange={onAttachmentsChange}
       onBodyChange={onMessageChange}
       onExecutionModeChange={onExecutionModeChange}
+      onRuntimeExecutionModeChange={onRuntimeExecutionModeChange}
       onCancelAgentRun={onCancelAgentRun}
       onSubmit={(event) => {
         event.preventDefault();

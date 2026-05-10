@@ -34,6 +34,8 @@ export type TaskStatus =
 
 export type TaskExecutionMode = 'manual' | 'autonomous';
 
+export type TaskRuntimeExecutionMode = 'auto' | 'ask' | 'plan' | 'build';
+
 export type TaskThreadStatus =
   | 'active'
   | 'waiting_user'

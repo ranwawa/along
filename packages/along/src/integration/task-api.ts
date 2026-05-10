@@ -1,5 +1,8 @@
 // biome-ignore-all lint/style/noMagicNumbers: API router uses HTTP status literals.
-import type { TaskPlanningSnapshot } from '../domain/task-planning';
+import type {
+  TaskPlanningSnapshot,
+  TaskRuntimeExecutionMode,
+} from '../domain/task-planning';
 import {
   handleTaskApproveRequest,
   handleTaskAttachmentRequest,
@@ -24,6 +27,7 @@ export interface ScheduledTaskPlanningRun {
   agentId?: string;
   modelId?: string;
   personalityVersion?: string;
+  runtimeExecutionMode?: TaskRuntimeExecutionMode;
 }
 
 export interface ScheduledTaskImplementationRun {

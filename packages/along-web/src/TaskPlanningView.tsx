@@ -105,6 +105,7 @@ function TaskPlanningMain({
         messageBody={taskPlanning.messageBody}
         messageAttachments={taskPlanning.messageAttachments}
         messageExecutionMode={taskPlanning.messageExecutionMode}
+        messageRuntimeExecutionMode={taskPlanning.messageRuntimeExecutionMode}
         busyAction={taskPlanning.busyAction}
         onDraftChange={taskPlanning.updateDraft}
         onDraftAttachmentsChange={(attachments) =>
@@ -114,6 +115,9 @@ function TaskPlanningMain({
         onMessageChange={taskPlanning.setMessageBody}
         onMessageAttachmentsChange={taskPlanning.setMessageAttachments}
         onMessageExecutionModeChange={taskPlanning.setMessageExecutionMode}
+        onMessageRuntimeExecutionModeChange={
+          taskPlanning.setMessageRuntimeExecutionMode
+        }
         onSubmitMessage={taskPlanning.submitMessageFromFlow}
         onCancelAgentRun={taskPlanning.cancelAgentRun}
         onAction={taskPlanning.handleFlowAction}
