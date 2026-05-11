@@ -11,7 +11,13 @@ import { RuntimeService } from './runtime-service';
 
 function createRegistry(): RegistryConfig {
   return {
-    providers: [{ id: 'openai', kind: 'openai-compatible' }],
+    providers: [
+      {
+        id: 'openai',
+        kind: 'openai-compatible',
+        baseUrl: 'https://api.openai.com/v1',
+      },
+    ],
     credentials: [{ id: 'token', providerId: 'openai', token: 'secret' }],
     models: [
       {
@@ -37,7 +43,7 @@ describe('runtime-service', () => {
           taskId: 'task-1',
           threadId: 'thread-1',
           agentId: 'planner',
-          provider: 'codex',
+          runtimeId: 'codex',
           status: 'succeeded',
           inputArtifactIds: [],
           outputArtifactIds: [],
@@ -67,6 +73,8 @@ describe('runtime-service', () => {
     expect(runCodexAgentTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: 'planner',
+        apiKey: 'secret',
+        baseUrl: 'https://api.openai.com/v1',
         model: 'gpt-5.2',
       }),
     );

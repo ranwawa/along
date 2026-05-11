@@ -61,7 +61,7 @@ function makeSnapshot(
           taskId: 'task-1',
           threadId: 'thread-1',
           agentId: 'implementer',
-          provider: 'codex',
+          runtimeId: 'codex',
           status: 'failed',
           inputArtifactIds: [],
           outputArtifactIds: [],

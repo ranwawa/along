@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Result } from '../core/result';
 
+const TASK_SEQUENCE = 42;
+
 const planningMocks = vi.hoisted(() => ({
   createTaskAgentRun: vi.fn(),
   finishTaskAgentRun: vi.fn(),
@@ -146,7 +148,7 @@ describe('task-delivery', () => {
         taskId: 'task_123456789abc',
         threadId: 'thread-1',
         agentId: 'delivery',
-        provider: 'system',
+        runtimeId: 'system',
         status: mockTaskConstants.AGENT_RUN_STATUS.RUNNING,
         inputArtifactIds: ['art-plan'],
         outputArtifactIds: [],
@@ -160,7 +162,7 @@ describe('task-delivery', () => {
         taskId: 'task_123456789abc',
         threadId: 'thread-1',
         agentId: 'delivery',
-        provider: 'system',
+        runtimeId: 'system',
         status: 'succeeded',
         inputArtifactIds: ['art-plan'],
         outputArtifactIds: [],
@@ -227,7 +229,7 @@ describe('task-delivery', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
-    expect(result.data.prNumber).toBe(42);
+    expect(result.data.prNumber).toBe(TASK_SEQUENCE);
     expect(planningMocks.updateTaskDelivery).toHaveBeenNthCalledWith(1, {
       taskId: 'task_123456789abc',
       branchName: expect.stringMatching(/^fix\/.*-42/),

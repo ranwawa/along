@@ -12,6 +12,8 @@ export interface RunCodexRuntimeTurnInput {
   prompt: string;
   cwd: string;
   model?: string;
+  baseUrl?: string;
+  apiKey?: string;
   personalityVersion?: string;
   inputArtifactIds?: string[];
   outputMetadata?: Record<string, unknown>;

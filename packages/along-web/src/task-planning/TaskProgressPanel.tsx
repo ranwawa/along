@@ -18,6 +18,7 @@ const STALE_PROGRESS_MS =
   STALE_PROGRESS_MINUTES * SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND;
 const TEXT_PROGRESS_TITLE = '实时进展';
 const TEXT_ORCHESTRATION_STATE = 'Along 编排状态';
+const TEXT_RUNTIME_LABEL = 'Runtime';
 
 function formatCount(count: number): string {
   return `${count} 条`;
@@ -25,6 +26,19 @@ function formatCount(count: number): string {
 
 function formatHiddenProgressCount(count: number): string {
   return `已折叠较早 ${count} 条进展。`;
+}
+
+function getRuntimeLabel(runtimeId: string): string {
+  return runtimeId || '-';
+}
+
+function formatRuntimeAgentLabel(input: {
+  runtimeId: string;
+  agentId: string;
+}): string {
+  return `${TEXT_RUNTIME_LABEL}: ${getRuntimeLabel(input.runtimeId)} / ${
+    input.agentId
+  }`;
 }
 
 function sortProgressEvents(events: TaskAgentProgressEventRecord[]) {
@@ -118,7 +132,10 @@ function ProgressEventItem({
           </span>
         </div>
         <div className="mt-1 text-xs text-text-muted">
-          {event.provider} / {event.agentId}
+          {formatRuntimeAgentLabel({
+            runtimeId: event.runtimeId,
+            agentId: event.agentId,
+          })}
         </div>
         {event.detail && (
           <div className="mt-2 text-xs leading-5 text-text-secondary whitespace-pre-wrap break-words">

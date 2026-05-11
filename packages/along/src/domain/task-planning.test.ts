@@ -112,7 +112,7 @@ const mockDbState = vi.hoisted(() => {
               (row) =>
                 row.thread_id === args[0] &&
                 row.agent_id === args[1] &&
-                row.provider === args[2],
+                row.runtime_id === args[2],
             ) || null
           );
         }
@@ -147,7 +147,7 @@ const mockDbState = vi.hoisted(() => {
           );
         }
         if (
-          normalized.includes('SELECT provider_session_id_at_end') &&
+          normalized.includes('SELECT runtime_session_id_at_end') &&
           normalized.includes('FROM task_agent_runs')
         ) {
           return (
@@ -157,8 +157,8 @@ const mockDbState = vi.hoisted(() => {
                   (row.thread_id === args[0] ||
                     (args[1] !== null && row.task_id === args[2])) &&
                   row.agent_id === args[3] &&
-                  row.provider === args[4] &&
-                  row.provider_session_id_at_end,
+                  row.runtime_id === args[4] &&
+                  row.runtime_session_id_at_end,
               )
               .sort((left, right) =>
                 String(right.ended_at || right.started_at).localeCompare(
@@ -694,8 +694,8 @@ const mockDbState = vi.hoisted(() => {
           const [
             threadId,
             agentId,
-            provider,
-            providerSessionId,
+            runtimeId,
+            runtimeSessionId,
             cwd,
             model,
             personalityVersion,
@@ -704,8 +704,8 @@ const mockDbState = vi.hoisted(() => {
           state.bindings.push({
             thread_id: threadId,
             agent_id: agentId,
-            provider,
-            provider_session_id: providerSessionId,
+            runtime_id: runtimeId,
+            runtime_session_id: runtimeSessionId,
             cwd,
             model,
             personality_version: personalityVersion,
@@ -719,26 +719,26 @@ const mockDbState = vi.hoisted(() => {
             cwd,
             model,
             personalityVersion,
-            shouldResetProviderSession,
-            fallbackProviderSession,
+            shouldResetRuntimeSession,
+            fallbackRuntimeSession,
             updatedAt,
             threadId,
             agentId,
-            provider,
+            runtimeId,
           ] = args;
           const row = state.bindings.find(
             (item) =>
               item.thread_id === threadId &&
               item.agent_id === agentId &&
-              item.provider === provider,
+              item.runtime_id === runtimeId,
           );
           if (row) {
             row.cwd = cwd || row.cwd;
             row.model = model || row.model;
             row.personality_version =
               personalityVersion || row.personality_version;
-            if (shouldResetProviderSession) row.provider_session_id = null;
-            else row.provider_session_id ||= fallbackProviderSession;
+            if (shouldResetRuntimeSession) row.runtime_session_id = null;
+            else row.runtime_session_id ||= fallbackRuntimeSession;
             row.updated_at = updatedAt;
           }
           return { changes: row ? 1 : 0 };
@@ -746,18 +746,18 @@ const mockDbState = vi.hoisted(() => {
 
         if (
           normalized.includes(
-            'UPDATE task_agent_bindings SET provider_session_id = ?',
+            'UPDATE task_agent_bindings SET runtime_session_id = ?',
           )
         ) {
-          const [sessionId, updatedAt, threadId, agentId, provider] = args;
+          const [sessionId, updatedAt, threadId, agentId, runtimeId] = args;
           const row = state.bindings.find(
             (item) =>
               item.thread_id === threadId &&
               item.agent_id === agentId &&
-              item.provider === provider,
+              item.runtime_id === runtimeId,
           );
           if (row) {
-            row.provider_session_id = sessionId;
+            row.runtime_session_id = sessionId;
             row.updated_at = updatedAt;
           }
           return { changes: row ? 1 : 0 };
@@ -769,7 +769,7 @@ const mockDbState = vi.hoisted(() => {
             taskId,
             threadId,
             agentId,
-            provider,
+            runtimeId,
             sessionAtStart,
             status,
             inputIds,
@@ -780,9 +780,9 @@ const mockDbState = vi.hoisted(() => {
             task_id: taskId,
             thread_id: threadId,
             agent_id: agentId,
-            provider,
-            provider_session_id_at_start: sessionAtStart,
-            provider_session_id_at_end: null,
+            runtime_id: runtimeId,
+            runtime_session_id_at_start: sessionAtStart,
+            runtime_session_id_at_end: null,
             status,
             input_artifact_ids: inputIds,
             output_artifact_ids: '[]',
@@ -813,7 +813,7 @@ const mockDbState = vi.hoisted(() => {
           const row = state.runs.find((item) => item.run_id === runId);
           if (row) {
             row.status = status;
-            row.provider_session_id_at_end = endSessionId;
+            row.runtime_session_id_at_end = endSessionId;
             row.output_artifact_ids = outputIds;
             row.error = error;
             row.ended_at = endedAt;
@@ -828,7 +828,7 @@ const mockDbState = vi.hoisted(() => {
             taskId,
             threadId,
             agentId,
-            provider,
+            runtimeId,
             phase,
             summary,
             detail,
@@ -840,7 +840,7 @@ const mockDbState = vi.hoisted(() => {
             task_id: taskId,
             thread_id: threadId,
             agent_id: agentId,
-            provider,
+            runtime_id: runtimeId,
             phase,
             summary,
             detail,
@@ -856,7 +856,7 @@ const mockDbState = vi.hoisted(() => {
             taskId,
             threadId,
             agentId,
-            provider,
+            runtimeId,
             source,
             kind,
             content,
@@ -869,7 +869,7 @@ const mockDbState = vi.hoisted(() => {
             task_id: taskId,
             thread_id: threadId,
             agent_id: agentId,
-            provider,
+            runtime_id: runtimeId,
             source,
             kind,
             content,
@@ -924,7 +924,7 @@ import {
   TASK_STATUS,
   type TaskStatus,
   THREAD_STATUS,
-  updateTaskAgentProviderSession,
+  updateTaskAgentRuntimeSession,
   updateTaskDelivery,
   updateTaskStatus,
   updateTaskWorkflowState,
@@ -1293,7 +1293,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
 
@@ -1321,7 +1321,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
 
@@ -1376,7 +1376,7 @@ describe('task-planning', () => {
         taskId,
         threadId: closed.success ? closed.data.thread.threadId : 'thread',
         agentId: 'implementer',
-        provider: 'codex',
+        runtimeId: 'codex',
       }).success,
     ).toBe(false);
 
@@ -1430,14 +1430,14 @@ describe('task-planning', () => {
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       cwd: '/tmp/project',
     });
     expect(binding.success).toBe(true);
     if (!binding.success) throw new Error(binding.error);
-    expect(binding.data.providerSessionId).toBeUndefined();
+    expect(binding.data.runtimeSessionId).toBeUndefined();
 
-    const update = updateTaskAgentProviderSession(
+    const update = updateTaskAgentRuntimeSession(
       snapshot.data.thread.threadId,
       'planner',
       'codex',
@@ -1448,11 +1448,11 @@ describe('task-planning', () => {
     const nextBinding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(nextBinding.success).toBe(true);
     if (!nextBinding.success) throw new Error(nextBinding.error);
-    expect(nextBinding.data.providerSessionId).toBe('session-1');
+    expect(nextBinding.data.runtimeSessionId).toBe('session-1');
   });
 
   it('当 Binding 缺少 session 但失败 run 有结束 session 时，期望下次绑定可恢复该 session', () => {
@@ -1465,18 +1465,18 @@ describe('task-planning', () => {
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'implementer',
-      provider: 'codex',
+      runtimeId: 'codex',
       cwd: '/tmp/project',
     });
     expect(binding.success).toBe(true);
     if (!binding.success) throw new Error(binding.error);
-    expect(binding.data.providerSessionId).toBeUndefined();
+    expect(binding.data.runtimeSessionId).toBeUndefined();
 
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'implementer',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
     if (!run.success) throw new Error(run.error);
@@ -1484,7 +1484,7 @@ describe('task-planning', () => {
     const failed = finishTaskAgentRun({
       runId: run.data.runId,
       status: AGENT_RUN_STATUS.FAILED,
-      providerSessionIdAtEnd: 'codex-thread-failed',
+      runtimeSessionIdAtEnd: 'codex-thread-failed',
       error: 'Codex failed',
     });
     expect(failed.success).toBe(true);
@@ -1492,12 +1492,12 @@ describe('task-planning', () => {
     const nextBinding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'implementer',
-      provider: 'codex',
+      runtimeId: 'codex',
       cwd: '/tmp/project',
     });
     expect(nextBinding.success).toBe(true);
     if (!nextBinding.success) throw new Error(nextBinding.error);
-    expect(nextBinding.data.providerSessionId).toBe('codex-thread-failed');
+    expect(nextBinding.data.runtimeSessionId).toBe('codex-thread-failed');
   });
 
   it('当同一 Task 切到新的 planning thread 时，期望继承历史 Codex session', () => {
@@ -1511,7 +1511,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
     if (!run.success) throw new Error(run.error);
@@ -1519,7 +1519,7 @@ describe('task-planning', () => {
     const finished = finishTaskAgentRun({
       runId: run.data.runId,
       status: AGENT_RUN_STATUS.SUCCEEDED,
-      providerSessionIdAtEnd: 'codex-thread-task-latest',
+      runtimeSessionIdAtEnd: 'codex-thread-task-latest',
     });
     expect(finished.success).toBe(true);
 
@@ -1527,12 +1527,12 @@ describe('task-planning', () => {
       taskId,
       threadId: 'thread-fork',
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       cwd: '/tmp/project',
     });
     expect(nextBinding.success).toBe(true);
     if (!nextBinding.success) throw new Error(nextBinding.error);
-    expect(nextBinding.data.providerSessionId).toBe('codex-thread-task-latest');
+    expect(nextBinding.data.runtimeSessionId).toBe('codex-thread-task-latest');
   });
 
   it('当 Agent Binding 的 cwd 变化时，期望清空旧 Codex session', () => {
@@ -1545,12 +1545,12 @@ describe('task-planning', () => {
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       cwd: '/tmp/project-a',
     });
     expect(binding.success).toBe(true);
 
-    const update = updateTaskAgentProviderSession(
+    const update = updateTaskAgentRuntimeSession(
       snapshot.data.thread.threadId,
       'planner',
       'codex',
@@ -1561,12 +1561,12 @@ describe('task-planning', () => {
     const changed = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       cwd: '/tmp/project-b',
     });
     expect(changed.success).toBe(true);
     if (!changed.success) throw new Error(changed.error);
-    expect(changed.data.providerSessionId).toBeUndefined();
+    expect(changed.data.runtimeSessionId).toBeUndefined();
 
     const stored = readTaskAgentBinding(
       snapshot.data.thread.threadId,
@@ -1576,7 +1576,7 @@ describe('task-planning', () => {
     expect(stored.success).toBe(true);
     if (!stored.success) throw new Error(stored.error);
     expect(stored.data?.cwd).toBe('/tmp/project-b');
-    expect(stored.data?.providerSessionId).toBeUndefined();
+    expect(stored.data?.runtimeSessionId).toBeUndefined();
   });
 
   it('当记录 Agent Run 时，期望能保存开始和结束的 Codex session', () => {
@@ -1590,8 +1590,8 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
-      providerSessionIdAtStart: 'session-1',
+      runtimeId: 'codex',
+      runtimeSessionIdAtStart: 'session-1',
       inputArtifactIds: ['art-1'],
     });
     expect(run.success).toBe(true);
@@ -1601,13 +1601,13 @@ describe('task-planning', () => {
     const finished = finishTaskAgentRun({
       runId: run.data.runId,
       status: AGENT_RUN_STATUS.SUCCEEDED,
-      providerSessionIdAtEnd: 'session-2',
+      runtimeSessionIdAtEnd: 'session-2',
       outputArtifactIds: ['art-2'],
     });
     expect(finished.success).toBe(true);
     if (!finished.success) throw new Error(finished.error);
-    expect(finished.data.providerSessionIdAtStart).toBe('session-1');
-    expect(finished.data.providerSessionIdAtEnd).toBe('session-2');
+    expect(finished.data.runtimeSessionIdAtStart).toBe('session-1');
+    expect(finished.data.runtimeSessionIdAtEnd).toBe('session-2');
     expect(finished.data.outputArtifactIds).toEqual(['art-2']);
   });
 
@@ -1622,7 +1622,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
     if (!run.success) throw new Error(run.error);
@@ -1632,7 +1632,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       phase: TASK_AGENT_PROGRESS_PHASE.TOOL,
       summary: '正在执行工具或命令。',
       detail: '只保存用户可理解摘要。',
@@ -1649,7 +1649,7 @@ describe('task-planning', () => {
       expect.objectContaining({
         runId: run.data.runId,
         agentId: 'planner',
-        provider: 'codex',
+        runtimeId: 'codex',
         phase: 'tool',
         summary: '正在执行工具或命令。',
         detail: '只保存用户可理解摘要。',
@@ -1668,7 +1668,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
     if (!run.success) throw new Error(run.error);
@@ -1678,7 +1678,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       source: 'agent',
       kind: 'output',
       content: '执行中 TOKEN=secret-value',
@@ -1711,7 +1711,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       runId: 'run-1',
       body: '{"action":"plan_revision","body":"Plan"}',
     });
@@ -1741,7 +1741,7 @@ describe('task-planning', () => {
       taskId,
       threadId: snapshot.data.thread.threadId,
       agentId: 'implementer',
-      provider: 'codex',
+      runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
     if (!run.success) throw new Error(run.error);

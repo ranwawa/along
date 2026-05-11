@@ -92,32 +92,32 @@ export function completeTaskAgentCancellation(
 
 export function startTaskAgentRun(
   input: TaskAgentTurnInput,
-  provider: string,
+  runtimeId: string,
 ): Result<StartedTaskAgentRun> {
   const bindingRes = ensureTaskAgentBinding({
     taskId: input.taskId,
     threadId: input.threadId,
     agentId: input.agentId,
-    provider,
+    runtimeId,
     cwd: input.cwd,
     model: input.model,
     personalityVersion: input.personalityVersion,
   });
   if (!bindingRes.success) return bindingRes;
-  return createStartedRun(input, provider, bindingRes.data);
+  return createStartedRun(input, runtimeId, bindingRes.data);
 }
 
 function createStartedRun(
   input: TaskAgentTurnInput,
-  provider: string,
+  runtimeId: string,
   binding: TaskAgentBindingRecord,
 ): Result<StartedTaskAgentRun> {
   const runRes = createTaskAgentRun({
     taskId: input.taskId,
     threadId: input.threadId,
     agentId: input.agentId,
-    provider,
-    providerSessionIdAtStart: binding.providerSessionId,
+    runtimeId,
+    runtimeSessionIdAtStart: binding.runtimeSessionId,
     inputArtifactIds: input.inputArtifactIds,
   });
   if (!runRes.success) return runRes;
@@ -129,9 +129,9 @@ function createStartedRun(
       taskId: input.taskId,
       threadId: input.threadId,
       agentId: input.agentId,
-      provider,
+      runtimeId,
     },
-    usedResume: Boolean(binding.providerSessionId),
+    usedResume: Boolean(binding.runtimeSessionId),
   });
 }
 
@@ -152,7 +152,7 @@ export function startTaskAgentRunHeartbeat(
 export function markTaskAgentFailed(
   context: TaskAgentProgressContext,
   error: string,
-  providerSessionIdAtEnd?: string,
+  runtimeSessionIdAtEnd?: string,
   summary = 'Agent 运行失败，正在记录错误。',
 ): Result<void> {
   if (isTaskAgentRunCancelled(context.runId)) return success(undefined);
@@ -165,7 +165,7 @@ export function markTaskAgentFailed(
   const failedRun = finishTaskAgentRun({
     runId: context.runId,
     status: AGENT_RUN_STATUS.FAILED,
-    providerSessionIdAtEnd,
+    runtimeSessionIdAtEnd,
     error,
   });
   return failedRun.success ? success(undefined) : failure(failedRun.error);
@@ -173,10 +173,10 @@ export function markTaskAgentFailed(
 
 export function saveTaskAgentOutput(
   input: TaskAgentTurnInput,
-  provider: string,
+  runtimeId: string,
   assistantText: string,
   context: TaskAgentProgressContext,
-  providerSessionIdAtEnd?: string,
+  runtimeSessionIdAtEnd?: string,
 ): Result<string[]> {
   if (!assistantText) return success([]);
   if (isTaskAgentRunCancelled(context.runId)) {
@@ -191,24 +191,24 @@ export function saveTaskAgentOutput(
     taskId: input.taskId,
     threadId: input.threadId,
     agentId: input.agentId,
-    provider,
+    runtimeId,
     runId: context.runId,
     body: assistantText,
     metadata: input.outputMetadata,
   });
   if (artifactRes.success) return success([artifactRes.data.artifactId]);
-  return failOutputSave(context, artifactRes.error, providerSessionIdAtEnd);
+  return failOutputSave(context, artifactRes.error, runtimeSessionIdAtEnd);
 }
 
 function failOutputSave(
   context: TaskAgentProgressContext,
   error: string,
-  providerSessionIdAtEnd?: string,
+  runtimeSessionIdAtEnd?: string,
 ): Result<string[]> {
   const failedRes = markTaskAgentFailed(
     context,
     error,
-    providerSessionIdAtEnd,
+    runtimeSessionIdAtEnd,
     '保存 Agent 输出失败。',
   );
   return failedRes.success ? failure(error) : failure(failedRes.error);
@@ -217,7 +217,7 @@ function failOutputSave(
 export function finishTaskAgentSuccess(
   context: TaskAgentProgressContext,
   outputArtifactIds: string[],
-  providerSessionIdAtEnd?: string,
+  runtimeSessionIdAtEnd?: string,
 ): Result<TaskAgentRunRecord> {
   if (isTaskAgentRunCancelled(context.runId)) {
     const runRes = readTaskAgentRun(context.runId);
@@ -228,7 +228,7 @@ export function finishTaskAgentSuccess(
   const finishedRun = finishTaskAgentRun({
     runId: context.runId,
     status: AGENT_RUN_STATUS.SUCCEEDED,
-    providerSessionIdAtEnd,
+    runtimeSessionIdAtEnd,
     outputArtifactIds,
   });
   if (!finishedRun.success) return finishedRun;

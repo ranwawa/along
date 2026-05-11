@@ -62,7 +62,7 @@ function makeSnapshot(stage: TaskAgentStage): TaskPlanningSnapshot {
           taskId: 'task-1',
           threadId: 'thread-1',
           agentId: stage === 'implementation' ? 'implementer' : stage,
-          provider: stage === 'delivery' ? 'system' : 'codex',
+          runtimeId: stage === 'delivery' ? 'system' : 'codex',
           status: 'failed',
           inputArtifactIds: [],
           outputArtifactIds: [],

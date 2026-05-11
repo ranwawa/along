@@ -114,7 +114,7 @@ it('当旧 Task 未保存 cwd 时，期望手动重新规划复用 Agent Binding
     data: {
       threadId: 'thread-1',
       agentId: 'planner',
-      provider: 'codex',
+      runtimeId: 'codex',
       cwd: '/tmp/binding-repo',
       updatedAt: '2026-01-01T00:00:01.000Z',
     },

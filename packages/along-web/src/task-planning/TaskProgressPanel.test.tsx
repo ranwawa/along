@@ -71,7 +71,7 @@ function makeProgressEvent(
     taskId: 'task-1',
     threadId: 'thread-1',
     agentId: 'implementer',
-    provider: 'codex',
+    runtimeId: 'codex',
     phase: 'tool',
     summary: '正在执行命令。',
     createdAt: '2026-01-01T00:04:30.000Z',
@@ -128,7 +128,7 @@ describe('TaskProgressPanel session tail', () => {
             taskId: 'task-1',
             threadId: 'thread-1',
             agentId: 'implementer',
-            provider: 'codex',
+            runtimeId: 'codex',
             source: 'agent',
             kind: 'output',
             content: '正在修改 TaskProgressPanel。',
@@ -174,10 +174,10 @@ describe('TaskProgressPanel session tail', () => {
         ],
       }),
     );
-    expect(html).toContain('System / codex');
-    expect(html).toContain('Tool / codex');
-    expect(html).toContain('stdout / codex');
-    expect(html).toContain('stderr / codex');
+    expect(html).toContain('System / Runtime: codex');
+    expect(html).toContain('Tool / Runtime: codex');
+    expect(html).toContain('stdout / Runtime: codex');
+    expect(html).toContain('stderr / Runtime: codex');
     expect(html).toContain('command failed');
   });
 
@@ -216,7 +216,7 @@ function makeRunningRun(): TaskPlanningSnapshot['agentRuns'][number] {
     taskId: 'task-1',
     threadId: 'thread-1',
     agentId: 'implementer',
-    provider: 'codex',
+    runtimeId: 'codex',
     status: 'running',
     inputArtifactIds: [],
     outputArtifactIds: [],
@@ -233,7 +233,7 @@ function makeSessionEvent(
     taskId: 'task-1',
     threadId: 'thread-1',
     agentId: 'implementer',
-    provider: 'codex',
+    runtimeId: 'codex',
     source: 'agent',
     kind: 'output',
     content: '正在处理。',

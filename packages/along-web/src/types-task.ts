@@ -172,9 +172,9 @@ export interface TaskAgentRunRecord {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
-  providerSessionIdAtStart?: string;
-  providerSessionIdAtEnd?: string;
+  runtimeId: string;
+  runtimeSessionIdAtStart?: string;
+  runtimeSessionIdAtEnd?: string;
   status: TaskAgentRunStatus;
   inputArtifactIds: string[];
   outputArtifactIds: string[];
@@ -189,7 +189,7 @@ export interface TaskAgentProgressEventRecord {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
   phase: TaskAgentProgressPhase;
   summary: string;
   detail?: string;
@@ -215,7 +215,7 @@ export interface TaskAgentSessionEventRecord {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
   source: TaskAgentSessionEventSource;
   kind: TaskAgentSessionEventKind;
   content: string;

@@ -258,8 +258,8 @@ export interface TaskFeedbackRoundRecord {
 export interface TaskAgentBindingRecord {
   threadId: string;
   agentId: string;
-  provider: string;
-  providerSessionId?: string;
+  runtimeId: string;
+  runtimeSessionId?: string;
   cwd?: string;
   model?: string;
   personalityVersion?: string;
@@ -271,9 +271,9 @@ export interface TaskAgentRunRecord {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
-  providerSessionIdAtStart?: string;
-  providerSessionIdAtEnd?: string;
+  runtimeId: string;
+  runtimeSessionIdAtStart?: string;
+  runtimeSessionIdAtEnd?: string;
   status: AgentRunStatus;
   inputArtifactIds: string[];
   outputArtifactIds: string[];
@@ -288,7 +288,7 @@ export interface TaskAgentProgressEventRecord {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
   phase: TaskAgentProgressPhase;
   summary: string;
   detail?: string;
@@ -314,7 +314,7 @@ export interface TaskAgentSessionEventRecord {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
   source: TaskAgentSessionEventSource;
   kind: TaskAgentSessionEventKind;
   content: string;
@@ -481,7 +481,7 @@ export interface EnsureTaskAgentBindingInput {
   taskId?: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
   cwd?: string;
   model?: string;
   personalityVersion?: string;
@@ -491,15 +491,15 @@ export interface CreateTaskAgentRunInput {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
-  providerSessionIdAtStart?: string;
+  runtimeId: string;
+  runtimeSessionIdAtStart?: string;
   inputArtifactIds?: string[];
 }
 
 export interface FinishTaskAgentRunInput {
   runId: string;
   status: Exclude<AgentRunStatus, 'running'>;
-  providerSessionIdAtEnd?: string;
+  runtimeSessionIdAtEnd?: string;
   outputArtifactIds?: string[];
   error?: string;
 }
@@ -521,7 +521,7 @@ export interface RecordTaskAgentProgressInput {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
   phase: TaskAgentProgressPhase;
   summary: string;
   detail?: string;
@@ -532,7 +532,7 @@ export interface RecordTaskAgentSessionEventInput {
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
   source: TaskAgentSessionEventSource;
   kind: TaskAgentSessionEventKind;
   content: string;
@@ -557,7 +557,7 @@ export interface RecordTaskAgentResultInput {
   threadId: string;
   body: string;
   agentId?: string;
-  provider?: string;
+  runtimeId?: string;
   runId?: string;
   metadata?: Record<string, unknown>;
 }
@@ -652,8 +652,8 @@ interface TaskFeedbackRoundRow {
 interface TaskAgentBindingRow {
   thread_id: string;
   agent_id: string;
-  provider: string;
-  provider_session_id: string | null;
+  runtime_id: string;
+  runtime_session_id: string | null;
   cwd: string | null;
   model: string | null;
   personality_version: string | null;
@@ -665,9 +665,9 @@ interface TaskAgentRunRow {
   task_id: string;
   thread_id: string;
   agent_id: string;
-  provider: string;
-  provider_session_id_at_start: string | null;
-  provider_session_id_at_end: string | null;
+  runtime_id: string;
+  runtime_session_id_at_start: string | null;
+  runtime_session_id_at_end: string | null;
   status: AgentRunStatus;
   input_artifact_ids: string;
   output_artifact_ids: string;
@@ -682,7 +682,7 @@ interface TaskAgentProgressEventRow {
   task_id: string;
   thread_id: string;
   agent_id: string;
-  provider: string;
+  runtime_id: string;
   phase: TaskAgentProgressPhase;
   summary: string;
   detail: string | null;
@@ -695,7 +695,7 @@ interface TaskAgentSessionEventRow {
   task_id: string;
   thread_id: string;
   agent_id: string;
-  provider: string;
+  runtime_id: string;
   source: TaskAgentSessionEventSource;
   kind: TaskAgentSessionEventKind;
   content: string;
@@ -711,8 +711,8 @@ interface TableInfoRow {
   name: string;
 }
 
-interface LatestProviderSessionRow {
-  provider_session_id_at_end: string;
+interface LatestRuntimeSessionRow {
+  runtime_session_id_at_end: string;
 }
 
 function generateId(prefix: string): string {
@@ -915,8 +915,8 @@ function mapBinding(row: TaskAgentBindingRow): TaskAgentBindingRecord {
   return {
     threadId: row.thread_id,
     agentId: row.agent_id,
-    provider: row.provider,
-    providerSessionId: row.provider_session_id || undefined,
+    runtimeId: row.runtime_id,
+    runtimeSessionId: row.runtime_session_id || undefined,
     cwd: row.cwd || undefined,
     model: row.model || undefined,
     personalityVersion: row.personality_version || undefined,
@@ -930,9 +930,9 @@ function mapRun(row: TaskAgentRunRow): TaskAgentRunRecord {
     taskId: row.task_id,
     threadId: row.thread_id,
     agentId: row.agent_id,
-    provider: row.provider,
-    providerSessionIdAtStart: row.provider_session_id_at_start || undefined,
-    providerSessionIdAtEnd: row.provider_session_id_at_end || undefined,
+    runtimeId: row.runtime_id,
+    runtimeSessionIdAtStart: row.runtime_session_id_at_start || undefined,
+    runtimeSessionIdAtEnd: row.runtime_session_id_at_end || undefined,
     status: row.status,
     inputArtifactIds: parseStringArray(row.input_artifact_ids),
     outputArtifactIds: parseStringArray(row.output_artifact_ids),
@@ -951,7 +951,7 @@ function mapProgressEvent(
     taskId: row.task_id,
     threadId: row.thread_id,
     agentId: row.agent_id,
-    provider: row.provider,
+    runtimeId: row.runtime_id,
     phase: row.phase,
     summary: row.summary,
     detail: row.detail || undefined,
@@ -968,7 +968,7 @@ function mapSessionEvent(
     taskId: row.task_id,
     threadId: row.thread_id,
     agentId: row.agent_id,
-    provider: row.provider,
+    runtimeId: row.runtime_id,
     source: row.source,
     kind: row.kind,
     content: row.content,
@@ -1015,16 +1015,16 @@ function buildTaskAgentStages(
     const binding = bindings.find(
       (item) =>
         item.agentId === definition.agentId &&
-        (!latestRun || item.provider === latestRun.provider),
+        (!latestRun || item.runtimeId === latestRun.runtimeId),
     );
     const fallbackBinding = bindings.find(
       (item) => item.agentId === definition.agentId,
     );
-    const provider = latestRun?.provider || binding?.provider;
+    const runtimeId = latestRun?.runtimeId || binding?.runtimeId;
     const sessionId =
-      latestRun?.providerSessionIdAtEnd ||
-      binding?.providerSessionId ||
-      latestRun?.providerSessionIdAtStart;
+      latestRun?.runtimeSessionIdAtEnd ||
+      binding?.runtimeSessionId ||
+      latestRun?.runtimeSessionIdAtStart;
     const cwd =
       binding?.cwd ||
       fallbackBinding?.cwd ||
@@ -1036,7 +1036,7 @@ function buildTaskAgentStages(
       ...definition,
       status: latestRun?.status || 'idle',
       latestRun,
-      manualResume: buildManualResume(provider, cwd, sessionId),
+      manualResume: buildManualResume(runtimeId, cwd, sessionId),
     };
   });
 }
@@ -2131,7 +2131,7 @@ function buildTaskFlowEvents(input: {
       type: 'agent_run_started',
       stage,
       title: `${run.agentId} 开始运行`,
-      summary: `${run.provider} / ${run.runId}`,
+      summary: `${run.runtimeId} / ${run.runId}`,
       occurredAt: run.startedAt,
     });
     if (run.endedAt) {
@@ -2244,7 +2244,7 @@ function buildTaskFlowSnapshot(input: {
 }
 
 function buildManualResume(
-  provider?: string,
+  runtimeId?: string,
   cwd?: string,
   sessionId?: string,
 ): TaskAgentManualResume {
@@ -2256,7 +2256,7 @@ function buildManualResume(
   }
 
   const cdCommand = `cd ${shellQuote(cwd)}`;
-  if (provider === 'codex') {
+  if (runtimeId === 'codex') {
     return sessionId
       ? {
           available: true,
@@ -2276,8 +2276,8 @@ function buildManualResume(
     available: false,
     cwd,
     command: cdCommand,
-    reason: provider
-      ? `仅支持 Codex 会话恢复，当前记录为 ${provider}`
+    reason: runtimeId
+      ? `仅支持 Codex 会话恢复，当前 runtime 为 ${runtimeId}`
       : '暂无可恢复的 Codex 会话',
   };
 }
@@ -3373,7 +3373,7 @@ export function recordTaskAgentResult(
       body,
       metadata: {
         agentId: input.agentId || 'agent',
-        provider: input.provider || 'unknown',
+        runtimeId: input.runtimeId || 'unknown',
         runId: input.runId,
         ...(input.metadata || {}),
       },
@@ -3599,50 +3599,50 @@ export function ensureTaskAgentBinding(
       .prepare(
         `
           SELECT * FROM task_agent_bindings
-          WHERE thread_id = ? AND agent_id = ? AND provider = ?
+          WHERE thread_id = ? AND agent_id = ? AND runtime_id = ?
         `,
       )
       .get(
         input.threadId,
         input.agentId,
-        input.provider,
+        input.runtimeId,
       ) as TaskAgentBindingRow | null;
 
     if (!existing) {
-      const fallbackProviderSession = readLatestRunProviderSession({
+      const fallbackRuntimeSession = readLatestRunRuntimeSession({
         taskId: input.taskId,
         threadId: input.threadId,
         agentId: input.agentId,
-        provider: input.provider,
+        runtimeId: input.runtimeId,
       });
       db.prepare(
         `
           INSERT INTO task_agent_bindings (
-            thread_id, agent_id, provider, provider_session_id,
+            thread_id, agent_id, runtime_id, runtime_session_id,
             cwd, model, personality_version, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
       ).run(
         input.threadId,
         input.agentId,
-        input.provider,
-        fallbackProviderSession || null,
+        input.runtimeId,
+        fallbackRuntimeSession || null,
         input.cwd || null,
         input.model || null,
         input.personalityVersion || null,
         now,
       );
     } else {
-      const shouldResetProviderSession = Boolean(
+      const shouldResetRuntimeSession = Boolean(
         input.cwd && existing.cwd && input.cwd !== existing.cwd,
       );
-      const fallbackProviderSession = shouldResetProviderSession
+      const fallbackRuntimeSession = shouldResetRuntimeSession
         ? undefined
-        : readLatestRunProviderSession({
+        : readLatestRunRuntimeSession({
             taskId: input.taskId,
             threadId: input.threadId,
             agentId: input.agentId,
-            provider: input.provider,
+            runtimeId: input.runtimeId,
           });
       db.prepare(
         `
@@ -3650,23 +3650,23 @@ export function ensureTaskAgentBinding(
           SET cwd = COALESCE(?, cwd),
               model = COALESCE(?, model),
               personality_version = COALESCE(?, personality_version),
-              provider_session_id = CASE
+              runtime_session_id = CASE
                 WHEN ? THEN NULL
-                ELSE COALESCE(provider_session_id, ?)
+                ELSE COALESCE(runtime_session_id, ?)
               END,
               updated_at = ?
-          WHERE thread_id = ? AND agent_id = ? AND provider = ?
+          WHERE thread_id = ? AND agent_id = ? AND runtime_id = ?
         `,
       ).run(
         input.cwd || null,
         input.model || null,
         input.personalityVersion || null,
-        shouldResetProviderSession ? 1 : 0,
-        fallbackProviderSession || null,
+        shouldResetRuntimeSession ? 1 : 0,
+        fallbackRuntimeSession || null,
         now,
         input.threadId,
         input.agentId,
-        input.provider,
+        input.runtimeId,
       );
     }
 
@@ -3674,13 +3674,13 @@ export function ensureTaskAgentBinding(
       .prepare(
         `
           SELECT * FROM task_agent_bindings
-          WHERE thread_id = ? AND agent_id = ? AND provider = ?
+          WHERE thread_id = ? AND agent_id = ? AND runtime_id = ?
         `,
       )
       .get(
         input.threadId,
         input.agentId,
-        input.provider,
+        input.runtimeId,
       ) as TaskAgentBindingRow | null;
 
     return row
@@ -3692,23 +3692,23 @@ export function ensureTaskAgentBinding(
   }
 }
 
-function readLatestRunProviderSession(input: {
+function readLatestRunRuntimeSession(input: {
   taskId?: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
 }): string | undefined {
   const dbRes = getDb();
   if (!dbRes.success) return undefined;
   const row = dbRes.data
     .prepare(
       `
-        SELECT provider_session_id_at_end
+        SELECT runtime_session_id_at_end
         FROM task_agent_runs
         WHERE (thread_id = ? OR (? IS NOT NULL AND task_id = ?))
           AND agent_id = ?
-          AND provider = ?
-          AND provider_session_id_at_end IS NOT NULL
+          AND runtime_id = ?
+          AND runtime_session_id_at_end IS NOT NULL
         ORDER BY COALESCE(ended_at, started_at) DESC
         LIMIT 1
       `,
@@ -3718,9 +3718,9 @@ function readLatestRunProviderSession(input: {
       input.taskId || null,
       input.taskId || null,
       input.agentId,
-      input.provider,
-    ) as LatestProviderSessionRow | null;
-  return row?.provider_session_id_at_end || undefined;
+      input.runtimeId,
+    ) as LatestRuntimeSessionRow | null;
+  return row?.runtime_session_id_at_end || undefined;
 }
 
 export function updateTaskStatus(
@@ -3905,7 +3905,7 @@ export function completeTaskAgentStageManually(
     taskId: input.taskId,
     threadId: snapshot.thread.threadId,
     agentId: stageDefinition.agentId,
-    provider: 'manual',
+    runtimeId: 'manual',
     inputArtifactIds: snapshot.artifacts.map((artifact) => artifact.artifactId),
   });
   if (!runRes.success) return runRes;
@@ -3955,7 +3955,7 @@ export function completeTaskAgentStageManually(
     taskId: input.taskId,
     threadId: snapshot.thread.threadId,
     agentId: stageDefinition.agentId,
-    provider: 'manual',
+    runtimeId: 'manual',
     runId: run.runId,
     body,
   });
@@ -3980,7 +3980,7 @@ export function completeTaskAgentStageManually(
 export function readTaskAgentBinding(
   threadId: string,
   agentId: string,
-  provider: string,
+  runtimeId: string,
 ): Result<TaskAgentBindingRecord | null> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -3990,10 +3990,10 @@ export function readTaskAgentBinding(
       .prepare(
         `
           SELECT * FROM task_agent_bindings
-          WHERE thread_id = ? AND agent_id = ? AND provider = ?
+          WHERE thread_id = ? AND agent_id = ? AND runtime_id = ?
         `,
       )
-      .get(threadId, agentId, provider) as TaskAgentBindingRow | null;
+      .get(threadId, agentId, runtimeId) as TaskAgentBindingRow | null;
     return success(row ? mapBinding(row) : null);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -4001,11 +4001,11 @@ export function readTaskAgentBinding(
   }
 }
 
-export function updateTaskAgentProviderSession(
+export function updateTaskAgentRuntimeSession(
   threadId: string,
   agentId: string,
-  provider: string,
-  providerSessionId: string,
+  runtimeId: string,
+  runtimeSessionId: string,
 ): Result<void> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -4015,11 +4015,11 @@ export function updateTaskAgentProviderSession(
       .prepare(
         `
           UPDATE task_agent_bindings
-          SET provider_session_id = ?, updated_at = ?
-          WHERE thread_id = ? AND agent_id = ? AND provider = ?
+          SET runtime_session_id = ?, updated_at = ?
+          WHERE thread_id = ? AND agent_id = ? AND runtime_id = ?
         `,
       )
-      .run(providerSessionId, iso_timestamp(), threadId, agentId, provider);
+      .run(runtimeSessionId, iso_timestamp(), threadId, agentId, runtimeId);
     return success(undefined);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -4043,7 +4043,7 @@ export function recordTaskAgentProgress(
       .prepare(
         `
           INSERT INTO task_agent_progress_events (
-            progress_id, run_id, task_id, thread_id, agent_id, provider,
+            progress_id, run_id, task_id, thread_id, agent_id, runtime_id,
             phase, summary, detail, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
@@ -4054,7 +4054,7 @@ export function recordTaskAgentProgress(
         input.taskId,
         input.threadId,
         input.agentId,
-        input.provider,
+        input.runtimeId,
         input.phase,
         summary,
         detail || null,
@@ -4067,7 +4067,7 @@ export function recordTaskAgentProgress(
       taskId: input.taskId,
       threadId: input.threadId,
       agentId: input.agentId,
-      provider: input.provider,
+      runtimeId: input.runtimeId,
       phase: input.phase,
       summary,
       detail: detail || undefined,
@@ -4094,7 +4094,7 @@ export function recordTaskAgentSessionEvent(
       .prepare(
         `
           INSERT INTO task_agent_session_events (
-            event_id, run_id, task_id, thread_id, agent_id, provider,
+            event_id, run_id, task_id, thread_id, agent_id, runtime_id,
             source, kind, content, metadata, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
@@ -4105,7 +4105,7 @@ export function recordTaskAgentSessionEvent(
         input.taskId,
         input.threadId,
         input.agentId,
-        input.provider,
+        input.runtimeId,
         input.source,
         input.kind,
         content,
@@ -4119,7 +4119,7 @@ export function recordTaskAgentSessionEvent(
       taskId: input.taskId,
       threadId: input.threadId,
       agentId: input.agentId,
-      provider: input.provider,
+      runtimeId: input.runtimeId,
       source: input.source,
       kind: input.kind,
       content,
@@ -4155,8 +4155,8 @@ export function createTaskAgentRun(
       .prepare(
         `
           INSERT INTO task_agent_runs (
-            run_id, task_id, thread_id, agent_id, provider,
-            provider_session_id_at_start, status, input_artifact_ids, started_at
+            run_id, task_id, thread_id, agent_id, runtime_id,
+            runtime_session_id_at_start, status, input_artifact_ids, started_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
@@ -4165,8 +4165,8 @@ export function createTaskAgentRun(
         input.taskId,
         input.threadId,
         input.agentId,
-        input.provider,
-        input.providerSessionIdAtStart || null,
+        input.runtimeId,
+        input.runtimeSessionIdAtStart || null,
         AGENT_RUN_STATUS.RUNNING,
         JSON.stringify(inputArtifactIds),
         now,
@@ -4177,8 +4177,8 @@ export function createTaskAgentRun(
       taskId: input.taskId,
       threadId: input.threadId,
       agentId: input.agentId,
-      provider: input.provider,
-      providerSessionIdAtStart: input.providerSessionIdAtStart,
+      runtimeId: input.runtimeId,
+      runtimeSessionIdAtStart: input.runtimeSessionIdAtStart,
       status: AGENT_RUN_STATUS.RUNNING,
       inputArtifactIds,
       outputArtifactIds: [],
@@ -4254,7 +4254,7 @@ function recordTaskAgentCancelledProgress(
     taskId: run.taskId,
     threadId: run.threadId,
     agentId: run.agentId,
-    provider: run.provider,
+    runtimeId: run.runtimeId,
     phase: TASK_AGENT_PROGRESS_PHASE.CANCELLED,
     summary,
     detail,
@@ -4266,7 +4266,7 @@ function recordTaskAgentCancelledProgress(
     taskId: run.taskId,
     threadId: run.threadId,
     agentId: run.agentId,
-    provider: run.provider,
+    runtimeId: run.runtimeId,
     source: 'system',
     kind: 'progress',
     content: detail ? `${summary}\n${detail}` : summary,
@@ -4325,7 +4325,7 @@ export function finishTaskAgentRun(
         `
           UPDATE task_agent_runs
           SET status = ?,
-              provider_session_id_at_end = ?,
+              runtime_session_id_at_end = ?,
               output_artifact_ids = ?,
               error = ?,
               ended_at = ?
@@ -4334,7 +4334,7 @@ export function finishTaskAgentRun(
       )
       .run(
         input.status,
-        input.providerSessionIdAtEnd || null,
+        input.runtimeSessionIdAtEnd || null,
         JSON.stringify(input.outputArtifactIds || []),
         input.error || null,
         endedAt,
@@ -4375,9 +4375,9 @@ export function recoverInterruptedTaskAgentRuns(
       const finishRes = finishTaskAgentRun({
         runId: String(row.run_id),
         status: AGENT_RUN_STATUS.FAILED,
-        providerSessionIdAtEnd:
-          typeof row.provider_session_id_at_end === 'string'
-            ? row.provider_session_id_at_end
+        runtimeSessionIdAtEnd:
+          typeof row.runtime_session_id_at_end === 'string'
+            ? row.runtime_session_id_at_end
             : undefined,
         error: reason,
       });

@@ -76,6 +76,8 @@ export async function runAgentTurn(
   return runCodexAgentTurn({
     ...input,
     model: runtimeRes.data.model,
+    baseUrl: runtimeRes.data.baseUrl,
+    apiKey: runtimeRes.data.token,
     personalityVersion:
       input.personalityVersion || runtimeRes.data.personalityVersion,
   });

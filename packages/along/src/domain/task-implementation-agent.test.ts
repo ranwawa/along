@@ -190,7 +190,7 @@ describe('task-implementation-agent', () => {
           taskId: 'task-1',
           threadId: 'thread-1',
           agentId: 'implementer',
-          provider: 'codex',
+          runtimeId: 'codex',
           status: 'succeeded',
           inputArtifactIds: ['art-plan'],
           outputArtifactIds: ['art-result'],

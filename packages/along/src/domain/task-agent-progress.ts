@@ -7,12 +7,16 @@ import {
   type TaskAgentSessionEventSource,
 } from './task-planning';
 
+const MIN_RUNNING_MINUTES = 1;
+const MILLISECONDS_PER_MINUTE = 60_000;
+const HEARTBEAT_INTERVAL_MS = MILLISECONDS_PER_MINUTE;
+
 export interface TaskAgentProgressContext {
   runId: string;
   taskId: string;
   threadId: string;
   agentId: string;
-  provider: string;
+  runtimeId: string;
 }
 
 export function writeTaskAgentProgress(
@@ -57,14 +61,17 @@ export function startTaskAgentProgressHeartbeat(
 ): () => void {
   const startedAt = Date.now();
   const timer = setInterval(() => {
-    const minutes = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+    const minutes = Math.max(
+      MIN_RUNNING_MINUTES,
+      Math.round((Date.now() - startedAt) / MILLISECONDS_PER_MINUTE),
+    );
     writeTaskAgentProgress(
       context,
       TASK_AGENT_PROGRESS_PHASE.WAITING,
       `Agent 仍在执行，已运行约 ${minutes} 分钟。`,
       '系统未收到新的阶段事件，任务仍保持运行状态。',
     );
-  }, 60_000);
+  }, HEARTBEAT_INTERVAL_MS);
   timer.unref?.();
   return () => clearInterval(timer);
 }

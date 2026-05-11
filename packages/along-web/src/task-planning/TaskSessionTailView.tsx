@@ -23,6 +23,10 @@ function formatHiddenSessionCount(count: number): string {
   return `已折叠较早 ${count} 条会话。`;
 }
 
+function getRuntimeLabel(runtimeId: string): string {
+  return runtimeId || '-';
+}
+
 function sortSessionEvents(events: TaskAgentSessionEventRecord[]) {
   return [...events].sort((left, right) =>
     left.createdAt.localeCompare(right.createdAt),
@@ -109,7 +113,9 @@ function SessionEventItem({ event }: { event: TaskAgentSessionEventRecord }) {
       >
         <div className="mb-1 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-normal">
           <span>
-            {getSessionSourceLabel(event.source)} / {event.provider}
+            {`${getSessionSourceLabel(event.source)} / Runtime: ${getRuntimeLabel(
+              event.runtimeId,
+            )}`}
           </span>
           <span>{event.kind}</span>
         </div>

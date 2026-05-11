@@ -11,7 +11,7 @@ const planningMocks = vi.hoisted(() => ({
   recordTaskAgentProgress: vi.fn(),
   recordTaskAgentSessionEvent: vi.fn(),
   recordTaskAgentResult: vi.fn(),
-  updateTaskAgentProviderSession: vi.fn(),
+  updateTaskAgentRuntimeSession: vi.fn(),
 }));
 const attachmentMocks = vi.hoisted(() => ({
   resolveInputImageAttachments: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock('./task-planning', () => ({
     FAILED: 'failed',
     CANCELLED: 'cancelled',
   },
-  updateTaskAgentProviderSession: planningMocks.updateTaskAgentProviderSession,
+  updateTaskAgentRuntimeSession: planningMocks.updateTaskAgentRuntimeSession,
 }));
 
 vi.mock('./task-attachment-read', () => ({
@@ -91,7 +91,7 @@ describe('task-codex-runner', () => {
       data: {
         threadId: 'thread-1',
         agentId: 'planner',
-        provider: 'codex',
+        runtimeId: 'codex',
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
     });
@@ -102,7 +102,7 @@ describe('task-codex-runner', () => {
         taskId: 'task-1',
         threadId: 'thread-1',
         agentId: 'planner',
-        provider: 'codex',
+        runtimeId: 'codex',
         status: 'running',
         inputArtifactIds: [],
         outputArtifactIds: [],
@@ -116,7 +116,7 @@ describe('task-codex-runner', () => {
         taskId: 'task-1',
         threadId: 'thread-1',
         agentId: 'planner',
-        provider: 'codex',
+        runtimeId: 'codex',
         status: 'succeeded',
         inputArtifactIds: [],
         outputArtifactIds: ['art-result'],
@@ -131,7 +131,7 @@ describe('task-codex-runner', () => {
         taskId: 'task-1',
         threadId: 'thread-1',
         agentId: 'planner',
-        provider: 'codex',
+        runtimeId: 'codex',
         status: 'running',
         inputArtifactIds: [],
         outputArtifactIds: [],
@@ -159,7 +159,7 @@ describe('task-codex-runner', () => {
         taskId: 'task-1',
         threadId: 'thread-1',
         agentId: 'planner',
-        provider: 'codex',
+        runtimeId: 'codex',
         phase: 'starting',
         summary: 'Agent 已启动，正在创建 Codex thread。',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -173,7 +173,7 @@ describe('task-codex-runner', () => {
         taskId: 'task-1',
         threadId: 'thread-1',
         agentId: 'planner',
-        provider: 'codex',
+        runtimeId: 'codex',
         source: 'system',
         kind: 'progress',
         content: 'Agent 已启动，正在创建 Codex thread。',
@@ -181,7 +181,7 @@ describe('task-codex-runner', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });
-    planningMocks.updateTaskAgentProviderSession.mockReturnValue({
+    planningMocks.updateTaskAgentRuntimeSession.mockReturnValue({
       success: true,
       data: undefined,
     });
@@ -289,12 +289,12 @@ describe('task-codex-runner', () => {
         signal: expect.any(AbortSignal),
       }),
     );
-    expect(result.data.providerSessionId).toBe('codex-thread-1');
+    expect(result.data.runtimeSessionId).toBe('codex-thread-1');
     expect(result.data.structuredOutput).toEqual({
       action: 'plan_revision',
       body: '计划',
     });
-    expect(planningMocks.updateTaskAgentProviderSession).toHaveBeenCalledWith(
+    expect(planningMocks.updateTaskAgentRuntimeSession).toHaveBeenCalledWith(
       'thread-1',
       'planner',
       'codex',
@@ -551,7 +551,7 @@ describe('task-codex-runner', () => {
     expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
       runId: 'run-1',
       status: 'failed',
-      providerSessionIdAtEnd: 'codex-thread-1',
+      runtimeSessionIdAtEnd: 'codex-thread-1',
       error: 'Codex unavailable',
     });
   });
@@ -597,7 +597,7 @@ describe('task-codex-runner', () => {
     expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
       runId: 'run-1',
       status: 'failed',
-      providerSessionIdAtEnd: 'codex-thread-1',
+      runtimeSessionIdAtEnd: 'codex-thread-1',
       error: 'stream disconnected',
     });
   });
@@ -608,8 +608,8 @@ describe('task-codex-runner', () => {
       data: {
         threadId: 'thread-1',
         agentId: 'planner',
-        provider: 'codex',
-        providerSessionId: 'codex-thread-old',
+        runtimeId: 'codex',
+        runtimeSessionId: 'codex-thread-old',
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
     });
@@ -662,7 +662,7 @@ describe('task-codex-runner', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(planningMocks.updateTaskAgentProviderSession).toHaveBeenCalledWith(
+    expect(planningMocks.updateTaskAgentRuntimeSession).toHaveBeenCalledWith(
       'thread-1',
       'implementer',
       'codex',
@@ -671,7 +671,7 @@ describe('task-codex-runner', () => {
     expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
       runId: 'run-1',
       status: 'failed',
-      providerSessionIdAtEnd: 'codex-thread-failed',
+      runtimeSessionIdAtEnd: 'codex-thread-failed',
       error: 'Codex unavailable',
     });
   });
@@ -692,13 +692,13 @@ describe('task-codex-runner', () => {
     expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
       runId: 'run-1',
       status: 'failed',
-      providerSessionIdAtEnd: undefined,
+      runtimeSessionIdAtEnd: undefined,
       error: 'Unable to locate Codex CLI binaries',
     });
   });
 
   it('当 Codex session 更新失败时，期望 run 被标记为失败', async () => {
-    planningMocks.updateTaskAgentProviderSession.mockReturnValueOnce({
+    planningMocks.updateTaskAgentRuntimeSession.mockReturnValueOnce({
       success: false,
       error: '更新 Codex session 失败',
     });
@@ -726,7 +726,7 @@ describe('task-codex-runner', () => {
     expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
       runId: 'run-1',
       status: 'failed',
-      providerSessionIdAtEnd: 'codex-thread-1',
+      runtimeSessionIdAtEnd: 'codex-thread-1',
       error: '更新 Codex session 失败',
     });
   });
@@ -772,7 +772,7 @@ describe('task-codex-runner', () => {
       expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
         runId: 'run-1',
         status: 'failed',
-        providerSessionIdAtEnd: 'codex-thread-1',
+        runtimeSessionIdAtEnd: 'codex-thread-1',
         error: 'Codex Agent 执行超时（超过 1 ms）',
       });
     } finally {
@@ -808,7 +808,7 @@ describe('task-codex-runner', () => {
                   taskId: 'task-1',
                   threadId: 'thread-1',
                   agentId: 'planner',
-                  provider: 'codex',
+                  runtimeId: 'codex',
                   status: 'cancelled',
                   inputArtifactIds: [],
                   outputArtifactIds: [],

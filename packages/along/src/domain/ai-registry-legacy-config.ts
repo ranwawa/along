@@ -2,7 +2,6 @@ import type {
   AgentConfig,
   CredentialConfig,
   ModelConfig,
-  ProfileConfig,
   ProviderConfig,
   RegistryConfig,
   RuntimeConfig,
@@ -149,12 +148,11 @@ export function migrateLegacyRegistryConfig(
   const models: ModelConfig[] = [];
   const runtimes: RuntimeConfig[] = [{ id: 'codex', kind: 'codex' }];
   const agents: AgentConfig[] = [];
-  const profiles: ProfileConfig[] = [];
   const usedProviderIds = new Set<string>();
   const usedCredentialIds = new Set<string>();
   const usedModelIds = new Set<string>();
 
-  let fallbackProviderId = migrateLegacyProviderEntries({
+  const fallbackProviderId = migrateLegacyProviderEntries({
     legacyProviders: value.providers,
     providers,
     credentials,
@@ -163,11 +161,6 @@ export function migrateLegacyRegistryConfig(
     usedCredentialIds,
     usedModelIds,
   });
-
-  if (!fallbackProviderId && isRecord(value.taskAgents)) {
-    fallbackProviderId = getUniqueId('codex', usedProviderIds);
-    providers.push({ id: fallbackProviderId, kind: 'custom', name: 'Codex' });
-  }
 
   if (fallbackProviderId && isRecord(value.taskAgents)) {
     migrateLegacyTaskAgents({
@@ -179,5 +172,5 @@ export function migrateLegacyRegistryConfig(
     });
   }
 
-  return { providers, credentials, models, runtimes, agents, profiles };
+  return { providers, credentials, models, runtimes, agents, profiles: [] };
 }

@@ -26,7 +26,7 @@ import {
 import { CodexStreamSessionEventMapper } from './task-codex-session-events';
 import {
   buildThreadOptions,
-  createDefaultCodexClient,
+  createCodexClient,
   formatDuration,
   getCodexAssistantText,
   getCodexOutputSchema,
@@ -36,7 +36,7 @@ import {
 import {
   TASK_AGENT_PROGRESS_PHASE,
   type TaskAgentRunRecord,
-  updateTaskAgentProviderSession,
+  updateTaskAgentRuntimeSession,
 } from './task-planning';
 import {
   buildLocalImagePromptInput,
@@ -44,7 +44,7 @@ import {
   resolveAndRecordInputImages,
 } from './task-runner-images';
 
-const PROVIDER = 'codex';
+const RUNTIME_ID = 'codex';
 
 export interface TaskCodexTurn {
   finalResponse: string;
@@ -90,6 +90,8 @@ export interface RunTaskCodexTurnInput {
   prompt: string;
   cwd: string;
   model?: string;
+  baseUrl?: string;
+  apiKey?: string;
   personalityVersion?: string;
   inputArtifactIds?: string[];
   outputMetadata?: Record<string, unknown>;
@@ -103,7 +105,7 @@ export interface RunTaskCodexTurnInput {
 
 export interface RunTaskCodexTurnOutput {
   run: TaskAgentRunRecord;
-  providerSessionId?: string;
+  runtimeSessionId?: string;
   usedResume: boolean;
   assistantText: string;
   structuredOutput?: unknown;
@@ -120,7 +122,7 @@ export async function runTaskCodexTurn(
   const prompt = input.prompt.trim();
   if (!prompt) return failure('Codex prompt 不能为空');
 
-  const startedRes = startTaskAgentRun(input, PROVIDER);
+  const startedRes = startTaskAgentRun(input, RUNTIME_ID);
   if (!startedRes.success) return startedRes;
   return runStartedCodexTurn(input, prompt, startedRes.data);
 }
@@ -133,7 +135,7 @@ async function runStartedCodexTurn(
   const { binding, progressContext, usedResume } = started;
   const outputSchema = getCodexOutputSchema(input);
   let thread: TaskCodexThread | undefined;
-  let latestThreadId = binding.providerSessionId;
+  let latestThreadId = binding.runtimeSessionId;
   const stopHeartbeat = startCodexHeartbeat(started, input.cwd);
 
   try {
@@ -150,7 +152,7 @@ async function runStartedCodexTurn(
     thread = createCodexThread(
       input,
       progressContext,
-      binding.providerSessionId,
+      binding.runtimeSessionId,
     );
     const turn = await runCodexPrompt(
       progressContext.runId,
@@ -163,7 +165,7 @@ async function runStartedCodexTurn(
       },
     );
     latestThreadId =
-      turn.latestThreadId || thread.id || binding.providerSessionId;
+      turn.latestThreadId || thread.id || binding.runtimeSessionId;
     if (isTaskAgentRunCancelled(progressContext.runId)) {
       return completeCancelledCodexTurn(
         progressContext,
@@ -222,21 +224,21 @@ async function prepareCodexPrompt(
 function failCodexTurn(
   context: TaskAgentProgressContext,
   error: unknown,
-  providerSessionIdAtEnd?: string,
+  runtimeSessionIdAtEnd?: string,
 ): Result<never> {
   const message = getErrorMessage(error);
-  if (providerSessionIdAtEnd) {
-    updateTaskAgentProviderSession(
+  if (runtimeSessionIdAtEnd) {
+    updateTaskAgentRuntimeSession(
       context.threadId,
       context.agentId,
-      PROVIDER,
-      providerSessionIdAtEnd,
+      RUNTIME_ID,
+      runtimeSessionIdAtEnd,
     );
   }
   const failedRes = markTaskAgentFailed(
     context,
     message,
-    providerSessionIdAtEnd,
+    runtimeSessionIdAtEnd,
   );
   return failedRes.success
     ? failure(`Codex Agent 执行失败: ${message}`)
@@ -246,17 +248,19 @@ function failCodexTurn(
 function createCodexThread(
   input: RunTaskCodexTurnInput,
   context: TaskAgentProgressContext,
-  providerSessionId?: string,
+  runtimeSessionId?: string,
 ): TaskCodexThread {
-  const client = (input.createClient || createDefaultCodexClient)();
+  const client = input.createClient
+    ? input.createClient()
+    : createCodexClient(input);
   writeTaskAgentProgress(
     context,
     TASK_AGENT_PROGRESS_PHASE.CONTEXT,
     '正在准备工作目录和模型参数。',
   );
   const options = buildThreadOptions(input);
-  const thread = providerSessionId
-    ? client.resumeThread(providerSessionId, options)
+  const thread = runtimeSessionId
+    ? client.resumeThread(runtimeSessionId, options)
     : client.startThread(options);
   writeTaskAgentProgress(
     context,
@@ -384,7 +388,7 @@ function completeCancelledCodexTurn(
   if (!runRes.success) return runRes;
   return success({
     run: runRes.data,
-    providerSessionId: latestThreadId,
+    runtimeSessionId: latestThreadId,
     usedResume,
     assistantText: '',
     outputArtifactIds: [],
@@ -405,7 +409,7 @@ function completeCodexTurn(
   const structuredOutput = parseStructuredOutput(assistantText, outputSchema);
   const outputRes = saveTaskAgentOutput(
     input,
-    PROVIDER,
+    RUNTIME_ID,
     assistantText,
     context,
     latestThreadId,
@@ -419,7 +423,7 @@ function completeCodexTurn(
   if (!finishedRun.success) return finishedRun;
   return success({
     run: finishedRun.data,
-    providerSessionId: latestThreadId,
+    runtimeSessionId: latestThreadId,
     usedResume,
     assistantText,
     structuredOutput,
@@ -438,10 +442,10 @@ function saveCodexSession(
     TASK_AGENT_PROGRESS_PHASE.CONTEXT,
     '正在保存 Agent 会话标识。',
   );
-  const updateRes = updateTaskAgentProviderSession(
+  const updateRes = updateTaskAgentRuntimeSession(
     input.threadId,
     input.agentId,
-    PROVIDER,
+    RUNTIME_ID,
     latestThreadId,
   );
   if (updateRes.success) return success(undefined);

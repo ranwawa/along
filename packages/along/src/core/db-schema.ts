@@ -103,16 +103,16 @@ const TABLES = [
   );`,
   `CREATE TABLE IF NOT EXISTS task_agent_bindings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, provider TEXT NOT NULL,
-    provider_session_id TEXT, cwd TEXT, model TEXT, personality_version TEXT,
-    updated_at TEXT NOT NULL, UNIQUE(thread_id, agent_id, provider),
+    thread_id TEXT NOT NULL, agent_id TEXT NOT NULL, runtime_id TEXT NOT NULL,
+    runtime_session_id TEXT, cwd TEXT, model TEXT, personality_version TEXT,
+    updated_at TEXT NOT NULL, UNIQUE(thread_id, agent_id, runtime_id),
     FOREIGN KEY(thread_id) REFERENCES task_threads(thread_id) ON DELETE CASCADE
   );`,
   `CREATE TABLE IF NOT EXISTS task_agent_runs (
     run_id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL, thread_id TEXT NOT NULL, agent_id TEXT NOT NULL,
-    provider TEXT NOT NULL, provider_session_id_at_start TEXT,
-    provider_session_id_at_end TEXT, status TEXT NOT NULL,
+    runtime_id TEXT NOT NULL, runtime_session_id_at_start TEXT,
+    runtime_session_id_at_end TEXT, status TEXT NOT NULL,
     input_artifact_ids TEXT NOT NULL DEFAULT '[]',
     output_artifact_ids TEXT NOT NULL DEFAULT '[]', error TEXT,
     started_at TEXT NOT NULL, ended_at TEXT,
@@ -122,7 +122,7 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS task_agent_progress_events (
     progress_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL, task_id TEXT NOT NULL, thread_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL, provider TEXT NOT NULL, phase TEXT NOT NULL,
+    agent_id TEXT NOT NULL, runtime_id TEXT NOT NULL, phase TEXT NOT NULL,
     summary TEXT NOT NULL, detail TEXT, created_at TEXT NOT NULL,
     FOREIGN KEY(run_id) REFERENCES task_agent_runs(run_id) ON DELETE CASCADE,
     FOREIGN KEY(task_id) REFERENCES task_items(task_id) ON DELETE CASCADE,
@@ -131,7 +131,7 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS task_agent_session_events (
     event_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL, task_id TEXT NOT NULL, thread_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL, provider TEXT NOT NULL, source TEXT NOT NULL,
+    agent_id TEXT NOT NULL, runtime_id TEXT NOT NULL, source TEXT NOT NULL,
     kind TEXT NOT NULL, content TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     FOREIGN KEY(run_id) REFERENCES task_agent_runs(run_id) ON DELETE CASCADE,
@@ -155,7 +155,7 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id, attachment_id)',
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_plan_revisions_active_thread ON task_plan_revisions(thread_id) WHERE status = 'active'",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_feedback_rounds_open_thread ON task_feedback_rounds(thread_id) WHERE status IN ('open','processing','stale_partial')",
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_agent_runs_active ON task_agent_runs(thread_id, agent_id, provider) WHERE status = 'running'",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_agent_runs_active ON task_agent_runs(thread_id, agent_id, runtime_id) WHERE status = 'running'",
   'CREATE INDEX IF NOT EXISTS idx_task_agent_progress_thread ON task_agent_progress_events(thread_id, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_task_agent_session_thread ON task_agent_session_events(thread_id, created_at)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_task_items_repo_seq ON task_items(repo_owner, repo_name, seq)',
@@ -186,6 +186,75 @@ const COLUMN_MIGRATIONS = [
   "ALTER TABLE task_items ADD COLUMN current_workflow_kind TEXT NOT NULL DEFAULT 'ask'",
 ];
 
+interface TableColumnRow {
+  name: string;
+}
+
+function tableColumns(db: Database, table: string): Set<string> {
+  const rows = db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all() as TableColumnRow[];
+  return new Set(rows.map((row) => row.name));
+}
+
+function renameColumnIfNeeded(
+  db: Database,
+  table: string,
+  from: string,
+  to: string,
+) {
+  const columns = tableColumns(db, table);
+  if (!columns.has(from) || columns.has(to)) return;
+  db.exec(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`);
+}
+
+function migrateTaskAgentBindingRuntimeColumns(db: Database) {
+  renameColumnIfNeeded(db, 'task_agent_bindings', 'provider', 'runtime_id');
+  renameColumnIfNeeded(
+    db,
+    'task_agent_bindings',
+    'provider_session_id',
+    'runtime_session_id',
+  );
+}
+
+function migrateTaskAgentRunRuntimeColumns(db: Database) {
+  renameColumnIfNeeded(db, 'task_agent_runs', 'provider', 'runtime_id');
+  renameColumnIfNeeded(
+    db,
+    'task_agent_runs',
+    'provider_session_id_at_start',
+    'runtime_session_id_at_start',
+  );
+  renameColumnIfNeeded(
+    db,
+    'task_agent_runs',
+    'provider_session_id_at_end',
+    'runtime_session_id_at_end',
+  );
+}
+
+function migrateTaskAgentEventRuntimeColumns(db: Database) {
+  renameColumnIfNeeded(
+    db,
+    'task_agent_progress_events',
+    'provider',
+    'runtime_id',
+  );
+  renameColumnIfNeeded(
+    db,
+    'task_agent_session_events',
+    'provider',
+    'runtime_id',
+  );
+}
+
+function migrateTaskAgentRuntimeColumns(db: Database) {
+  migrateTaskAgentBindingRuntimeColumns(db);
+  migrateTaskAgentRunRuntimeColumns(db);
+  migrateTaskAgentEventRuntimeColumns(db);
+}
+
 function execRequired(db: Database, statements: string[]) {
   for (const statement of statements) db.exec(statement);
 }
@@ -200,6 +269,7 @@ function execBestEffort(db: Database, statements: string[]) {
 
 export function initSchema(db: Database) {
   execRequired(db, TABLES);
+  migrateTaskAgentRuntimeColumns(db);
   execBestEffort(db, INDEXES);
   execBestEffort(db, COLUMN_MIGRATIONS);
 }

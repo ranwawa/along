@@ -10,6 +10,15 @@ interface UnknownRecord {
   [key: string]: unknown;
 }
 
+const DEFAULT_CODEX_TURN_TIMEOUT_MINUTES = 30;
+const SECONDS_PER_MINUTE = 60;
+const MILLISECONDS_PER_SECOND = 1000;
+const MILLISECONDS_PER_MINUTE = 60_000;
+const DEFAULT_CODEX_TURN_TIMEOUT_MS =
+  DEFAULT_CODEX_TURN_TIMEOUT_MINUTES *
+  SECONDS_PER_MINUTE *
+  MILLISECONDS_PER_SECOND;
+
 function isRecord(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -83,18 +92,24 @@ function findCodexExecutable(): string | undefined {
   return firstMatch || undefined;
 }
 
-export function createDefaultCodexClient(): TaskCodexClient {
+export function createCodexClient(
+  input: RunTaskCodexTurnInput,
+): TaskCodexClient {
   const codexPath = findCodexExecutable();
-  return codexPath ? new Codex({ codexPathOverride: codexPath }) : new Codex();
+  return new Codex({
+    ...(codexPath ? { codexPathOverride: codexPath } : {}),
+    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+  });
 }
 
 export function readCodexTurnTimeoutMs(): number {
   const raw = Number(process.env.ALONG_TASK_AGENT_TIMEOUT_MS);
   if (Number.isFinite(raw) && raw > 0) return raw;
-  return 30 * 60 * 1000;
+  return DEFAULT_CODEX_TURN_TIMEOUT_MS;
 }
 
 export function formatDuration(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
+  const minutes = Math.round(ms / MILLISECONDS_PER_MINUTE);
   return minutes >= 1 ? `${minutes} 分钟` : `${ms} ms`;
 }

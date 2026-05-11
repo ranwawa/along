@@ -53,7 +53,7 @@ function recordAutoCommitResult(
     taskId: input.snapshot.task.taskId,
     threadId: input.snapshot.thread.threadId,
     agentId: 'auto-commit',
-    provider: 'system',
+    runtimeId: 'system',
     body,
   });
   return artifactRes.success ? artifactRes.data.artifactId : undefined;

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Result } from '../core/result';
 
+const LONG_ERROR_LENGTH = 10_000;
+const MAX_FAILURE_SUMMARY_LENGTH = 6000;
+
 const planningMocks = vi.hoisted(() => ({
   recordTaskAgentResult: vi.fn(),
   updateTaskDelivery: vi.fn(),
@@ -173,7 +176,7 @@ describe('task-auto-commit', () => {
   });
 
   it('当 commit hook 失败时，期望返回摘要并记录完整日志 artifact', async () => {
-    const longError = `biome check failed\n${'x'.repeat(10_000)}`;
+    const longError = `biome check failed\n${'x'.repeat(LONG_ERROR_LENGTH)}`;
     const runner: TaskWorktreeCommandRunner = async (_command, args) => {
       if (args[0] === 'status') return ok(' M src/app.ts');
       if (args[0] === 'commit') return err(longError);
@@ -190,13 +193,15 @@ describe('task-auto-commit', () => {
 
     expect(result.success).toBe(false);
     if (result.success) throw new Error('expected failure');
-    expect(result.summary.length).toBeLessThanOrEqual(6000);
+    expect(result.summary.length).toBeLessThanOrEqual(
+      MAX_FAILURE_SUMMARY_LENGTH,
+    );
     expect(result.failureArtifactId).toBe('art-auto-commit');
     expect(planningMocks.updateTaskDelivery).not.toHaveBeenCalled();
     expect(planningMocks.recordTaskAgentResult).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: 'auto-commit',
-        provider: 'system',
+        runtimeId: 'system',
         body: expect.stringContaining('完整输出'),
       }),
     );

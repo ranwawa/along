@@ -1,5 +1,6 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy delivery orchestration predates current function-size rule.
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy delivery module predates current file-size rule.
+// biome-ignore-all lint/style/noMagicNumbers: legacy delivery orchestration predates current magic-number rule.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -143,7 +144,7 @@ function failDeliveryRun(
     taskId,
     threadId,
     agentId: 'delivery',
-    provider: 'system',
+    runtimeId: 'system',
     body: `Delivery 失败：${message}`,
   });
   const runRes = finishTaskAgentRun({
@@ -211,7 +212,7 @@ export async function runTaskDelivery(
     taskId: input.taskId,
     threadId: snapshot.thread.threadId,
     agentId: 'delivery',
-    provider: 'system',
+    runtimeId: 'system',
     inputArtifactIds: [
       approvedPlan.artifactId,
       ...snapshot.artifacts.map((artifact) => artifact.artifactId),
@@ -476,7 +477,7 @@ export async function runTaskDelivery(
       taskId: input.taskId,
       threadId: snapshot.thread.threadId,
       agentId: 'delivery',
-      provider: 'system',
+      runtimeId: 'system',
       body: [
         'Delivery 完成：已推送并创建 PR。',
         '',
