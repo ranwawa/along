@@ -3899,7 +3899,7 @@ export function completeTaskAgentStageManually(
   if (!openRes.success) return openRes;
 
   const stageDefinition = getTaskAgentStageDefinition(input.stage);
-  if (!stageDefinition) return failure(`未知 Task Agent 阶段: ${input.stage}`);
+  if (!stageDefinition) return failure(`未知 Agent 阶段: ${input.stage}`);
 
   const runRes = createTaskAgentRun({
     taskId: input.taskId,

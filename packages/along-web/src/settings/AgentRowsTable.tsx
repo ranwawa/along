@@ -24,7 +24,7 @@ export function AgentRowsTable({
   onRemove: (id: string) => void;
 }) {
   return (
-    <Section title="Task Agents" disabled={loading || saving} onAdd={onAdd}>
+    <Section title="Agents" disabled={loading || saving} onAdd={onAdd}>
       <div className="hidden md:grid grid-cols-[180px_180px_minmax(0,1fr)_180px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
         <span>Agent</span>
         <span>Runtime</span>

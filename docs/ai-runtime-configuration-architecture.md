@@ -289,7 +289,7 @@ LLMService.runProfile
   -> provider client
 ```
 
-Profile 不创建 task agent run，不写入 agent lifecycle，不复用 Codex thread/session。它定义一类可复用的直接模型调用配置，并在执行时返回文本或 JSON。
+Profile 不创建 agent run，不写入 agent lifecycle，不复用 Codex thread/session。它定义一类可复用的直接模型调用配置，并在执行时返回文本或 JSON。
 
 解析后的 Profile config 至少包含：
 

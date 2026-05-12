@@ -25,7 +25,7 @@ export function AgentRegistryRows({
 }) {
   return (
     <Section
-      title="Task Agents"
+      title="Agents"
       count={registry.agents.length}
       disabled={disabled}
       onAdd={onAdd}

@@ -1154,10 +1154,10 @@ async function main() {
     'Webhook server 启动时发现上次 Agent run 未正常结束，已标记为失败。',
   );
   if (!recoveredRunsRes.success) {
-    logger.warn(`恢复中断的 Task Agent Run 失败: ${recoveredRunsRes.error}`);
+    logger.warn(`恢复中断的 Agent Run 失败: ${recoveredRunsRes.error}`);
   } else if (recoveredRunsRes.data.recoveredRuns.length > 0) {
     logger.warn(
-      `已恢复 ${recoveredRunsRes.data.recoveredRuns.length} 个中断的 Task Agent Run` +
+      `已恢复 ${recoveredRunsRes.data.recoveredRuns.length} 个中断的 Agent Run` +
         (recoveredRunsRes.data.resetTaskIds.length > 0
           ? `，重置 ${recoveredRunsRes.data.resetTaskIds.length} 个 Task 状态`
           : ''),
