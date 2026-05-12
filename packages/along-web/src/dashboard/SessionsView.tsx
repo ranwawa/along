@@ -1,3 +1,7 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels and compact controls.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: sessions layout and drawer composition are kept together.
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { SessionDrawer } from './SessionDrawer';
 import { SessionList } from './SessionList';
 import type { useDashboardSessions } from './useDashboardSessions';
@@ -15,21 +19,23 @@ export function SessionsView({ sessions }: { sessions: SessionsController }) {
           <div className="px-4 py-3 md:px-6 md:py-5 border-b border-border-color font-semibold text-sm md:text-base flex justify-between items-center">
             <span>Recent Tasks</span>
             <div className="relative">
-              <input
+              <Input
                 type="text"
                 placeholder="Filter by repo..."
                 value={sessions.repoFilter}
                 onChange={(event) => sessions.setRepoFilter(event.target.value)}
-                className="bg-white/5 border border-border-color rounded-lg px-3 py-1 text-xs md:text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-32 md:w-48 transition-all"
+                className="w-32 bg-white/5 py-1 text-xs transition-all focus:ring-blue-500/50 md:w-48 md:text-sm"
               />
               {sessions.repoFilter && (
-                <button
+                <Button
                   type="button"
                   onClick={() => sessions.setRepoFilter('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-white bg-transparent border-none cursor-pointer"
+                  variant="ghost"
+                  size="xs"
+                  className="absolute right-1 top-1/2 h-6 -translate-y-1/2 border-none px-1.5"
                 >
-                  ✕
-                </button>
+                  x
+                </Button>
               )}
             </div>
           </div>

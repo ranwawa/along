@@ -1,3 +1,6 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing task flow cards use inline Chinese labels.
+
+import { Button } from '../components/ui/button';
 import type {
   TaskFlowAction,
   TaskFlowStage,
@@ -200,13 +203,9 @@ function FlowStageDetails({
     <div className={`ml-4 pb-3 pt-1 ${isOpen ? 'block' : 'hidden'}`}>
       <FlowStageDetailText stage={stage} />
       {stage.id === 'plan_confirmation' && currentPlan && (
-        <button
-          type="button"
-          onClick={onShowPlan}
-          className="mt-3 px-3 py-2 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 transition-colors"
-        >
+        <Button type="button" onClick={onShowPlan} size="sm" className="mt-3">
           查看计划 v{currentPlan.version}
-        </button>
+        </Button>
       )}
       <FlowStageActionList
         actions={enabledActions}
@@ -295,16 +294,15 @@ function FlowActionButton({
   onClick: (action: TaskFlowAction) => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
       onClick={() => onClick(action)}
       disabled={!action.enabled || busy}
       title={!action.enabled ? action.disabledReason : action.description}
-      className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getFlowActionClass(
-        action,
-      )}`}
+      size="sm"
+      className={getFlowActionClass(action)}
     >
       {busy ? '处理中' : action.label}
-    </button>
+    </Button>
   );
 }

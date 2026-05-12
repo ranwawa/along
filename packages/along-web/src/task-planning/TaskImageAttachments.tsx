@@ -1,3 +1,5 @@
+// biome-ignore-all lint/style/noJsxLiterals: image attachment controls use compact inline labels.
+// biome-ignore-all lint/style/noMagicNumbers: image attachment limits and byte conversions are local UI constraints.
 import {
   type ChangeEvent,
   type DragEvent,
@@ -7,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Button } from '../components/ui/button';
 
 const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const MAX_IMAGE_COUNT = 6;
@@ -70,16 +73,17 @@ function ImageAttachmentThumb({
           className="h-full w-full object-cover"
         />
       )}
-      <button
+      <Button
         type="button"
         aria-label="删除图片"
         onClick={onRemove}
-        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border border-border-color bg-black/70 text-text-primary opacity-0 transition-opacity hover:bg-black focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-brand/70 group-hover:opacity-100 group-focus-within:opacity-100"
+        size="icon"
+        className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/70 text-text-primary opacity-0 hover:bg-black focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
       >
         <span aria-hidden="true" className="text-base leading-none">
           ×
         </span>
-      </button>
+      </Button>
     </div>
   );
 }
@@ -114,14 +118,15 @@ function DefaultImageAttachmentActions({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button
+      <Button
         type="button"
         disabled={disabled || attachments.length >= MAX_IMAGE_COUNT}
         onClick={() => inputRef.current?.click()}
-        className="rounded-lg border border-border-color bg-black/25 px-3 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        size="sm"
+        className="bg-black/25 hover:text-text-primary"
       >
         图片
-      </button>
+      </Button>
       <span className="text-[11px] text-text-muted">
         {attachments.length}/{MAX_IMAGE_COUNT}
       </span>

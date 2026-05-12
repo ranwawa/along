@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing task flow panel uses inline labels.
 import { useEffect, useState } from 'react';
+import { Dialog, DialogContent } from '../components/ui/dialog';
 import type {
   TaskFlowAction,
   TaskFlowSnapshot,
@@ -83,27 +84,18 @@ export function CurrentPlanDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  if (!open || !plan) return null;
+  if (!plan) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-lg border border-border-color bg-bg-secondary shadow-xl">
-        <div className="flex items-center justify-between gap-3 border-b border-border-color px-4 py-3">
-          <h3 className="text-sm font-semibold text-text-secondary">
-            当前计划 v{plan.version}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-border-color px-2 py-1 text-xs font-semibold text-text-secondary hover:bg-white/5"
-          >
-            关闭
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent
+        title={`当前计划 v${plan.version}`}
+        className="max-h-[80vh] max-w-3xl"
+      >
         <div className="min-h-0 overflow-auto p-4">
           <MarkdownContent value={plan.body} />
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

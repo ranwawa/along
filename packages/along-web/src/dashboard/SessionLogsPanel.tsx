@@ -1,3 +1,6 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: log tabs and content branch are kept together for readability.
+import { Button } from '../components/ui/button';
 import { ConversationLog } from './ConversationLog';
 import { LogEntries } from './LogEntries';
 import type { LogTab, useSessionLogs } from './useSessionLogs';
@@ -24,18 +27,20 @@ export function SessionLogsPanel({ logs }: { logs: SessionLogsState }) {
         </div>
         <div className="flex gap-2 flex-wrap">
           {tabs.map((tab) => (
-            <button
+            <Button
               type="button"
               key={tab}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              variant="tab"
+              size="sm"
+              className={
                 logs.selectedLogTab === tab
-                  ? 'bg-white/10 text-white border-border-color'
-                  : 'bg-transparent text-text-secondary border-border-color hover:bg-white/5'
-              }`}
+                  ? 'bg-white/10 text-white'
+                  : undefined
+              }
               onClick={() => logs.setSelectedLogTab(tab)}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

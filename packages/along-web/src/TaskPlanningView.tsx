@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button } from './components/ui/button';
 import { TaskDetail } from './task-planning/TaskDetail';
 import { TaskListPanel } from './task-planning/TaskSidebar';
 import { useTaskPlanningController } from './task-planning/useTaskPlanningController';
@@ -20,14 +21,15 @@ function SidebarToggleButton({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
       aria-label={ariaLabel}
       onClick={onClick}
+      size="icon"
       className={className}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -41,7 +43,7 @@ function CollapsedSidebar({
       <SidebarToggleButton
         ariaLabel="展开左侧栏"
         onClick={onToggleCollapsed}
-        className="h-9 w-9 rounded-lg border border-border-color text-text-secondary hover:bg-white/5"
+        className="h-9 w-9"
       >
         {SIDEBAR_EXPAND_ICON}
       </SidebarToggleButton>
@@ -68,7 +70,7 @@ function TaskPlanningSidebar({
         <SidebarToggleButton
           ariaLabel="折叠左侧栏"
           onClick={onToggleCollapsed}
-          className="h-8 w-8 rounded-lg border border-border-color text-text-secondary hover:bg-white/5"
+          className="h-8 w-8"
         >
           {SIDEBAR_COLLAPSE_ICON}
         </SidebarToggleButton>

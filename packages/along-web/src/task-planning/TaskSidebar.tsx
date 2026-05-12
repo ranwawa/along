@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react';
+import { Alert } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
+import { Select } from '../components/ui/input';
 import type { TaskPlanningSnapshot } from '../types';
 import type { DraftTaskInput, RepositoryOption } from './api';
 import { TaskStatusBadge } from './TaskStatusBadge';
@@ -42,11 +45,11 @@ function RepositoryControls({
 }) {
   return (
     <div className="min-w-0 flex-1 flex flex-col gap-2">
-      <select
+      <Select
         aria-label="仓库"
         value={draft.repository}
         onChange={(event) => onDraftChange('repository', event.target.value)}
-        className="min-w-0 w-full bg-black/30 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
+        className="w-full bg-black/30"
       >
         {repositories.length === 0 ? (
           <option value="">{EMPTY_REPOSITORY_LABEL}</option>
@@ -58,12 +61,8 @@ function RepositoryControls({
             </option>
           ))
         )}
-      </select>
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-          {error}
-        </div>
-      )}
+      </Select>
+      {error && <Alert variant="error">{error}</Alert>}
     </div>
   );
 }
@@ -201,18 +200,20 @@ function TaskListHeader({
         onDraftChange={onDraftChange}
       />
       <PopupTooltip label="新任务">
-        <button
+        <Button
           type="button"
           aria-label="新任务"
           onClick={onNewTask}
-          className={`shrink-0 h-9 w-9 rounded-lg text-lg leading-none font-semibold border transition-colors ${
+          variant={isNewTaskOpen ? 'default' : 'outline'}
+          size="icon"
+          className={`h-9 w-9 text-lg leading-none ${
             isNewTaskOpen
-              ? 'bg-brand text-white border-brand'
+              ? ''
               : 'border-border-color text-text-secondary hover:bg-white/5'
           }`}
         >
           {NEW_TASK_ICON}
-        </button>
+        </Button>
       </PopupTooltip>
     </div>
   );

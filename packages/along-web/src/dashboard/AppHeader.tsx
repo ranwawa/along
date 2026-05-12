@@ -1,3 +1,6 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing dashboard header uses inline navigation labels.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: header navigation and filters are kept together.
+import { Button } from '../components/ui/button';
 import type { StatusCounts } from '../types';
 import {
   getLifecycleLabel,
@@ -31,13 +34,13 @@ export function AppHeader({
       <div className="flex flex-wrap gap-2 items-center">
         <div className="flex rounded-lg border border-border-color bg-black/20 p-1">
           {(['tasks', 'sessions', 'settings'] as const).map((view) => (
-            <button
+            <Button
               type="button"
               key={view}
-              className={`px-3 py-1.5 rounded-md text-xs md:text-sm font-semibold transition-all ${
-                activeView === view
-                  ? 'bg-white/10 text-white'
-                  : 'text-text-secondary hover:bg-white/5'
+              variant="ghost"
+              size="sm"
+              className={`rounded-md md:text-sm ${
+                activeView === view ? 'bg-white/10 text-white' : ''
               }`}
               onClick={() => onViewChange(view)}
             >
@@ -46,18 +49,18 @@ export function AppHeader({
                 : view === 'sessions'
                   ? 'Sessions'
                   : 'Settings'}
-            </button>
+            </Button>
           ))}
         </div>
         {activeView === 'sessions' &&
           statusFilters.map((filter) => (
-            <button
+            <Button
               type="button"
               key={filter}
-              className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-md cursor-pointer text-xs md:text-sm transition-all border ${
-                currentFilter === filter
-                  ? 'bg-white/10 text-white border-border-color'
-                  : 'bg-transparent border-transparent text-text-secondary hover:bg-white/5'
+              variant={currentFilter === filter ? 'outline' : 'ghost'}
+              size="sm"
+              className={`rounded-md md:text-sm ${
+                currentFilter === filter ? 'bg-white/10 text-white' : ''
               }`}
               onClick={() => onFilterChange(filter)}
             >
@@ -67,7 +70,7 @@ export function AppHeader({
                   {getFilterCount(filter)}
                 </span>
               )}
-            </button>
+            </Button>
           ))}
       </div>
     </header>

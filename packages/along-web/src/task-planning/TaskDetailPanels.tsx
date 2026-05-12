@@ -1,6 +1,7 @@
 // biome-ignore-all lint/style/noJsxLiterals: task planning panels use existing inline labels.
 // biome-ignore-all lint/style/noMagicNumbers: task planning layout uses fixed UI thresholds.
-import { useEffect } from 'react';
+import { Button } from '../components/ui/button';
+import { Dialog, DialogContent } from '../components/ui/dialog';
 import type { TaskPlanningSnapshot } from '../types';
 import { formatTime, getTaskStatusLabel, getThreadStatusLabel } from './format';
 import { FlowHistory } from './TaskFlowPanel';
@@ -120,14 +121,15 @@ export function TaskDetailHeader({
         </div>
         <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
           {TASK_DETAIL_ACTIONS.map((action) => (
-            <button
+            <Button
               key={action.kind}
               type="button"
               onClick={() => onOpenDialog(action.kind)}
-              className="shrink-0 rounded-md border border-border-color bg-black/20 px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-brand/60"
+              size="sm"
+              className="bg-black/20"
             >
               {action.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -175,49 +177,17 @@ export function TaskDetailDialog({
   selected: TaskPlanningSnapshot;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    if (!kind) return undefined;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [kind, onClose]);
-
   if (!kind) return null;
 
   const title = getTaskDialogTitle(kind);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
-    >
-      <button
-        type="button"
-        aria-label="关闭弹框"
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-      />
-      <div className="relative flex max-h-[86vh] w-full max-w-4xl flex-col rounded-lg border border-border-color bg-bg-secondary shadow-xl">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border-color px-4 py-3">
-          <h3 className="min-w-0 truncate text-sm font-semibold text-text-secondary">
-            {title}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded-md border border-border-color px-2 py-1 text-xs font-semibold text-text-secondary hover:bg-white/5"
-          >
-            关闭
-          </button>
-        </div>
+    <Dialog open={Boolean(kind)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent title={title}>
         <div className="min-h-0 overflow-auto p-4">
           <TaskDetailDialogContent kind={kind} selected={selected} />
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

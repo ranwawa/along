@@ -1,3 +1,5 @@
+// biome-ignore-all lint/style/noJsxLiterals: dashboard action buttons use compact symbols.
+import { Button } from '../components/ui/button';
 import type { DashboardSession } from '../types';
 import { getIssueKey, isFailedStatus } from './sessionUtils';
 
@@ -17,38 +19,34 @@ export function SessionRowActions({
   compact?: boolean;
 }) {
   const key = getIssueKey(session);
-  const sizeClass = compact ? 'w-7 h-7' : 'w-8 h-8';
+  const sizeClass = compact ? 'h-7 w-7' : 'h-8 w-8';
 
   return (
     <div className="flex gap-1.5 shrink-0">
       {isFailedStatus(session.lifecycle) && (
-        <button
+        <Button
           type="button"
-          className={`inline-flex items-center justify-center ${sizeClass} rounded-lg border border-transparent transition-all cursor-pointer ${
-            restartingIssues.has(key)
-              ? 'bg-blue-500/20 text-status-running animate-spin'
-              : 'bg-white/5 text-text-secondary hover:bg-blue-500/20 hover:text-status-running'
-          }`}
+          variant="softPrimary"
+          size="icon"
+          className={`${sizeClass} ${restartingIssues.has(key) ? 'animate-spin' : ''}`}
           title="重启此任务"
           onClick={(event) => onRestart(session, event)}
           disabled={restartingIssues.has(key)}
         >
           🔄
-        </button>
+        </Button>
       )}
-      <button
+      <Button
         type="button"
-        className={`inline-flex items-center justify-center ${sizeClass} rounded-lg border border-transparent transition-all cursor-pointer ${
-          deletingIssues.has(key)
-            ? 'bg-red-500/20 text-red-400 cursor-wait'
-            : 'bg-white/5 text-text-secondary hover:bg-red-500/20 hover:text-red-300'
-        }`}
+        variant="softDanger"
+        size="icon"
+        className={sizeClass}
         title="彻底删除此任务的本地数据"
         onClick={(event) => onDelete(session, event)}
         disabled={deletingIssues.has(key)}
       >
         🗑️
-      </button>
+      </Button>
     </div>
   );
 }

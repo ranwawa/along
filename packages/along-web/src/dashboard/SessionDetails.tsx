@@ -1,3 +1,6 @@
+// biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels and compact symbols.
+// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: session details are intentionally rendered in one scan-friendly panel.
+import { Button } from '../components/ui/button';
 import type { DashboardSession, SessionDiagnostic } from '../types';
 import {
   getBranchName,
@@ -113,23 +116,27 @@ export function SessionDetails({
             {getLifecycleLabel(session.lifecycle)}
           </span>
           {isFailedStatus(session.lifecycle) && (
-            <button
+            <Button
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-blue-500/10 text-status-running border-blue-500/30 hover:bg-blue-500/25 disabled:cursor-wait"
+              variant="softPrimary"
+              size="sm"
+              className="gap-1.5"
               onClick={() => onRestart(session)}
               disabled={restartingIssues.has(key)}
             >
               🔄 {restartingIssues.has(key) ? '重启中...' : '重启'}
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             type="button"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25 disabled:cursor-wait"
+            variant="destructive"
+            size="sm"
+            className="gap-1.5"
             onClick={() => onDelete(session)}
             disabled={deletingIssues.has(key)}
           >
             🗑️ {deletingIssues.has(key) ? '删除中...' : '彻底删除'}
-          </button>
+          </Button>
         </div>
       </DetailRow>
       <DetailRow label="Runtime">
@@ -167,14 +174,16 @@ export function SessionDetails({
         <DetailRow label="Worktree">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm md:text-base opacity-70">📁 存在</span>
-            <button
+            <Button
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/25 disabled:cursor-wait"
+              variant="destructive"
+              size="sm"
+              className="gap-1.5"
               onClick={(event) => onCleanup(session, event)}
               disabled={cleaningIssues.has(key)}
             >
               🗑️ {cleaningIssues.has(key) ? '清理中...' : '删除 Worktree'}
-            </button>
+            </Button>
           </div>
         </DetailRow>
       )}

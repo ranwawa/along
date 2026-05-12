@@ -2,6 +2,14 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing composer controls use inline UI labels.
 // biome-ignore-all lint/style/noMagicNumbers: existing composer controls use fixed UI timings and sizes.
 import { type FormEvent, type KeyboardEvent, useState } from 'react';
+import { Button } from '../components/ui/button';
+import { Textarea } from '../components/ui/input';
+import {
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverTrigger,
+} from '../components/ui/popover';
 import type {
   TaskAgentRunRecord,
   TaskExecutionMode,
@@ -218,40 +226,37 @@ function AttachmentPopover({
   maxCount: number;
   openPicker: () => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
   const isDisabled = disabled || !canAdd;
   return (
-    <div className="relative shrink-0">
-      <button
-        type="button"
-        aria-label="添加附件"
-        aria-expanded={isOpen}
-        disabled={isDisabled}
-        title={
-          count >= maxCount ? `单次最多上传 ${maxCount} 张图片` : '添加附件'
-        }
-        onClick={() => setIsOpen((value) => !value)}
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-color bg-black/25 text-text-secondary transition-colors hover:text-text-primary focus:outline-none focus:ring-1 focus:ring-brand/70 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <PlusIcon />
-      </button>
-      {isOpen && (
-        <div className="absolute bottom-full left-0 z-20 mb-2 w-36 rounded-lg border border-border-color bg-bg-secondary p-1 shadow-xl">
+    <Popover>
+      <PopoverTrigger asChild={true}>
+        <Button
+          type="button"
+          aria-label="添加附件"
+          disabled={isDisabled}
+          title={
+            count >= maxCount ? `单次最多上传 ${maxCount} 张图片` : '添加附件'
+          }
+          size="icon"
+          className="bg-black/25 hover:text-text-primary"
+        >
+          <PlusIcon />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-36">
+        <PopoverClose asChild={true}>
           <button
             type="button"
             disabled={isDisabled}
-            onClick={() => {
-              openPicker();
-              setIsOpen(false);
-            }}
+            onClick={openPicker}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-text-secondary transition-colors hover:bg-black/30 hover:text-text-primary focus:bg-black/30 focus:text-text-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ImageIcon />
             <span>图片</span>
           </button>
-        </div>
-      )}
-    </div>
+        </PopoverClose>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -304,7 +309,7 @@ function ComposerTextarea({
   };
   return (
     <div className="relative min-w-0">
-      <textarea
+      <Textarea
         value={body}
         onChange={(event) => {
           const value = event.target.value;
@@ -325,7 +330,7 @@ function ComposerTextarea({
         placeholder={placeholder}
         rows={rows}
         disabled={disabled || busy}
-        className="block w-full min-w-0 resize-none rounded-lg border border-border-color bg-black/35 px-3 pt-2 pr-16 pb-7 text-sm outline-none focus:ring-1 focus:ring-brand/60 disabled:opacity-50"
+        className="block w-full resize-none pt-2 pr-16 pb-7"
       />
       {showSlashMenu && (
         <SlashModeMenu
@@ -379,7 +384,7 @@ function SubmitIconButton({
 >) {
   const isCancelling = Boolean(runningRun);
   return (
-    <button
+    <Button
       type={isCancelling ? 'button' : 'submit'}
       aria-label={isCancelling ? '中断当前 Agent' : busy ? '发送中' : '发送'}
       title={isCancelling ? '中断当前 Agent' : busy ? '发送中' : submitTitle}
@@ -387,10 +392,11 @@ function SubmitIconButton({
       onClick={() => {
         if (runningRun) onCancelAgentRun?.(runningRun.runId);
       }}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-brand bg-brand text-white transition-colors hover:bg-brand-hover focus:outline-none focus:ring-1 focus:ring-brand/70 disabled:cursor-not-allowed disabled:opacity-50"
+      variant="default"
+      size="icon"
     >
       {isCancelling ? <SpinnerIcon /> : busy ? <SpinnerIcon /> : <SendIcon />}
-    </button>
+    </Button>
   );
 }
 

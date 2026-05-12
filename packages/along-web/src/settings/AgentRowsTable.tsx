@@ -1,5 +1,8 @@
 // biome-ignore-all lint/style/noJsxLiterals: settings table uses compact inline labels.
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: table rendering is kept together for readability.
+import { Button } from '../components/ui/button';
+import { Input, Select } from '../components/ui/input';
+import { Section } from '../components/ui/section';
 import type { RuntimeConfig } from '../types';
 import type { AgentRow } from './types';
 
@@ -21,21 +24,7 @@ export function AgentRowsTable({
   onRemove: (id: string) => void;
 }) {
   return (
-    <section className="rounded-lg border border-border-color bg-black/25 overflow-hidden">
-      <div className="px-4 py-3 border-b border-border-color flex items-center justify-between gap-3">
-        <div className="font-semibold text-sm text-text-secondary">
-          Task Agents
-        </div>
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={loading || saving}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          新增
-        </button>
-      </div>
-
+    <Section title="Task Agents" disabled={loading || saving} onAdd={onAdd}>
       <div className="hidden md:grid grid-cols-[180px_180px_minmax(0,1fr)_180px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
         <span>Agent</span>
         <span>Runtime</span>
@@ -50,35 +39,32 @@ export function AgentRowsTable({
             key={row.id}
             className="grid grid-cols-1 md:grid-cols-[180px_180px_minmax(0,1fr)_180px_84px] gap-3 p-4 items-center"
           >
-            <input
+            <Input
               type="text"
               value={row.id}
               onChange={(event) => onUpdate(row.id, { id: event.target.value })}
-              className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
             />
-            <select
+            <Select
               value={row.runtimeId}
               onChange={(event) =>
                 onUpdate(row.id, { runtimeId: event.target.value })
               }
-              className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
             >
               {runtimes.map((runtime) => (
                 <option key={runtime.id} value={runtime.id}>
                   {runtime.name || runtime.id}
                 </option>
               ))}
-            </select>
-            <input
+            </Select>
+            <Input
               type="text"
               value={row.modelId}
               onChange={(event) =>
                 onUpdate(row.id, { modelId: event.target.value })
               }
               placeholder="model id"
-              className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
             />
-            <input
+            <Input
               type="text"
               value={row.personalityVersion}
               onChange={(event) =>
@@ -87,19 +73,18 @@ export function AgentRowsTable({
                 })
               }
               placeholder="version"
-              className="bg-black/35 border border-border-color rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-brand/60"
             />
-            <button
+            <Button
               type="button"
               onClick={() => onRemove(row.id)}
               disabled={loading || saving}
-              className="px-3 py-2 rounded-lg text-xs font-semibold border border-border-color text-text-secondary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+              size="sm"
             >
               删除
-            </button>
+            </Button>
           </div>
         ))}
       </div>
-    </section>
+    </Section>
   );
 }
