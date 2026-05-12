@@ -3,12 +3,10 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from 'react';
 import type { RegistryConfig } from '../types';
-import { registryToRows, rowsToAgents } from './configMapping';
-import type { AgentRow } from './types';
+import { useRegistryActions } from './registryActions';
 
 interface ConfigApiError {
   error?: string;
@@ -17,7 +15,6 @@ interface ConfigApiError {
 export interface SettingsState {
   configPath: string;
   registry: RegistryConfig | null;
-  rows: AgentRow[];
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -36,7 +33,6 @@ const emptyRegistry: RegistryConfig = {
 const initialSettingsState: SettingsState = {
   configPath: '~/.along/config.json',
   registry: null,
-  rows: [],
   loading: false,
   saving: false,
   error: null,
@@ -72,7 +68,6 @@ function useSettingsData() {
       setState((previous) => ({
         ...previous,
         registry: result,
-        rows: registryToRows(result),
         loading: false,
       }));
     } catch (err: unknown) {
@@ -89,67 +84,6 @@ function useSettingsData() {
   return { state, setState, loadConfig };
 }
 
-function useSortedRows(state: SettingsState) {
-  const sortedRows = useMemo(() => {
-    return [...state.rows].sort((left, right) =>
-      left.id.localeCompare(right.id),
-    );
-  }, [state.rows]);
-  return { sortedRows };
-}
-
-function nextId(prefix: string, existing: string[]) {
-  let index = 1;
-  let id = `${prefix}-${index}`;
-  const ids = new Set(existing);
-  while (ids.has(id)) {
-    index += 1;
-    id = `${prefix}-${index}`;
-  }
-  return id;
-}
-
-function useAgentRowActions(state: SettingsState, setState: SetSettingsState) {
-  const updateRow = (id: string, patch: Partial<AgentRow>) => {
-    setState((previous) => ({
-      ...previous,
-      rows: previous.rows.map((row) =>
-        row.id === id ? { ...row, ...patch } : row,
-      ),
-      savedAt: null,
-    }));
-  };
-  const addRow = () => {
-    const id = nextId(
-      'agent',
-      state.rows.map((row) => row.id),
-    );
-    setState((previous) => ({
-      ...previous,
-      rows: [...previous.rows, createAgentRow(id, state.registry)],
-      savedAt: null,
-    }));
-  };
-  const removeRow = (id: string) => {
-    setState((previous) => ({
-      ...previous,
-      rows: previous.rows.filter((row) => row.id !== id),
-      savedAt: null,
-    }));
-  };
-  return { updateRow, addRow, removeRow };
-}
-
-function createAgentRow(id: string, registry: RegistryConfig | null): AgentRow {
-  return {
-    id,
-    runtimeId: registry?.runtimes[0]?.id || 'codex',
-    modelId: '',
-    credentialId: '',
-    personalityVersion: '',
-  };
-}
-
 function useSaveConfig(state: SettingsState, setState: SetSettingsState) {
   return async () => {
     if (state.saving) return;
@@ -159,7 +93,6 @@ function useSaveConfig(state: SettingsState, setState: SetSettingsState) {
       setState((previous) => ({
         ...previous,
         registry: result,
-        rows: registryToRows(result),
         saving: false,
         savedAt: new Date().toLocaleTimeString('zh-CN'),
       }));
@@ -178,10 +111,7 @@ async function putSettingsConfig(state: SettingsState) {
   const response = await fetch('/api/registry', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...registry,
-      agents: rowsToAgents(state.rows),
-    }),
+    body: JSON.stringify(registry),
   });
   return readJsonResponse<RegistryConfig>(response);
 }
@@ -190,8 +120,7 @@ export function useSettingsController() {
   const { state, setState, loadConfig } = useSettingsData();
   return {
     state,
-    rows: useSortedRows(state),
-    agentActions: useAgentRowActions(state, setState),
+    registryActions: useRegistryActions(setState),
     loadConfig,
     saveConfig: useSaveConfig(state, setState),
   };

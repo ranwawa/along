@@ -1,7 +1,7 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing settings view uses inline UI copy.
 import { Alert } from './components/ui/alert';
 import { Button } from './components/ui/button';
-import { AgentRowsTable } from './settings/AgentRowsTable';
+import { RegistrySettingsTables } from './settings/RegistrySettingsTables';
 import {
   type SettingsState,
   useSettingsController,
@@ -56,6 +56,7 @@ function SettingsAlerts({ state }: { state: SettingsState }) {
 
 export function SettingsView() {
   const settings = useSettingsController();
+  const registry = settings.state.registry;
   return (
     <div className="flex-1 min-h-0 border-t border-border-color overflow-auto bg-bg-secondary">
       <div className="max-w-6xl mx-auto p-4 md:p-6 flex flex-col gap-5">
@@ -65,15 +66,14 @@ export function SettingsView() {
           saveConfig={settings.saveConfig}
         />
         <SettingsAlerts state={settings.state} />
-        <AgentRowsTable
-          rows={settings.rows.sortedRows}
-          runtimes={settings.state.registry?.runtimes || []}
-          loading={settings.state.loading}
-          saving={settings.state.saving}
-          onAdd={settings.agentActions.addRow}
-          onUpdate={settings.agentActions.updateRow}
-          onRemove={settings.agentActions.removeRow}
-        />
+        {registry && (
+          <RegistrySettingsTables
+            registry={registry}
+            loading={settings.state.loading}
+            saving={settings.state.saving}
+            actions={settings.registryActions}
+          />
+        )}
       </div>
     </div>
   );
