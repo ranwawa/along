@@ -1,6 +1,9 @@
 // biome-ignore-all lint/style/noJsxLiterals: settings table uses compact inline labels.
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: table rendering is kept together for readability.
 
+import { Eye, EyeOff } from 'lucide-react';
+import { useState } from 'react';
+import { Button } from '../components/ui/button';
 import { Input, Select } from '../components/ui/input';
 import type { ModelConfig, RegistryConfig } from '../types';
 import {
@@ -23,6 +26,21 @@ export function ModelRows({
   onUpdate: (id: string, patch: Partial<ModelConfig>) => void;
   onRemove: (id: string) => void;
 }) {
+  const [visibleTokenIds, setVisibleTokenIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleTokenVisible = (id: string) => {
+    setVisibleTokenIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   return (
     <Section
       title="Models"
@@ -30,11 +48,12 @@ export function ModelRows({
       disabled={disabled}
       onAdd={onAdd}
     >
-      <div className="hidden md:grid grid-cols-[150px_170px_minmax(0,1fr)_190px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
+      <div className="hidden md:grid grid-cols-[150px_170px_minmax(0,1fr)_minmax(0,1fr)_180px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
         <span>ID</span>
         <span>Provider</span>
         <span>Model Name</span>
-        <span>Credential</span>
+        <span>Token</span>
+        <span>Token Env</span>
         <span />
       </div>
       <div className="divide-y divide-white/5">
@@ -42,7 +61,7 @@ export function ModelRows({
         {registry.models.map((model) => (
           <div
             key={model.id}
-            className="grid grid-cols-1 md:grid-cols-[150px_170px_minmax(0,1fr)_190px_84px] gap-3 p-4 items-center"
+            className="grid grid-cols-1 md:grid-cols-[150px_170px_minmax(0,1fr)_minmax(0,1fr)_180px_84px] gap-3 p-4 items-center"
           >
             <Input
               type="text"
@@ -72,25 +91,23 @@ export function ModelRows({
               }
               placeholder="gpt-5.5"
             />
-            <Select
-              value={model.credentialId || ''}
+            <TokenInput
+              model={model}
+              visible={visibleTokenIds.has(model.id)}
+              disabled={disabled}
+              onToggleVisible={() => toggleTokenVisible(model.id)}
+              onUpdate={onUpdate}
+            />
+            <Input
+              type="text"
+              value={model.tokenEnv || ''}
               onChange={(event) =>
                 onUpdate(model.id, {
-                  credentialId: optional(event.target.value),
+                  tokenEnv: optional(event.target.value),
                 })
               }
-            >
-              <option value="">使用 Provider 默认</option>
-              {registry.credentials
-                .filter(
-                  (credential) => credential.providerId === model.providerId,
-                )
-                .map((credential) => (
-                  <option key={credential.id} value={credential.id}>
-                    {credential.id}
-                  </option>
-                ))}
-            </Select>
+              placeholder="OPENAI_API_KEY"
+            />
             <DeleteButton
               disabled={disabled}
               onClick={() => onRemove(model.id)}
@@ -99,5 +116,51 @@ export function ModelRows({
         ))}
       </div>
     </Section>
+  );
+}
+
+function TokenInput({
+  model,
+  visible,
+  disabled,
+  onToggleVisible,
+  onUpdate,
+}: {
+  model: ModelConfig;
+  visible: boolean;
+  disabled: boolean;
+  onToggleVisible: () => void;
+  onUpdate: (id: string, patch: Partial<ModelConfig>) => void;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <Input
+        type={visible ? 'text' : 'password'}
+        value={model.token || ''}
+        onChange={(event) =>
+          onUpdate(model.id, {
+            token: optional(event.target.value),
+          })
+        }
+        placeholder="直接保存 token"
+        className="flex-1"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onClick={onToggleVisible}
+        aria-pressed={visible}
+        title={visible ? '隐藏 token 明文' : '查看 token 明文'}
+      >
+        {visible ? (
+          <EyeOff aria-hidden="true" className="h-4 w-4" />
+        ) : (
+          <Eye aria-hidden="true" className="h-4 w-4" />
+        )}
+        <span>{visible ? '隐藏' : '查看'}</span>
+      </Button>
+    </div>
   );
 }

@@ -5,15 +5,6 @@ export interface ProviderConfig {
   kind: ProviderKind;
   name?: string;
   baseUrl?: string;
-  defaultCredentialId?: string;
-}
-
-export interface CredentialConfig {
-  id: string;
-  providerId: string;
-  name?: string;
-  token?: string;
-  tokenEnv?: string;
 }
 
 export interface ModelConfig {
@@ -21,7 +12,8 @@ export interface ModelConfig {
   providerId: string;
   model: string;
   name?: string;
-  credentialId?: string;
+  token?: string;
+  tokenEnv?: string;
   contextWindow?: number;
   maxOutputTokens?: number;
 }
@@ -31,7 +23,6 @@ export interface RuntimeConfig {
   kind: 'codex';
   name?: string;
   modelId?: string;
-  credentialId?: string;
 }
 
 export interface AgentConfig {
@@ -39,7 +30,6 @@ export interface AgentConfig {
   runtimeId: string;
   name?: string;
   modelId?: string;
-  credentialId?: string;
   personalityVersion?: string;
 }
 
@@ -47,7 +37,6 @@ export interface ProfileConfig {
   id: string;
   modelId: string;
   name?: string;
-  credentialId?: string;
   systemPrompt: string;
   userTemplate?: string;
   parameters?: {
@@ -59,7 +48,6 @@ export interface ProfileConfig {
 
 export interface RegistryConfig {
   providers: ProviderConfig[];
-  credentials: CredentialConfig[];
   models: ModelConfig[];
   runtimes: RuntimeConfig[];
   agents: AgentConfig[];

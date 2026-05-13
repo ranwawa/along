@@ -8,15 +8,14 @@ How might we let Along flexibly configure AI providers, tokens, models, runtimes
 
 Use a small configuration registry with two execution paths.
 
-The first path is for agents. `Agent` selects a `Runtime`, and the runtime executes the agent turn through Codex, OpenCode, or another editor runtime. A runtime may define its default model and credential because the same runtime kind can be used with different model providers.
+The first path is for agents. `Agent` selects a `Runtime`, and the runtime executes the agent turn through Codex, OpenCode, or another editor runtime. A runtime may define its default model, but token configuration stays on the model to keep the registry easy to reason about.
 
 The second path is for direct model calls. `Prompt` represents lightweight AI tasks such as title summary, classification, PR title generation, or structured extraction. These prompts are executed by `LLMService`, not by an agent runtime.
 
-Both paths share the same provider, credential, and model registry:
+Both paths share the same provider and model registry:
 
 ```txt
 Provider
-Credential
 Model
 Runtime
 Agent
@@ -26,7 +25,7 @@ RuntimeService
 LLMService
 ```
 
-`Provider` owns provider-level connection details such as `baseUrl`. `Credential` belongs to a provider. `Model` belongs to a provider and stores the provider model name. `Runtime` may point to a default model and credential. `Agent` points to a runtime and can override model or credential. `Prompt` points directly to a model and can override credential.
+`Provider` owns provider-level connection details such as `baseUrl`. `Model` belongs to a provider, stores the provider model name, and owns `token` or `tokenEnv`. `Runtime` may point to a default model. `Agent` points to a runtime and can override model. `Prompt` points directly to a model.
 
 Runtime model resolution should follow this chain:
 
@@ -35,17 +34,7 @@ Runtime.modelId
   -> Model
   -> Model.providerId
   -> Provider.baseUrl
-  -> Credential token
-```
-
-Credential priority:
-
-```txt
-task override
-> agent.credentialId
-> runtime.credentialId
-> model.credentialId
-> provider.defaultCredentialId
+  -> Model token
 ```
 
 Model priority:
@@ -65,15 +54,6 @@ type Provider = {
   kind: 'openai-compatible' | 'anthropic' | 'custom';
   name?: string;
   baseUrl?: string;
-  defaultCredentialId?: string;
-};
-
-type Credential = {
-  id: string;
-  providerId: string;
-  name?: string;
-  token?: string;
-  tokenEnv?: string;
 };
 
 type Model = {
@@ -81,7 +61,8 @@ type Model = {
   providerId: string;
   model: string;
   name?: string;
-  credentialId?: string;
+  token?: string;
+  tokenEnv?: string;
 };
 
 type Runtime = {
@@ -89,7 +70,6 @@ type Runtime = {
   kind: 'codex' | 'opencode' | string;
   name?: string;
   modelId?: string;
-  credentialId?: string;
   settings?: Record<string, unknown>;
 };
 
@@ -98,7 +78,6 @@ type Agent = {
   runtimeId: string;
   name?: string;
   modelId?: string;
-  credentialId?: string;
   personalityVersion?: string;
 };
 
@@ -106,7 +85,6 @@ type Prompt = {
   id: string;
   modelId: string;
   name?: string;
-  credentialId?: string;
   systemPrompt: string;
   userTemplate?: string;
   temperature?: number;
@@ -131,30 +109,18 @@ type Prompt = {
       "baseUrl": "https://openrouter.ai/api/v1"
     }
   ],
-  "credentials": [
-    {
-      "id": "openai-main",
-      "providerId": "openai",
-      "tokenEnv": "OPENAI_API_KEY"
-    },
-    {
-      "id": "router-main",
-      "providerId": "openrouter",
-      "tokenEnv": "OPENROUTER_API_KEY"
-    }
-  ],
   "models": [
     {
       "id": "gpt-main",
       "providerId": "openai",
       "model": "gpt-5.2",
-      "credentialId": "openai-main"
+      "tokenEnv": "OPENAI_API_KEY"
     },
     {
       "id": "claude-router",
       "providerId": "openrouter",
       "model": "anthropic/claude-sonnet-4.5",
-      "credentialId": "router-main"
+      "tokenEnv": "OPENROUTER_API_KEY"
     }
   ],
   "runtimes": [
@@ -192,7 +158,7 @@ type Prompt = {
 ## Key Assumptions to Validate
 
 - [ ] Codex and OpenCode can be adapted behind a common `RuntimeService.runAgentTurn` interface without hiding important runtime-specific behavior.
-- [ ] Users can understand `Agent -> Runtime -> Model -> Provider -> Credential` without the configuration feeling too indirect.
+- [ ] Users can understand `Agent -> Runtime -> Model -> Provider`, with token configured only on Model.
 - [ ] `Prompt` is a clear enough name for lightweight direct model tasks and will not be confused with editor workflow prompt files.
 - [ ] Provider-compatible APIs such as OpenAI and OpenRouter can share enough client code to make `LLMService` useful.
 - [ ] `tokenEnv` plus optional local `token` is enough for personal multi-machine configuration sharing.
@@ -201,8 +167,8 @@ type Prompt = {
 
 Build the minimum registry and resolver first:
 
-- Define `Provider`, `Credential`, `Model`, `Runtime`, `Agent`, and `Prompt` configuration types.
-- Add validation for missing ids, unknown references, and provider mismatch between model and credential.
+- Define `Provider`, `Model`, `Runtime`, `Agent`, and `Prompt` configuration types.
+- Add validation for missing ids and unknown references.
 - Resolve an agent runtime into a fully usable runtime execution config.
 - Resolve a prompt into a direct LLM execution config.
 - Keep existing Codex behavior working as the first runtime implementation.

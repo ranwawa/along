@@ -11,15 +11,6 @@ export interface ProviderConfig {
   kind: ProviderKind;
   name?: string;
   baseUrl?: string;
-  defaultCredentialId?: string;
-}
-
-export interface CredentialConfig {
-  id: string;
-  providerId: string;
-  name?: string;
-  token?: string;
-  tokenEnv?: string;
 }
 
 export interface ModelConfig {
@@ -27,7 +18,8 @@ export interface ModelConfig {
   providerId: string;
   model: string;
   name?: string;
-  credentialId?: string;
+  token?: string;
+  tokenEnv?: string;
   contextWindow?: number;
   maxOutputTokens?: number;
 }
@@ -37,7 +29,6 @@ export interface RuntimeConfig {
   kind: 'codex';
   name?: string;
   modelId?: string;
-  credentialId?: string;
 }
 
 export interface AgentConfig {
@@ -45,7 +36,6 @@ export interface AgentConfig {
   runtimeId: string;
   name?: string;
   modelId?: string;
-  credentialId?: string;
   personalityVersion?: string;
 }
 
@@ -59,7 +49,6 @@ export interface ProfileConfig {
   id: string;
   modelId: string;
   name?: string;
-  credentialId?: string;
   systemPrompt: string;
   userTemplate?: string;
   parameters?: ProfileParametersConfig;
@@ -67,7 +56,6 @@ export interface ProfileConfig {
 
 export interface RegistryConfig {
   providers: ProviderConfig[];
-  credentials: CredentialConfig[];
   models: ModelConfig[];
   runtimes: RuntimeConfig[];
   agents: AgentConfig[];
@@ -81,27 +69,15 @@ const providerSchema = z.object({
   kind: z.enum(['openai-compatible', 'anthropic', 'custom']),
   name: z.string().trim().min(1).optional(),
   baseUrl: z.string().trim().min(1).optional(),
-  defaultCredentialId: idSchema.optional(),
 });
-
-const credentialSchema = z
-  .object({
-    id: idSchema,
-    providerId: idSchema,
-    name: z.string().trim().min(1).optional(),
-    token: z.string().trim().min(1).optional(),
-    tokenEnv: z.string().trim().min(1).optional(),
-  })
-  .refine((value) => value.token || value.tokenEnv, {
-    message: 'Credential 必须配置 token 或 tokenEnv',
-  });
 
 const modelSchema = z.object({
   id: idSchema,
   providerId: idSchema,
   model: z.string().trim().min(1),
   name: z.string().trim().min(1).optional(),
-  credentialId: idSchema.optional(),
+  token: z.string().trim().min(1).optional(),
+  tokenEnv: z.string().trim().min(1).optional(),
   contextWindow: z.number().int().positive().optional(),
   maxOutputTokens: z.number().int().positive().optional(),
 });
@@ -111,7 +87,6 @@ const runtimeSchema = z.object({
   kind: z.literal('codex'),
   name: z.string().trim().min(1).optional(),
   modelId: idSchema.optional(),
-  credentialId: idSchema.optional(),
 });
 
 const agentSchema = z.object({
@@ -119,7 +94,6 @@ const agentSchema = z.object({
   runtimeId: idSchema,
   name: z.string().trim().min(1).optional(),
   modelId: idSchema.optional(),
-  credentialId: idSchema.optional(),
   personalityVersion: z.string().trim().min(1).optional(),
 });
 
@@ -127,7 +101,6 @@ const profileSchema = z.object({
   id: idSchema,
   modelId: idSchema,
   name: z.string().trim().min(1).optional(),
-  credentialId: idSchema.optional(),
   systemPrompt: z.string().trim().min(1),
   userTemplate: z.string().optional(),
   parameters: z
@@ -141,7 +114,6 @@ const profileSchema = z.object({
 
 export const registrySchema = z.object({
   providers: z.array(providerSchema),
-  credentials: z.array(credentialSchema),
   models: z.array(modelSchema),
   runtimes: z.array(runtimeSchema),
   agents: z.array(agentSchema),
@@ -174,22 +146,6 @@ function ensureUniqueIds<T extends { id: string }>(
   return success(undefined);
 }
 
-function ensureCredentialProvider(
-  registry: RegistryConfig,
-  credentialId: string | undefined,
-  providerId: string,
-  label: string,
-): Result<void> {
-  if (!credentialId) return success(undefined);
-  const credential = findById(registry.credentials, credentialId);
-  if (!credential)
-    return failure(`${label} 引用了未知 Credential: ${credentialId}`);
-  if (credential.providerId !== providerId) {
-    return failure(`${label} 引用的 Credential 不属于 Provider: ${providerId}`);
-  }
-  return success(undefined);
-}
-
 function validateModelReference(
   registry: RegistryConfig,
   modelId: string | undefined,
@@ -207,7 +163,6 @@ function validateRegistryReferences(
 ): Result<RegistryConfig> {
   const uniqueChecks = [
     ensureUniqueIds('Provider', registry.providers),
-    ensureUniqueIds('Credential', registry.credentials),
     ensureUniqueIds('Model', registry.models),
     ensureUniqueIds('Runtime', registry.runtimes),
     ensureUniqueIds('Agent', registry.agents),
@@ -215,35 +170,10 @@ function validateRegistryReferences(
   ];
   for (const check of uniqueChecks) if (!check.success) return check;
 
-  for (const provider of registry.providers) {
-    const credentialRes = ensureCredentialProvider(
-      registry,
-      provider.defaultCredentialId,
-      provider.id,
-      `Provider ${provider.id}`,
-    );
-    if (!credentialRes.success) return credentialRes;
-  }
-
-  for (const credential of registry.credentials) {
-    if (!findById(registry.providers, credential.providerId)) {
-      return failure(
-        `Credential 引用了未知 Provider: ${credential.providerId}`,
-      );
-    }
-  }
-
   for (const model of registry.models) {
     const provider = findById(registry.providers, model.providerId);
     if (!provider)
       return failure(`Model 引用了未知 Provider: ${model.providerId}`);
-    const credentialRes = ensureCredentialProvider(
-      registry,
-      model.credentialId,
-      provider.id,
-      `Model ${model.id}`,
-    );
-    if (!credentialRes.success) return credentialRes;
   }
 
   for (const runtime of registry.runtimes) {
@@ -253,15 +183,6 @@ function validateRegistryReferences(
       `Runtime ${runtime.id}`,
     );
     if (!modelRes.success) return modelRes;
-    if (modelRes.data) {
-      const credentialRes = ensureCredentialProvider(
-        registry,
-        runtime.credentialId,
-        modelRes.data.providerId,
-        `Runtime ${runtime.id}`,
-      );
-      if (!credentialRes.success) return credentialRes;
-    }
   }
 
   for (const agent of registry.agents) {
@@ -274,15 +195,6 @@ function validateRegistryReferences(
       `Agent ${agent.id}`,
     );
     if (!modelRes.success) return modelRes;
-    if (modelRes.data) {
-      const credentialRes = ensureCredentialProvider(
-        registry,
-        agent.credentialId || runtime.credentialId,
-        modelRes.data.providerId,
-        `Agent ${agent.id}`,
-      );
-      if (!credentialRes.success) return credentialRes;
-    }
   }
 
   for (const profile of registry.profiles) {
@@ -293,13 +205,6 @@ function validateRegistryReferences(
     );
     if (!modelRes.success) return modelRes;
     if (!modelRes.data) return failure(`Profile 缺少 Model: ${profile.id}`);
-    const credentialRes = ensureCredentialProvider(
-      registry,
-      profile.credentialId,
-      modelRes.data.providerId,
-      `Profile ${profile.id}`,
-    );
-    if (!credentialRes.success) return credentialRes;
     const maxTokens = profile.parameters?.maxTokens;
     if (
       maxTokens !== undefined &&
@@ -314,10 +219,9 @@ function validateRegistryReferences(
 }
 
 export function parseRegistryConfig(value: unknown): Result<RegistryConfig> {
-  const parsed = registrySchema.safeParse(value);
+  const migrated = migrateLegacyRegistryConfig(value);
+  const parsed = registrySchema.safeParse(migrated || value);
   if (!parsed.success) {
-    const migrated = migrateLegacyRegistryConfig(value);
-    if (migrated) return validateRegistryReferences(migrated);
     return failure(`Registry 配置无效: ${getZodErrorMessage(parsed.error)}`);
   }
   return validateRegistryReferences(parsed.data);

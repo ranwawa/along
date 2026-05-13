@@ -1,4 +1,5 @@
 // biome-ignore-all lint/style/noJsxLiterals: shared add button uses the existing Chinese dashboard label.
+import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from './button';
 
@@ -27,7 +28,14 @@ export function Section({
           )}
         </div>
         {onAdd && (
-          <Button type="button" size="sm" onClick={onAdd} disabled={disabled}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={onAdd}
+            disabled={disabled}
+            className="gap-1.5"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" />
             新增
           </Button>
         )}

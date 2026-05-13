@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: shared sheet close control uses the existing dashboard close label.
 import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
@@ -32,7 +33,8 @@ export function SheetContent({
             {title}
           </DialogPrimitive.Title>
           <DialogPrimitive.Close className="shrink-0 rounded-lg p-2 text-text-secondary transition-colors hover:bg-white/10 hover:text-white focus:outline-none focus:ring-1 focus:ring-brand/60">
-            x
+            <X aria-hidden="true" className="h-4 w-4" />
+            <span className="sr-only">关闭</span>
           </DialogPrimitive.Close>
         </div>
         {children}

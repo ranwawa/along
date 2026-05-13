@@ -1,5 +1,12 @@
 // biome-ignore-all lint/style/noJsxLiterals: task planning panels use existing inline labels.
 // biome-ignore-all lint/style/noMagicNumbers: task planning layout uses fixed UI thresholds.
+import {
+  Activity,
+  History,
+  Info,
+  type LucideIcon,
+  TerminalSquare,
+} from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Sheet, SheetContent } from '../components/ui/sheet';
 import type { TaskPlanningSnapshot } from '../types';
@@ -13,11 +20,12 @@ export type TaskDetailDialogKind = 'progress' | 'tail' | 'metadata' | 'history';
 const TASK_DETAIL_ACTIONS: {
   kind: TaskDetailDialogKind;
   label: string;
+  icon: LucideIcon;
 }[] = [
-  { kind: 'progress', label: '实时进展' },
-  { kind: 'tail', label: 'Agent 会话 Tail' },
-  { kind: 'metadata', label: '任务元信息' },
-  { kind: 'history', label: '历史流转' },
+  { kind: 'progress', label: '实时进展', icon: Activity },
+  { kind: 'tail', label: 'Agent 会话 Tail', icon: TerminalSquare },
+  { kind: 'metadata', label: '任务元信息', icon: Info },
+  { kind: 'history', label: '历史流转', icon: History },
 ];
 
 function getTaskDialogTitle(kind: TaskDetailDialogKind): string {
@@ -120,17 +128,21 @@ export function TaskDetailHeader({
           任务面板
         </div>
         <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
-          {TASK_DETAIL_ACTIONS.map((action) => (
-            <Button
-              key={action.kind}
-              type="button"
-              onClick={() => onOpenDialog(action.kind)}
-              size="sm"
-              className="bg-black/20"
-            >
-              {action.label}
-            </Button>
-          ))}
+          {TASK_DETAIL_ACTIONS.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Button
+                key={action.kind}
+                type="button"
+                onClick={() => onOpenDialog(action.kind)}
+                size="sm"
+                className="gap-1.5 bg-black/20"
+              >
+                <Icon aria-hidden="true" className="h-4 w-4" />
+                {action.label}
+              </Button>
+            );
+          })}
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from './components/ui/button';
 import { TaskDetail } from './task-planning/TaskDetail';
@@ -6,20 +7,18 @@ import { useTaskPlanningController } from './task-planning/useTaskPlanningContro
 
 type TaskPlanningController = ReturnType<typeof useTaskPlanningController>;
 
-const SIDEBAR_COLLAPSE_ICON = '<';
-const SIDEBAR_EXPAND_ICON = '>';
-
 function SidebarToggleButton({
   ariaLabel,
-  children,
+  icon,
   className,
   onClick,
 }: {
   ariaLabel: string;
-  children: string;
+  icon: 'open' | 'close';
   className: string;
   onClick: () => void;
 }) {
+  const Icon = icon === 'open' ? PanelLeftOpen : PanelLeftClose;
   return (
     <Button
       type="button"
@@ -28,7 +27,7 @@ function SidebarToggleButton({
       size="icon"
       className={className}
     >
-      {children}
+      <Icon aria-hidden="true" className="h-4 w-4" />
     </Button>
   );
 }
@@ -44,9 +43,8 @@ function CollapsedSidebar({
         ariaLabel="展开左侧栏"
         onClick={onToggleCollapsed}
         className="h-9 w-9"
-      >
-        {SIDEBAR_EXPAND_ICON}
-      </SidebarToggleButton>
+        icon="open"
+      />
     </div>
   );
 }
@@ -71,9 +69,8 @@ function TaskPlanningSidebar({
           ariaLabel="折叠左侧栏"
           onClick={onToggleCollapsed}
           className="h-8 w-8"
-        >
-          {SIDEBAR_COLLAPSE_ICON}
-        </SidebarToggleButton>
+          icon="close"
+        />
       </div>
       <TaskListPanel
         draft={taskPlanning.draft}

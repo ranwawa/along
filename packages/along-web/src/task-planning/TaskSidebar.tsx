@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Alert } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -10,7 +11,6 @@ import { getLatestFailedAgentStage } from './taskAgentFailure';
 const EMPTY_REPOSITORY_LABEL = '暂无已注册仓库';
 const LOADING_TASKS_TEXT = '加载中...';
 const EMPTY_TASKS_TEXT = '暂无任务。';
-const NEW_TASK_ICON = '+';
 const TASK_SEQ_PREFIX = '#';
 
 function PopupTooltip({
@@ -216,7 +216,7 @@ function TaskListHeader({
               : 'border-border-color text-text-secondary hover:bg-white/5'
           }`}
         >
-          {NEW_TASK_ICON}
+          <Plus aria-hidden="true" className="h-4 w-4" />
         </Button>
       </PopupTooltip>
     </div>

@@ -1,11 +1,19 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels.
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: log tabs and content branch are kept together for readability.
+import { Activity, BotMessageSquare, FileSearch, ListTree } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { ConversationLog } from './ConversationLog';
 import { LogEntries } from './LogEntries';
 import type { LogTab, useSessionLogs } from './useSessionLogs';
 
 type SessionLogsState = ReturnType<typeof useSessionLogs>;
+
+const tabIcon = {
+  timeline: Activity,
+  lifecycle: ListTree,
+  conversation: BotMessageSquare,
+  diagnostic: FileSearch,
+} satisfies Record<LogTab, typeof Activity>;
 
 export function SessionLogsPanel({ logs }: { logs: SessionLogsState }) {
   const tabs: LogTab[] = [
@@ -27,20 +35,12 @@ export function SessionLogsPanel({ logs }: { logs: SessionLogsState }) {
         </div>
         <div className="flex gap-2 flex-wrap">
           {tabs.map((tab) => (
-            <Button
-              type="button"
+            <LogTabButton
               key={tab}
-              variant="tab"
-              size="sm"
-              className={
-                logs.selectedLogTab === tab
-                  ? 'bg-white/10 text-white'
-                  : undefined
-              }
+              tab={tab}
+              active={logs.selectedLogTab === tab}
               onClick={() => logs.setSelectedLogTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </Button>
+            />
           ))}
         </div>
       </div>
@@ -63,5 +63,29 @@ export function SessionLogsPanel({ logs }: { logs: SessionLogsState }) {
         )}
       </div>
     </div>
+  );
+}
+
+function LogTabButton({
+  tab,
+  active,
+  onClick,
+}: {
+  tab: LogTab;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const Icon = tabIcon[tab];
+  return (
+    <Button
+      type="button"
+      variant="tab"
+      size="sm"
+      className={`gap-1.5 ${active ? 'bg-white/10 text-white' : ''}`}
+      onClick={onClick}
+    >
+      <Icon aria-hidden="true" className="h-4 w-4" />
+      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+    </Button>
   );
 }

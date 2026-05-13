@@ -7,9 +7,9 @@
 - Agent 运行：Planning Agent、Implementation Agent 等需要通过 Codex 运行完整任务回合。
 - 轻量模型调用：标题摘要、分类、PR 标题生成、结构化抽取等不需要进入 Agent 生命周期的直接 LLM 调用。
 
-目标是引入一套小型配置注册表，让 provider、credential、model、runtime、agent、profile 之间的关系可验证、可解析、可扩展，并以 Codex 作为第一条真实 Agent 运行时。
+目标是引入一套小型配置注册表，让 provider、model、runtime、agent、profile 之间的关系可验证、可解析、可扩展，并以 Codex 作为第一条真实 Agent 运行时。
 
-用户是 Along 的个人使用者和维护者。成功状态是：用户可以在一个全局配置中声明多个模型提供方、凭据、模型、运行时、任务 Agent 和轻量 LLM Profile；系统能稳定解析 Agent 运行配置和 Profile 直连模型配置；Codex runner 作为第一条真实执行路径工作稳定。
+用户是 Along 的个人使用者和维护者。成功状态是：用户可以在一个全局配置中声明多个模型提供方、模型、运行时、任务 Agent 和轻量 LLM Profile；token 只配置在 Model 上；系统能稳定解析 Agent 运行配置和 Profile 直连模型配置；Codex runner 作为第一条真实执行路径工作稳定。
 
 ## Assumptions
 
@@ -17,8 +17,8 @@
 2. 全局配置仍存储在当前 `~/.along/config.json`，不引入数据库或远程配置服务。
 3. 不考虑任何向下兼容或数据迁移；新配置结构是唯一目标结构，旧配置可以直接清空。
 4. MVP 只处理 Codex runtime。除 Codex 外，其他任何 runtime 的 schema 细化、校验、执行器、失败提示和测试都不进入 MVP。
-5. 凭据支持 `tokenEnv` 和可选 `token`；`token` 仅用于本机个人配置，不做加密、审计或团队共享。
-6. `Profile` 表示一类可复用的轻量 LLM 使用档案，包含模型、凭据覆盖、提示文本和调用参数；它不代表 `.codex/prompts` 或 preset prompt 文件。
+5. Model 支持 `tokenEnv` 和可选 `token`；`token` 仅用于本机个人配置，不做加密、审计或团队共享。
+6. `Profile` 表示一类可复用的轻量 LLM 使用档案，包含模型、提示文本和调用参数；它不代表 `.codex/prompts` 或 preset prompt 文件。
 
 ## Tech Stack
 
@@ -101,7 +101,7 @@ docs/ai-runtime-configuration-architecture.md
 
 ## Domain Model
 
-配置注册表由六类实体组成。Provider、Credential、Model 两条执行路径共享；Runtime/Agent 只服务 Agent 运行；Profile 只服务直接模型调用。
+配置注册表由五类实体组成。Provider、Model 两条执行路径共享；Runtime/Agent 只服务 Agent 运行；Profile 只服务直接模型调用。token 只属于 Model，Provider、Runtime 和 Agent 不配置 token 或 credential。
 
 ```ts
 export type ProviderKind = 'openai-compatible' | 'anthropic' | 'custom';
@@ -111,15 +111,6 @@ export interface ProviderConfig {
   kind: ProviderKind;
   name?: string;
   baseUrl?: string;
-  defaultCredentialId?: string;
-}
-
-export interface CredentialConfig {
-  id: string;
-  providerId: string;
-  name?: string;
-  token?: string;
-  tokenEnv?: string;
 }
 
 export interface ModelConfig {
@@ -127,7 +118,8 @@ export interface ModelConfig {
   providerId: string;
   model: string;
   name?: string;
-  credentialId?: string;
+  token?: string;
+  tokenEnv?: string;
   contextWindow?: number;
   maxOutputTokens?: number;
 }
@@ -137,7 +129,6 @@ export interface RuntimeConfig {
   kind: 'codex';
   name?: string;
   modelId?: string;
-  credentialId?: string;
 }
 
 export interface AgentConfig {
@@ -145,7 +136,6 @@ export interface AgentConfig {
   runtimeId: string;
   name?: string;
   modelId?: string;
-  credentialId?: string;
   personalityVersion?: string;
 }
 
@@ -153,7 +143,6 @@ export interface ProfileConfig {
   id: string;
   modelId: string;
   name?: string;
-  credentialId?: string;
   systemPrompt: string;
   userTemplate?: string;
   parameters?: {
@@ -165,7 +154,6 @@ export interface ProfileConfig {
 
 export interface RegistryConfig {
   providers: ProviderConfig[];
-  credentials: CredentialConfig[];
   models: ModelConfig[];
   runtimes: RuntimeConfig[];
   agents: AgentConfig[];
@@ -186,19 +174,12 @@ export interface RegistryConfig {
       "baseUrl": "https://api.openai.com/v1"
     }
   ],
-  "credentials": [
-    {
-      "id": "openai-main",
-      "providerId": "openai",
-      "tokenEnv": "OPENAI_API_KEY"
-    }
-  ],
   "models": [
     {
       "id": "gpt-main",
       "providerId": "openai",
       "model": "gpt-5.2",
-      "credentialId": "openai-main"
+      "tokenEnv": "OPENAI_API_KEY"
     }
   ],
   "runtimes": [
@@ -250,15 +231,14 @@ task override
 > runtime.modelId
 ```
 
-凭据优先级：
+token 解析规则：
 
 ```txt
-task override
-> agent.credentialId
-> runtime.credentialId
-> model.credentialId
-> provider.defaultCredentialId
+final model.tokenEnv -> process.env[tokenEnv]
+final model.token
 ```
+
+Agent、Runtime、Provider 和 Profile 不提供 credential 覆盖。Agent/Profile 先解析最终 `modelId`，再从该 Model 读取 token。
 
 解析后的 Agent runtime config 至少包含：
 
@@ -272,7 +252,6 @@ export interface ResolvedAgentRuntimeConfig {
   baseUrl?: string;
   model?: string;
   modelId?: string;
-  credentialId?: string;
   token?: string;
   tokenEnv?: string;
   personalityVersion?: string;
@@ -300,7 +279,6 @@ export interface ResolvedProfileLlmConfig {
   providerKind: ProviderKind;
   baseUrl?: string;
   model: string;
-  credentialId?: string;
   token?: string;
   tokenEnv?: string;
   systemPrompt: string;
@@ -324,7 +302,6 @@ import { failure, success } from '../core/result';
 export function resolveProfileLlmConfig(input: {
   registry: RegistryConfig;
   profileId: string;
-  credentialId?: string;
 }): Result<ResolvedProfileLlmConfig> {
   const profile = findById(input.registry.profiles, input.profileId);
   if (!profile) return failure(`未知 Profile: ${input.profileId}`);
@@ -335,21 +312,8 @@ export function resolveProfileLlmConfig(input: {
   const provider = findById(input.registry.providers, model.providerId);
   if (!provider) return failure(`Model 引用了未知 Provider: ${model.providerId}`);
 
-  const credentialRes = resolveCredential({
-    registry: input.registry,
-    providerId: provider.id,
-    credentialId:
-      input.credentialId ||
-      profile.credentialId ||
-      model.credentialId ||
-      provider.defaultCredentialId,
-  });
-  if (!credentialRes.success) return credentialRes;
-
-  const token = credentialRes.data?.tokenEnv
-    ? process.env[credentialRes.data.tokenEnv]
-    : credentialRes.data?.token;
-  if (!token) return failure('Credential 未解析到 token');
+  const token = model.tokenEnv ? process.env[model.tokenEnv] : model.token;
+  if (!token) return failure(`Model ${model.id} 未配置 token 或 tokenEnv`);
 
   return success({
     profileId: profile.id,
@@ -357,9 +321,8 @@ export function resolveProfileLlmConfig(input: {
     providerKind: provider.kind,
     baseUrl: provider.baseUrl,
     model: model.model,
-    credentialId: credentialRes.data?.id,
     token,
-    tokenEnv: credentialRes.data?.tokenEnv,
+    tokenEnv: model.tokenEnv,
     systemPrompt: profile.systemPrompt,
     userTemplate: profile.userTemplate,
     parameters: {
@@ -384,21 +347,15 @@ Conventions:
 Always validate:
 
 - 所有实体 `id` 非空且在各自集合内唯一。
-- `Credential.providerId` 必须指向已存在 Provider。
 - `Model.providerId` 必须指向已存在 Provider。
-- `Model.credentialId` 若存在，必须指向同一 Provider 下的 Credential。
-- `Provider.defaultCredentialId` 若存在，必须指向同一 Provider 下的 Credential。
+- `Model.token` 和 `Model.tokenEnv` 可二选一；若最终执行用到的 Model 两者都没有，解析阶段必须失败。
 - `Runtime.kind` 在 MVP 中只能是 `codex`。
 - `Runtime.modelId` 若存在，必须指向已存在 Model。
-- `Runtime.credentialId` 若存在，必须和最终模型 Provider 匹配。
 - `Agent.runtimeId` 必须指向已存在 Runtime。
 - `Agent.modelId` 若存在，必须指向已存在 Model。
-- `Agent.credentialId` 若存在，必须和最终模型 Provider 匹配。
 - `Profile.modelId` 必须指向已存在 Model。
-- `Profile.credentialId` 若存在，必须和 Profile 模型 Provider 匹配。
 - `Profile.parameters.maxTokens` 若存在，必须是正整数；若模型声明了 `maxOutputTokens`，不得超过该值。
 - `Profile.parameters.temperature` 若存在，必须在 provider/model 支持的范围内；MVP 至少校验为非负数。
-- `Credential` 至少提供 `token` 或 `tokenEnv` 之一；若配置 `tokenEnv`，解析阶段必须能从环境变量读取到实际 token。
 
 MVP should fail fast:
 
@@ -416,13 +373,13 @@ Required tests:
   - 接受最小合法 registry。
   - 拒绝重复 id。
   - 拒绝未知引用。
-  - 拒绝 model/credential provider mismatch。
+  - 兼容旧 credentials/credentialId 配置并迁移到 Model token 字段。
   - 缺失必需集合或必需引用时返回清晰错误。
 
 - `ai-registry-resolver.test.ts`
   - Agent model priority: task override > agent > runtime。
-  - Agent credential priority: task override > agent > runtime > model > provider default。
-  - Profile 解析到 provider、model、credential、提示文本和 parameters。
+  - Agent/Profile 只从最终 Model 解析 token。
+  - Profile 解析到 provider、model、提示文本和 parameters。
   - `tokenEnv` 能从环境变量读取到 token；环境变量缺失时解析失败。
 
 - `runtime-service.test.ts`
@@ -453,7 +410,7 @@ Always:
 Ask first:
 
 - 引入 OpenAI SDK、Anthropic SDK 等新增 LLM provider 依赖。
-- 给凭据增加加密、系统 keychain 或远端同步能力。
+- 给 token 增加加密、系统 keychain 或远端同步能力。
 - 改 CI、hook 或质量门禁脚本。
 
 Never:
@@ -469,17 +426,17 @@ Never:
 ## Success Criteria
 
 - `docs/ai-runtime-configuration-architecture.md` 明确记录目标、结构、命令、代码风格、测试策略和边界。
-- `~/.along/config.json` 顶层直接表达 registry，包含 `providers`、`credentials`、`models`、`runtimes`、`agents` 和 `profiles`。
-- Agent runtime 解析能产出完整 `ResolvedAgentRuntimeConfig`，并遵守模型和凭据优先级。
+- `~/.along/config.json` 顶层直接表达 registry，包含 `providers`、`models`、`runtimes`、`agents` 和 `profiles`。
+- Agent runtime 解析能产出完整 `ResolvedAgentRuntimeConfig`，并遵守模型优先级，token 只来自最终 Model。
 - Profile 解析能产出完整 `ResolvedProfileLlmConfig`，且不进入 Agent runtime。
-- registry 校验能捕获缺失 id、未知引用和 provider/credential mismatch。
+- registry 校验能捕获缺失 id 和未知引用。
 - 第一条真实执行路径复用现有 Codex runner。
 - 至少一个轻量 Profile 用例通过 LLMService 路径运行，证明直接模型调用不依赖 Agent。
 
 ## Non-Goals
 
 - 不设计长期记忆层；记忆应作为后续上下文注入层加入。
-- 不实现凭据加密、审计和团队级权限管理。
+- 不实现 token 加密、审计和团队级权限管理。
 - 不实现自动模型路由、fallback 或 provider capability matrix。
 - 不把 Codex runner 重写为全新执行器。
 - 不在 MVP 中处理 Codex 之外的任何 runtime。
@@ -496,7 +453,7 @@ Never:
 |---|---|---|
 | `ai-registry-config.ts` | 定义 `RegistryConfig` 等配置类型、Zod schema、结构校验、引用校验 | `core/result.ts` |
 | `ai-registry-store.ts` | 读写 `~/.along/config.json`，只返回新 registry 结构 | `core/config.ts`, `ai-registry-config.ts` |
-| `ai-registry-resolver.ts` | 解析 Agent runtime config 与 Profile LLM config，处理模型和凭据优先级 | `ai-registry-config.ts` |
+| `ai-registry-resolver.ts` | 解析 Agent runtime config 与 Profile LLM config，处理模型优先级和 Model token | `ai-registry-config.ts` |
 | `codex-runtime-runner.ts` | 承接现有 Codex runner 行为，暴露 `CodexRuntimeRunner.runAgentTurn` | 现有 `task-codex-runner.ts` 逻辑 |
 | `runtime-service.ts` | 根据解析后的 Runtime 调用 Codex runner，拒绝非 Codex runtime | `ai-registry-resolver.ts`, `codex-runtime-runner.ts` |
 | `llm-service.ts` | 执行 Profile 直连模型调用，MVP 支持 openai-compatible provider | `ai-registry-resolver.ts` |
@@ -508,7 +465,7 @@ Never:
 1. Registry schema and validation
    - 先实现纯类型、schema 和引用校验。
    - 这是所有后续解析、API、运行入口的基础。
-   - 验证点：`ai-registry-config.test.ts` 覆盖合法最小配置、重复 id、未知引用、provider/credential mismatch。
+   - 验证点：`ai-registry-config.test.ts` 覆盖合法最小配置、重复 id、未知引用和旧 credential 配置迁移。
 
 2. Registry store
    - 用 `ai-registry-store.ts` 替换旧全局配置读取语义。
@@ -518,7 +475,7 @@ Never:
 3. Resolver
    - 实现 Agent runtime 和 Profile LLM 两条解析路径。
    - Agent 模型优先级为 `task override > agent.modelId > runtime.modelId`。
-   - Credential 优先级为 `task override > agent/profile > runtime > model > provider.defaultCredentialId`。
+   - token 只从最终 Model 解析。
    - `tokenEnv` 缺失必须在解析阶段失败。
    - 验证点：`ai-registry-resolver.test.ts` 覆盖优先级、token 解析、失败路径。
 
@@ -568,7 +525,7 @@ ai-registry-config
 |---|---|---|
 | 旧 `editor/taskAgents` 引用分散 | 编译失败或 UI/API 语义不一致 | 接入后用 `rg "taskAgents|editor|Editor"` 做全局清理检查 |
 | Codex runner 文件较大 | 重命名或移动容易引入行为回归 | 先加 facade，保留内部实现，再小步改调用方 |
-| `tokenEnv` 解析阶段失败影响本地运行 | 配置不完整时 Agent 无法启动 | 错误信息明确指出 credential id 和缺失 env 名 |
+| `tokenEnv` 解析阶段失败影响本地运行 | 配置不完整时 Agent 无法启动 | 错误信息明确指出 model id 和缺失 env 名 |
 | 直接 LLM HTTP 调用 provider 差异 | openai-compatible 之外 provider 行为不确定 | MVP 只实现 openai-compatible，其他 provider kind 返回失败 |
 | 删除旧 GitHub token role 配置 | 依赖该 token 的 GitHub 调用可能断裂 | 本轮只按新 registry 目标架构设计；若实现阶段发现 GitHub auth 仍需要单独模型，先更新 spec 再实施 |
 
@@ -628,7 +585,7 @@ ai-registry-config
   - Files: `packages/along/src/integration/ai-registry-store.ts`, `packages/along/src/integration/ai-registry-store.test.ts`, `packages/along/src/domain/ai-registry-config.ts`
 
 - [x] Task: Implement registry resolver
-  - Acceptance: Agent runtime 和 Profile LLM 两条解析路径可用；模型和凭据优先级符合 spec；`tokenEnv` 缺失在解析阶段失败。
+  - Acceptance: Agent runtime 和 Profile LLM 两条解析路径可用；模型优先级符合 spec；token 只来自最终 Model；`tokenEnv` 缺失在解析阶段失败。
   - Verify: `bun --filter @ranwawa/along test -- ai-registry-resolver`
   - Files: `packages/along/src/domain/ai-registry-resolver.ts`, `packages/along/src/domain/ai-registry-resolver.test.ts`, `packages/along/src/domain/ai-registry-config.ts`
 
@@ -648,7 +605,7 @@ ai-registry-config
   - Files: `packages/along/src/domain/llm-service.ts`, `packages/along/src/domain/llm-service.test.ts`, `packages/along/src/domain/ai-registry-resolver.ts`
 
 - [x] Task: Replace config API with registry API
-  - Acceptance: HTTP API 返回/写入顶层 registry；响应字段统一为 providers、credentials、models、runtimes、agents、profiles；不再暴露 editors/taskAgents。
+  - Acceptance: HTTP API 返回/写入顶层 registry；响应字段统一为 providers、models、runtimes、agents、profiles；不再暴露 credentials/editors/taskAgents。
   - Verify: `bun --filter @ranwawa/along test -- ai-registry-api`
   - Files: `packages/along/src/integration/ai-registry-api.ts`, `packages/along/src/integration/ai-registry-api.test.ts`, server route registration file
 

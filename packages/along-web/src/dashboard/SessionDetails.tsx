@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels and compact symbols.
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: session details are intentionally rendered in one scan-friendly panel.
+import { Folder, RotateCw, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import type { DashboardSession, SessionDiagnostic } from '../types';
 import {
@@ -124,7 +125,13 @@ export function SessionDetails({
               onClick={() => onRestart(session)}
               disabled={restartingIssues.has(key)}
             >
-              🔄 {restartingIssues.has(key) ? '重启中...' : '重启'}
+              <RotateCw
+                aria-hidden="true"
+                className={`h-4 w-4 ${
+                  restartingIssues.has(key) ? 'animate-spin' : ''
+                }`}
+              />
+              {restartingIssues.has(key) ? '重启中...' : '重启'}
             </Button>
           )}
           <Button
@@ -135,7 +142,8 @@ export function SessionDetails({
             onClick={() => onDelete(session)}
             disabled={deletingIssues.has(key)}
           >
-            🗑️ {deletingIssues.has(key) ? '删除中...' : '彻底删除'}
+            <Trash2 aria-hidden="true" className="h-4 w-4" />
+            {deletingIssues.has(key) ? '删除中...' : '彻底删除'}
           </Button>
         </div>
       </DetailRow>
@@ -173,7 +181,10 @@ export function SessionDetails({
       {session.hasWorktree && (
         <DetailRow label="Worktree">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm md:text-base opacity-70">📁 存在</span>
+            <span className="inline-flex items-center gap-1.5 text-sm opacity-70 md:text-base">
+              <Folder aria-hidden="true" className="h-4 w-4" />
+              存在
+            </span>
             <Button
               type="button"
               variant="destructive"
@@ -182,7 +193,8 @@ export function SessionDetails({
               onClick={(event) => onCleanup(session, event)}
               disabled={cleaningIssues.has(key)}
             >
-              🗑️ {cleaningIssues.has(key) ? '清理中...' : '删除 Worktree'}
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
+              {cleaningIssues.has(key) ? '清理中...' : '删除 Worktree'}
             </Button>
           </div>
         </DetailRow>

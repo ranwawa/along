@@ -30,11 +30,10 @@ export function AgentRegistryRows({
       disabled={disabled}
       onAdd={onAdd}
     >
-      <div className="hidden md:grid grid-cols-[150px_170px_minmax(0,1fr)_190px_160px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
+      <div className="hidden md:grid grid-cols-[150px_170px_minmax(0,1fr)_160px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
         <span>ID</span>
         <span>Runtime</span>
         <span>Model</span>
-        <span>Credential</span>
         <span>Personality</span>
         <span />
       </div>
@@ -68,13 +67,8 @@ function AgentRow({
   onUpdate: (id: string, patch: Partial<AgentConfig>) => void;
   onRemove: (id: string) => void;
 }) {
-  const runtime = registry.runtimes.find((item) => item.id === agent.runtimeId);
-  const selectedModelId = agent.modelId || runtime?.modelId;
-  const selectedModel = registry.models.find(
-    (model) => model.id === selectedModelId,
-  );
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[150px_170px_minmax(0,1fr)_190px_160px_84px] gap-3 p-4 items-center">
+    <div className="grid grid-cols-1 md:grid-cols-[150px_170px_minmax(0,1fr)_160px_84px] gap-3 p-4 items-center">
       <Input
         type="text"
         value={agent.id}
@@ -105,25 +99,6 @@ function AgentRow({
             {model.id}
           </option>
         ))}
-      </Select>
-      <Select
-        value={agent.credentialId || ''}
-        onChange={(event) =>
-          onUpdate(agent.id, { credentialId: optional(event.target.value) })
-        }
-      >
-        <option value="">使用 Runtime/模型默认</option>
-        {registry.credentials
-          .filter(
-            (credential) =>
-              !selectedModel ||
-              credential.providerId === selectedModel.providerId,
-          )
-          .map((credential) => (
-            <option key={credential.id} value={credential.id}>
-              {credential.id}
-            </option>
-          ))}
       </Select>
       <Input
         type="text"

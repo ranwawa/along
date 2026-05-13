@@ -23,7 +23,6 @@ export interface SettingsState {
 
 const emptyRegistry: RegistryConfig = {
   providers: [],
-  credentials: [],
   models: [],
   runtimes: [],
   agents: [],

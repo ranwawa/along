@@ -12,33 +12,26 @@ function createRegistry(): RegistryConfig {
         id: 'openai',
         kind: 'openai-compatible',
         baseUrl: 'https://api.openai.com/v1',
-        defaultCredentialId: 'provider-token',
       },
-    ],
-    credentials: [
-      { id: 'provider-token', providerId: 'openai', token: 'provider-secret' },
-      { id: 'model-token', providerId: 'openai', token: 'model-secret' },
-      { id: 'runtime-token', providerId: 'openai', token: 'runtime-secret' },
-      { id: 'agent-token', providerId: 'openai', token: 'agent-secret' },
-      { id: 'override-token', providerId: 'openai', token: 'override-secret' },
-      { id: 'env-token', providerId: 'openai', tokenEnv: 'OPENAI_TEST_KEY' },
     ],
     models: [
       {
         id: 'model-default',
         providerId: 'openai',
         model: 'gpt-default',
-        credentialId: 'model-token',
+        tokenEnv: 'OPENAI_TEST_KEY',
       },
       {
         id: 'model-agent',
         providerId: 'openai',
         model: 'gpt-agent',
+        token: 'agent-secret',
       },
       {
         id: 'model-override',
         providerId: 'openai',
         model: 'gpt-override',
+        token: 'override-secret',
       },
     ],
     runtimes: [
@@ -46,7 +39,6 @@ function createRegistry(): RegistryConfig {
         id: 'codex',
         kind: 'codex',
         modelId: 'model-default',
-        credentialId: 'runtime-token',
       },
     ],
     agents: [
@@ -54,7 +46,6 @@ function createRegistry(): RegistryConfig {
         id: 'planner',
         runtimeId: 'codex',
         modelId: 'model-agent',
-        credentialId: 'agent-token',
         personalityVersion: 'v1',
       },
     ],
@@ -62,7 +53,6 @@ function createRegistry(): RegistryConfig {
       {
         id: 'title',
         modelId: 'model-default',
-        credentialId: 'env-token',
         systemPrompt: 'title',
         parameters: { temperature: 0.2 },
       },
@@ -96,17 +86,16 @@ describe('ai-registry-resolver', () => {
     }
   });
 
-  it('解析 Agent credential，使用 task override > agent > runtime > model > provider default', () => {
+  it('解析 Agent token，只使用最终模型配置', () => {
     const result = resolveAgentRuntimeConfig({
       registry: createRegistry(),
       agentId: 'planner',
-      credentialId: 'override-token',
     });
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.credentialId).toBe('override-token');
-      expect(result.data.token).toBe('override-secret');
+      expect(result.data.modelId).toBe('model-agent');
+      expect(result.data.token).toBe('agent-secret');
     }
   });
 

@@ -9,7 +9,6 @@ import {
 export interface RunProfileInput {
   profileId: string;
   variables?: Record<string, string>;
-  credentialId?: string;
 }
 
 export interface RunProfileOutput {
@@ -104,7 +103,6 @@ export async function runProfile(
   const configRes = resolveProfileLlmConfig({
     registry: registryRes.data,
     profileId: input.profileId,
-    credentialId: input.credentialId,
   });
   if (!configRes.success) return configRes;
 

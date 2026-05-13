@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels and compact controls.
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: sessions layout and drawer composition are kept together.
+import { X } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { SessionDrawer } from './SessionDrawer';
@@ -34,7 +35,7 @@ export function SessionsView({ sessions }: { sessions: SessionsController }) {
                   size="xs"
                   className="absolute right-1 top-1/2 h-6 -translate-y-1/2 border-none px-1.5"
                 >
-                  x
+                  <X aria-hidden="true" className="h-3.5 w-3.5" />
                 </Button>
               )}
             </div>

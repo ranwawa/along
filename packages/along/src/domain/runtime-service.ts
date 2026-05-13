@@ -18,7 +18,6 @@ export interface RunAgentTurnInput {
   prompt: string;
   cwd: string;
   modelId?: string;
-  credentialId?: string;
   personalityVersion?: string;
   inputArtifactIds?: string[];
   outputMetadata?: Record<string, unknown>;
@@ -39,7 +38,6 @@ export interface RuntimeServiceDependencies {
 export function resolveRuntimeForAgent(input: {
   agentId: string;
   modelId?: string;
-  credentialId?: string;
   dependencies?: RuntimeServiceDependencies;
 }): Result<ResolvedAgentRuntimeConfig> {
   const readRegistry = input.dependencies?.readRegistry || readRegistryConfig;
@@ -49,7 +47,6 @@ export function resolveRuntimeForAgent(input: {
     registry: registryRes.data,
     agentId: input.agentId,
     modelId: input.modelId,
-    credentialId: input.credentialId,
   });
 }
 
@@ -60,7 +57,6 @@ export async function runAgentTurn(
   const runtimeRes = resolveRuntimeForAgent({
     agentId: input.agentId,
     modelId: input.modelId,
-    credentialId: input.credentialId,
     dependencies,
   });
   if (!runtimeRes.success) return runtimeRes;

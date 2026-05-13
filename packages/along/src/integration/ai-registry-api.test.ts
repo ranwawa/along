@@ -19,8 +19,9 @@ const HTTP_BAD_REQUEST = 400;
 function createRegistry(): RegistryConfig {
   return {
     providers: [{ id: 'openai', kind: 'openai-compatible' }],
-    credentials: [{ id: 'token', providerId: 'openai', token: 'secret' }],
-    models: [{ id: 'model', providerId: 'openai', model: 'gpt-5.2' }],
+    models: [
+      { id: 'model', providerId: 'openai', model: 'gpt-5.2', token: 'secret' },
+    ],
     runtimes: [{ id: 'codex', kind: 'codex', modelId: 'model' }],
     agents: [{ id: 'planner', runtimeId: 'codex' }],
     profiles: [],

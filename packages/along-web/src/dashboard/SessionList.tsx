@@ -1,3 +1,5 @@
+// biome-ignore-all lint/style/noJsxLiterals: session table uses compact inline labels.
+import { Folder } from 'lucide-react';
 import type { DashboardSession } from '../types';
 import { SessionRowActions } from './SessionActions';
 import {
@@ -32,9 +34,10 @@ function IssueLinks({ session }: { session: DashboardSession }) {
         </a>
       )}
       {session.hasWorktree && (
-        <span className="ml-1 opacity-70" title="Worktree exists">
-          📁
-        </span>
+        <Folder
+          aria-label="Worktree exists"
+          className="ml-1 inline h-3.5 w-3.5 opacity-70"
+        />
       )}
     </>
   );

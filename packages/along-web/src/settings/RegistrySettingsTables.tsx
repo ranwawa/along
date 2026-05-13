@@ -1,14 +1,12 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: registry sections are clearer in one composition.
 import type {
   AgentConfig,
-  CredentialConfig,
   ModelConfig,
   ProviderConfig,
   RegistryConfig,
   RuntimeConfig,
 } from '../types';
 import { AgentRegistryRows } from './AgentRegistryRows';
-import { CredentialRows } from './CredentialRows';
 import { ModelRows } from './ModelRows';
 import { ProviderRows } from './ProviderRows';
 import { RuntimeRows } from './RuntimeRows';
@@ -17,9 +15,6 @@ interface RegistryActions {
   addProvider: () => void;
   updateProvider: (id: string, patch: Partial<ProviderConfig>) => void;
   removeProvider: (id: string) => void;
-  addCredential: () => void;
-  updateCredential: (id: string, patch: Partial<CredentialConfig>) => void;
-  removeCredential: (id: string) => void;
   addModel: () => void;
   updateModel: (id: string, patch: Partial<ModelConfig>) => void;
   removeModel: (id: string) => void;
@@ -51,13 +46,6 @@ export function RegistrySettingsTables({
         onAdd={actions.addProvider}
         onUpdate={actions.updateProvider}
         onRemove={actions.removeProvider}
-      />
-      <CredentialRows
-        registry={registry}
-        disabled={disabled}
-        onAdd={actions.addCredential}
-        onUpdate={actions.updateCredential}
-        onRemove={actions.removeCredential}
       />
       <ModelRows
         registry={registry}

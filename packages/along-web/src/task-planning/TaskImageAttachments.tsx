@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: image attachment controls use compact inline labels.
 // biome-ignore-all lint/style/noMagicNumbers: image attachment limits and byte conversions are local UI constraints.
+import { Image, X } from 'lucide-react';
 import {
   type ChangeEvent,
   type DragEvent,
@@ -80,9 +81,7 @@ function ImageAttachmentThumb({
         size="icon"
         className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/70 text-text-primary opacity-0 hover:bg-black focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
       >
-        <span aria-hidden="true" className="text-base leading-none">
-          ×
-        </span>
+        <X aria-hidden="true" className="h-4 w-4" />
       </Button>
     </div>
   );
@@ -123,8 +122,9 @@ function DefaultImageAttachmentActions({
         disabled={disabled || attachments.length >= MAX_IMAGE_COUNT}
         onClick={() => inputRef.current?.click()}
         size="sm"
-        className="bg-black/25 hover:text-text-primary"
+        className="gap-1.5 bg-black/25 hover:text-text-primary"
       >
+        <Image aria-hidden="true" className="h-4 w-4" />
         图片
       </Button>
       <span className="text-[11px] text-text-muted">

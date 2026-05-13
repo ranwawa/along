@@ -1,4 +1,5 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing settings view uses inline UI copy.
+import { RefreshCw, Save } from 'lucide-react';
 import { Alert } from './components/ui/alert';
 import { Button } from './components/ui/button';
 import { RegistrySettingsTables } from './settings/RegistrySettingsTables';
@@ -29,7 +30,12 @@ function SettingsHeader({
           type="button"
           onClick={loadConfig}
           disabled={state.loading || state.saving}
+          className="gap-1.5"
         >
+          <RefreshCw
+            aria-hidden="true"
+            className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`}
+          />
           {state.loading ? '刷新中' : '刷新'}
         </Button>
         <Button
@@ -37,7 +43,9 @@ function SettingsHeader({
           onClick={saveConfig}
           disabled={state.loading || state.saving}
           variant="default"
+          className="gap-1.5"
         >
+          <Save aria-hidden="true" className="h-4 w-4" />
           {state.saving ? '保存中' : '保存'}
         </Button>
       </div>

@@ -8,14 +8,6 @@ function createRegistry(): RegistryConfig {
         id: 'openai',
         kind: 'openai-compatible',
         baseUrl: 'https://api.openai.com/v1',
-        defaultCredentialId: 'openai-main',
-      },
-    ],
-    credentials: [
-      {
-        id: 'openai-main',
-        providerId: 'openai',
-        tokenEnv: 'OPENAI_API_KEY',
       },
     ],
     models: [
@@ -23,7 +15,7 @@ function createRegistry(): RegistryConfig {
         id: 'gpt-main',
         providerId: 'openai',
         model: 'gpt-5.2',
-        credentialId: 'openai-main',
+        tokenEnv: 'OPENAI_API_KEY',
         maxOutputTokens: 4096,
       },
     ],
@@ -84,23 +76,48 @@ describe('ai-registry-config', () => {
     if (!result.success) expect(result.error).toContain('未知 Runtime');
   });
 
-  it('拒绝 model/credential provider mismatch', () => {
+  it('兼容旧 registry 数组配置并把 credential 合并到 model', () => {
     const registry = createRegistry();
     registry.providers.push({ id: 'other', kind: 'openai-compatible' });
-    registry.credentials.push({
-      id: 'other-token',
-      providerId: 'other',
-      token: 'secret',
+
+    const result = parseRegistryConfig({
+      ...registry,
+      credentials: [
+        {
+          id: 'other-token',
+          providerId: 'other',
+          token: 'secret',
+        },
+      ],
+      models: [
+        {
+          id: 'legacy-model',
+          providerId: 'openai',
+          model: 'gpt-legacy',
+          credentialId: 'other-token',
+        },
+      ],
+      runtimes: [
+        { id: 'codex-openai', kind: 'codex', modelId: 'legacy-model' },
+      ],
+      agents: [{ id: 'planner', runtimeId: 'codex-openai' }],
+      profiles: [
+        {
+          id: 'task-title-summary',
+          modelId: 'legacy-model',
+          systemPrompt: 'Generate a concise task title.',
+        },
+      ],
     });
-    registry.models[0] = {
-      ...registry.models[0],
-      credentialId: 'other-token',
-    };
 
-    const result = parseRegistryConfig(registry);
-
-    expect(result.success).toBe(false);
-    if (!result.success) expect(result.error).toContain('不属于 Provider');
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.models[0]).toMatchObject({
+        id: 'legacy-model',
+        token: 'secret',
+      });
+      expect('credentials' in result.data).toBe(false);
+    }
   });
 
   it('拒绝缺失必需集合', () => {
@@ -133,17 +150,21 @@ describe('ai-registry-config', () => {
     if (result.success) {
       expect(result.data.providers[0]).toMatchObject({
         id: 'deepseek',
-        defaultCredentialId: 'deepseek-token',
       });
-      expect(result.data.credentials[0]).toMatchObject({
-        id: 'deepseek-token',
+      expect(result.data.models[0]).toMatchObject({
         providerId: 'deepseek',
+        token: 'secret',
       });
       expect(result.data.runtimes).toEqual([{ id: 'codex', kind: 'codex' }]);
       expect(result.data.agents).toEqual([
         { id: 'planner', runtimeId: 'codex', modelId: 'gpt-5.5' },
         { id: 'implementer', runtimeId: 'codex', modelId: 'gpt-5.5' },
       ]);
+      expect(
+        result.data.models.find((model) => model.id === 'gpt-5.5'),
+      ).toMatchObject({
+        token: 'secret',
+      });
     }
   });
 

@@ -3,7 +3,6 @@ import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
   type AgentConfig,
-  type CredentialConfig,
   getRegistryItemById,
   type ModelConfig,
   type ProfileConfig,
@@ -16,7 +15,6 @@ export interface ResolveAgentRuntimeInput {
   registry: RegistryConfig;
   agentId: string;
   modelId?: string;
-  credentialId?: string;
 }
 
 export interface ResolvedAgentRuntimeConfig {
@@ -28,7 +26,6 @@ export interface ResolvedAgentRuntimeConfig {
   baseUrl?: string;
   model: string;
   modelId: string;
-  credentialId: string;
   token: string;
   tokenEnv?: string;
   personalityVersion?: string;
@@ -37,7 +34,6 @@ export interface ResolvedAgentRuntimeConfig {
 export interface ResolveProfileLlmInput {
   registry: RegistryConfig;
   profileId: string;
-  credentialId?: string;
 }
 
 export interface ResolvedProfileLlmConfig {
@@ -46,7 +42,6 @@ export interface ResolvedProfileLlmConfig {
   providerKind: ProviderKind;
   baseUrl?: string;
   model: string;
-  credentialId: string;
   token: string;
   tokenEnv?: string;
   systemPrompt: string;
@@ -58,24 +53,16 @@ export interface ResolvedProfileLlmConfig {
   };
 }
 
-interface ResolveCredentialInput {
-  registry: RegistryConfig;
-  providerId: string;
-  credentialId?: string;
-}
-
-function resolveToken(credential: CredentialConfig): Result<string> {
-  if (credential.tokenEnv) {
-    const token = process.env[credential.tokenEnv];
+function resolveToken(model: ModelConfig): Result<string> {
+  if (model.tokenEnv) {
+    const token = process.env[model.tokenEnv];
     return token
       ? success(token)
-      : failure(
-          `Credential ${credential.id} 未解析到环境变量: ${credential.tokenEnv}`,
-        );
+      : failure(`Model ${model.id} 未解析到环境变量: ${model.tokenEnv}`);
   }
-  return credential.token
-    ? success(credential.token)
-    : failure(`Credential ${credential.id} 未解析到 token`);
+  return model.token
+    ? success(model.token)
+    : failure(`Model ${model.id} 未配置 token 或 tokenEnv`);
 }
 
 function requireItem<T extends { id: string }>(
@@ -96,26 +83,6 @@ function resolveModel(
   return requireItem(registry.models, modelId, 'Model');
 }
 
-function resolveCredential(
-  input: ResolveCredentialInput,
-): Result<CredentialConfig> {
-  if (!input.credentialId) {
-    return failure(`Provider ${input.providerId} 缺少 credential`);
-  }
-  const credentialRes = requireItem(
-    input.registry.credentials,
-    input.credentialId,
-    'Credential',
-  );
-  if (!credentialRes.success) return credentialRes;
-  if (credentialRes.data.providerId !== input.providerId) {
-    return failure(
-      `Credential ${credentialRes.data.id} 不属于 Provider: ${input.providerId}`,
-    );
-  }
-  return credentialRes;
-}
-
 function resolveRuntime(
   registry: RegistryConfig,
   agent: AgentConfig,
@@ -123,15 +90,13 @@ function resolveRuntime(
   return requireItem(registry.runtimes, agent.runtimeId, 'Runtime');
 }
 
-function resolveProviderModelCredential(input: {
+function resolveProviderModelToken(input: {
   registry: RegistryConfig;
   model: ModelConfig;
-  credentialId?: string;
 }): Result<{
   providerId: string;
   providerKind: ProviderKind;
   baseUrl?: string;
-  credential: CredentialConfig;
   token: string;
 }> {
   const providerRes = requireItem(
@@ -141,24 +106,13 @@ function resolveProviderModelCredential(input: {
   );
   if (!providerRes.success) return providerRes;
 
-  const credentialRes = resolveCredential({
-    registry: input.registry,
-    providerId: providerRes.data.id,
-    credentialId:
-      input.credentialId ||
-      input.model.credentialId ||
-      providerRes.data.defaultCredentialId,
-  });
-  if (!credentialRes.success) return credentialRes;
-
-  const tokenRes = resolveToken(credentialRes.data);
+  const tokenRes = resolveToken(input.model);
   if (!tokenRes.success) return tokenRes;
 
   return success({
     providerId: providerRes.data.id,
     providerKind: providerRes.data.kind,
     baseUrl: providerRes.data.baseUrl,
-    credential: credentialRes.data,
     token: tokenRes.data,
   });
 }
@@ -179,13 +133,9 @@ export function resolveAgentRuntimeConfig(
   );
   if (!modelRes.success) return modelRes;
 
-  const resolvedRes = resolveProviderModelCredential({
+  const resolvedRes = resolveProviderModelToken({
     registry: input.registry,
     model: modelRes.data,
-    credentialId:
-      input.credentialId ||
-      agentRes.data.credentialId ||
-      runtimeRes.data.credentialId,
   });
   if (!resolvedRes.success) return resolvedRes;
 
@@ -198,9 +148,8 @@ export function resolveAgentRuntimeConfig(
     baseUrl: resolvedRes.data.baseUrl,
     model: modelRes.data.model,
     modelId: modelRes.data.id,
-    credentialId: resolvedRes.data.credential.id,
     token: resolvedRes.data.token,
-    tokenEnv: resolvedRes.data.credential.tokenEnv,
+    tokenEnv: modelRes.data.tokenEnv,
     personalityVersion: agentRes.data.personalityVersion,
   });
 }
@@ -223,10 +172,9 @@ export function resolveProfileLlmConfig(
   );
   if (!modelRes.success) return modelRes;
 
-  const resolvedRes = resolveProviderModelCredential({
+  const resolvedRes = resolveProviderModelToken({
     registry: input.registry,
     model: modelRes.data,
-    credentialId: input.credentialId || profile.credentialId,
   });
   if (!resolvedRes.success) return resolvedRes;
 
@@ -236,9 +184,8 @@ export function resolveProfileLlmConfig(
     providerKind: resolvedRes.data.providerKind,
     baseUrl: resolvedRes.data.baseUrl,
     model: modelRes.data.model,
-    credentialId: resolvedRes.data.credential.id,
     token: resolvedRes.data.token,
-    tokenEnv: resolvedRes.data.credential.tokenEnv,
+    tokenEnv: modelRes.data.tokenEnv,
     systemPrompt: profile.systemPrompt,
     userTemplate: profile.userTemplate,
     parameters: {

@@ -1,6 +1,7 @@
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: composer controls are kept together for this interaction.
 // biome-ignore-all lint/style/noJsxLiterals: existing composer controls use inline UI labels.
 // biome-ignore-all lint/style/noMagicNumbers: existing composer controls use fixed UI timings and sizes.
+import { Image, LoaderCircle, Paperclip, Send } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/input';
@@ -47,68 +48,6 @@ type ComposerDisplayProps = Omit<
   TaskComposerInputProps,
   'attachments' | 'onAttachmentsChange' | 'onSubmit'
 >;
-
-function PlusIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 20 20"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeWidth="1.8"
-    >
-      <path d="M10 4v12M4 10h12" />
-    </svg>
-  );
-}
-
-function ImageIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 20 20"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.7"
-    >
-      <rect x="3" y="4" width="14" height="12" rx="2" />
-      <path d="m6 13 3-3 2 2 2-3 3 4" />
-      <circle cx="8" cy="8" r="1" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 20 20"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.8"
-    >
-      <path d="m3 10 14-7-4 14-3-6-7-1Z" />
-      <path d="m10 11 7-8" />
-    </svg>
-  );
-}
-
-function SpinnerIcon() {
-  return (
-    <span
-      aria-hidden="true"
-      className="h-4 w-4 animate-spin rounded-full border-2 border-white/45 border-t-white motion-reduce:animate-none"
-    />
-  );
-}
 
 const RUNTIME_MODE_OPTIONS: {
   value: TaskRuntimeExecutionMode;
@@ -243,7 +182,7 @@ function AttachmentPopover({
           size="icon"
           className="bg-black/25 hover:text-text-primary"
         >
-          <PlusIcon />
+          <Paperclip aria-hidden="true" className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-36">
@@ -254,7 +193,7 @@ function AttachmentPopover({
             onClick={openPicker}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-text-secondary transition-colors hover:bg-black/30 hover:text-text-primary focus:bg-black/30 focus:text-text-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <ImageIcon />
+            <Image aria-hidden="true" className="h-4 w-4" />
             <span>图片</span>
           </button>
         </PopoverClose>
@@ -424,7 +363,14 @@ function SubmitIconButton({
       variant="default"
       size="icon"
     >
-      {isCancelling ? <SpinnerIcon /> : busy ? <SpinnerIcon /> : <SendIcon />}
+      {isCancelling || busy ? (
+        <LoaderCircle
+          aria-hidden="true"
+          className="h-4 w-4 animate-spin motion-reduce:animate-none"
+        />
+      ) : (
+        <Send aria-hidden="true" className="h-4 w-4" />
+      )}
     </Button>
   );
 }

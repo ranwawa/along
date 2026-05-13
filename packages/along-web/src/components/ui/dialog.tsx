@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: shared UI close control uses the existing Chinese dashboard label.
 import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
@@ -28,8 +29,9 @@ export function DialogContent({
           <DialogPrimitive.Title className="min-w-0 truncate text-sm font-semibold text-text-secondary">
             {title}
           </DialogPrimitive.Title>
-          <DialogPrimitive.Close className="shrink-0 rounded-md border border-border-color px-2 py-1 text-xs font-semibold text-text-secondary hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-brand/60">
-            关闭
+          <DialogPrimitive.Close className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-color px-2 py-1 text-xs font-semibold text-text-secondary hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-brand/60">
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
+            <span>关闭</span>
           </DialogPrimitive.Close>
         </div>
         {children}

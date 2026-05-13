@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: settings table uses compact inline labels.
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: table rendering is kept together for readability.
+import { Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input, Select } from '../components/ui/input';
 import { Section } from '../components/ui/section';
@@ -79,7 +80,9 @@ export function AgentRowsTable({
               onClick={() => onRemove(row.id)}
               disabled={loading || saving}
               size="sm"
+              className="gap-1.5"
             >
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
               删除
             </Button>
           </div>

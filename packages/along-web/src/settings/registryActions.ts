@@ -1,7 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type {
   AgentConfig,
-  CredentialConfig,
   ModelConfig,
   ProviderConfig,
   RegistryConfig,
@@ -13,7 +12,6 @@ type SetSettingsState = Dispatch<SetStateAction<SettingsState>>;
 
 const emptyRegistry: RegistryConfig = {
   providers: [],
-  credentials: [],
   models: [],
   runtimes: [],
   agents: [],
@@ -37,13 +35,6 @@ function getRegistry(state: SettingsState): RegistryConfig {
 
 function createProvider(id: string): ProviderConfig {
   return { id, kind: 'openai-compatible', baseUrl: '' };
-}
-
-function createCredential(
-  id: string,
-  registry: RegistryConfig,
-): CredentialConfig {
-  return { id, providerId: registry.providers[0]?.id || '', token: '' };
 }
 
 function createModel(id: string, registry: RegistryConfig): ModelConfig {
@@ -108,28 +99,6 @@ function providerActions(setState: SetSettingsState) {
       updateRegistry(setState, (registry) => ({
         ...registry,
         providers: removeItem(registry.providers, id),
-      })),
-  };
-}
-
-function credentialActions(setState: SetSettingsState) {
-  return {
-    addCredential: () =>
-      updateRegistry(setState, (registry) => ({
-        ...registry,
-        credentials: addItem(registry.credentials, 'credential', (id) =>
-          createCredential(id, registry),
-        ),
-      })),
-    updateCredential: (id: string, patch: Partial<CredentialConfig>) =>
-      updateRegistry(setState, (registry) => ({
-        ...registry,
-        credentials: updateList(registry.credentials, id, patch),
-      })),
-    removeCredential: (id: string) =>
-      updateRegistry(setState, (registry) => ({
-        ...registry,
-        credentials: removeItem(registry.credentials, id),
       })),
   };
 }
@@ -203,7 +172,6 @@ function agentActions(setState: SetSettingsState) {
 export function useRegistryActions(setState: SetSettingsState) {
   return {
     ...providerActions(setState),
-    ...credentialActions(setState),
     ...modelActions(setState),
     ...runtimeActions(setState),
     ...agentActions(setState),

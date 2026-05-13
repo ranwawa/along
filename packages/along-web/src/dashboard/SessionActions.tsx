@@ -1,4 +1,5 @@
 // biome-ignore-all lint/style/noJsxLiterals: dashboard action buttons use compact symbols.
+import { RotateCw, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import type { DashboardSession } from '../types';
 import { getIssueKey, isFailedStatus } from './sessionUtils';
@@ -33,7 +34,7 @@ export function SessionRowActions({
           onClick={(event) => onRestart(session, event)}
           disabled={restartingIssues.has(key)}
         >
-          🔄
+          <RotateCw aria-hidden="true" className="h-4 w-4" />
         </Button>
       )}
       <Button
@@ -45,7 +46,7 @@ export function SessionRowActions({
         onClick={(event) => onDelete(session, event)}
         disabled={deletingIssues.has(key)}
       >
-        🗑️
+        <Trash2 aria-hidden="true" className="h-4 w-4" />
       </Button>
     </div>
   );

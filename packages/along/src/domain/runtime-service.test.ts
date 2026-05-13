@@ -18,13 +18,12 @@ function createRegistry(): RegistryConfig {
         baseUrl: 'https://api.openai.com/v1',
       },
     ],
-    credentials: [{ id: 'token', providerId: 'openai', token: 'secret' }],
     models: [
       {
         id: 'model',
         providerId: 'openai',
         model: 'gpt-5.2',
-        credentialId: 'token',
+        token: 'secret',
       },
     ],
     runtimes: [{ id: 'codex', kind: 'codex', modelId: 'model' }],

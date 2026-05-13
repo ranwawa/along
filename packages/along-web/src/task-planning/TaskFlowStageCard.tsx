@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing task flow cards use inline Chinese labels.
 
+import { Eye, LoaderCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import type {
   TaskFlowAction,
@@ -203,7 +204,13 @@ function FlowStageDetails({
     <div className={`ml-4 pb-3 pt-1 ${isOpen ? 'block' : 'hidden'}`}>
       <FlowStageDetailText stage={stage} />
       {stage.id === 'plan_confirmation' && currentPlan && (
-        <Button type="button" onClick={onShowPlan} size="sm" className="mt-3">
+        <Button
+          type="button"
+          onClick={onShowPlan}
+          size="sm"
+          className="mt-3 gap-1.5"
+        >
+          <Eye aria-hidden="true" className="h-4 w-4" />
           查看计划 v{currentPlan.version}
         </Button>
       )}
@@ -300,8 +307,14 @@ function FlowActionButton({
       disabled={!action.enabled || busy}
       title={!action.enabled ? action.disabledReason : action.description}
       size="sm"
-      className={getFlowActionClass(action)}
+      className={`${getFlowActionClass(action)} gap-1.5`}
     >
+      {busy && (
+        <LoaderCircle
+          aria-hidden="true"
+          className="h-4 w-4 animate-spin motion-reduce:animate-none"
+        />
+      )}
       {busy ? '处理中' : action.label}
     </Button>
   );
