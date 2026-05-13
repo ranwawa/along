@@ -83,6 +83,7 @@ function TaskPlanningSidebar({
         isNewTaskOpen={taskPlanning.isNewTaskOpen}
         onNewTask={taskPlanning.openNewTask}
         onSelect={taskPlanning.selectTask}
+        onDelete={taskPlanning.deleteTask}
       />
     </div>
   );

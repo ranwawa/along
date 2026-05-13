@@ -273,5 +273,25 @@ export function useTaskPlanningActions(input: UseTaskPlanningActionsInput) {
     ...useDraftActions(input, runBusy),
     ...useSelectionActions(input),
     ...useFlowActions(input),
+    ...useDeleteAction(input),
   };
+}
+
+function useDeleteAction(input: UseTaskPlanningActionsInput) {
+  const deleteTask = async (taskId: string) => {
+    await runBusy(input, 'delete', async () => {
+      const response = await fetch(`/api/tasks/${taskId}/delete`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('删除失败');
+      input.setTasks((prev) =>
+        prev.filter((item) => item.task.taskId !== taskId),
+      );
+      if (input.selected?.task.taskId === taskId) {
+        input.setSelectedTaskId(null);
+        input.setSelectedSnapshot(null);
+      }
+    });
+  };
+  return { deleteTask };
 }

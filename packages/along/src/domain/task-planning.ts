@@ -24,6 +24,8 @@ import {
   IMPLEMENTATION_STEPS_APPROVAL_KIND,
 } from './task-implementation-steps';
 import {
+  type DomainEvent,
+  type DomainEventType,
   reduceWorkflowEvent,
   TASK_LIFECYCLE,
   type TaskLifecycle,
@@ -570,6 +572,13 @@ export interface RecordTaskAgentResultInput {
   runtimeId?: string;
   runId?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface RecordTaskImplementationFailureInput {
+  taskId: string;
+  error: string;
+  agentId?: string;
+  runtimeId?: string;
 }
 
 export interface UpdateTaskDeliveryInput {
@@ -2447,6 +2456,18 @@ function ensureTaskCanRecordAgentResult(taskId: string): Result<void> {
   }
 }
 
+export function deleteTask(taskId: string): Result<void> {
+  const dbRes = getDb();
+  if (!dbRes.success) return dbRes;
+  const db = dbRes.data;
+  const existing = db
+    .prepare('SELECT task_id FROM task_items WHERE task_id = ?')
+    .get(taskId) as { task_id: string } | undefined;
+  if (!existing) return failure(`Task 不存在: ${taskId}`);
+  db.prepare('DELETE FROM task_items WHERE task_id = ?').run(taskId);
+  return success(undefined);
+}
+
 export function closeTask(
   taskId: string,
   reason?: string,
@@ -3427,6 +3448,89 @@ export function recordTaskAgentResult(
   }
 }
 
+export function recordTaskImplementationFailure(
+  input: RecordTaskImplementationFailureInput,
+): Result<TaskPlanningSnapshot> {
+  const snapshotRes = readTaskPlanningSnapshot(input.taskId);
+  if (!snapshotRes.success) return snapshotRes;
+  const snapshot = snapshotRes.data;
+  if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
+  const openRes = ensureTaskIsOpen(snapshot, '记录实现失败');
+  if (!openRes.success) return openRes;
+
+  const agentId = input.agentId || 'implementer';
+  const runtimeId = input.runtimeId || 'codex';
+  const runRes = createTaskAgentRun({
+    taskId: input.taskId,
+    threadId: snapshot.thread.threadId,
+    agentId,
+    runtimeId,
+    inputArtifactIds: snapshot.artifacts.map((artifact) => artifact.artifactId),
+  });
+  if (!runRes.success) return runRes;
+
+  const summary = '实现启动失败，任务未进入编码执行。';
+  const progressRes = recordTaskAgentProgress({
+    runId: runRes.data.runId,
+    taskId: input.taskId,
+    threadId: snapshot.thread.threadId,
+    agentId,
+    runtimeId,
+    phase: TASK_AGENT_PROGRESS_PHASE.FAILED,
+    summary,
+    detail: input.error,
+  });
+  if (!progressRes.success) return progressRes;
+
+  const sessionRes = recordTaskAgentSessionEvent({
+    runId: runRes.data.runId,
+    taskId: input.taskId,
+    threadId: snapshot.thread.threadId,
+    agentId,
+    runtimeId,
+    source: 'system',
+    kind: 'error',
+    content: `${summary}\n${input.error}`,
+    metadata: { phase: TASK_AGENT_PROGRESS_PHASE.FAILED },
+  });
+  if (!sessionRes.success) return sessionRes;
+
+  const artifactRes = recordTaskAgentResult({
+    taskId: input.taskId,
+    threadId: snapshot.thread.threadId,
+    agentId,
+    runtimeId,
+    runId: runRes.data.runId,
+    body: `实现启动失败：${input.error}`,
+    metadata: {
+      kind: 'implementation_failure',
+      stage: TASK_AGENT_STAGE.IMPLEMENTATION,
+      retryable: true,
+    },
+  });
+  if (!artifactRes.success) return artifactRes;
+
+  const finishRes = finishTaskAgentRun({
+    runId: runRes.data.runId,
+    status: AGENT_RUN_STATUS.FAILED,
+    outputArtifactIds: [artifactRes.data.artifactId],
+    error: input.error,
+  });
+  if (!finishRes.success) return finishRes;
+
+  const stateRes = transitionTaskWorkflow({
+    taskId: input.taskId,
+    event: { type: 'implementation.failed' },
+  });
+  if (!stateRes.success) return stateRes;
+
+  const refreshed = readTaskPlanningSnapshot(input.taskId);
+  if (!refreshed.success) return refreshed;
+  return refreshed.data
+    ? success(refreshed.data)
+    : failure(`Task ${input.taskId} 实现失败后读取快照失败`);
+}
+
 export function approveCurrentTaskPlan(
   taskId: string,
 ): Result<TaskPlanRevisionRecord> {
@@ -3774,11 +3878,9 @@ export function updateTaskStatus(
   return failure('旧 task.status 已禁止直接写入，请更新分层状态字段');
 }
 
-export function updateTaskWorkflowState(input: {
+export function transitionTaskWorkflow(input: {
   taskId: string;
-  lifecycle: TaskLifecycle;
-  currentWorkflowKind: WorkflowKind;
-  threadStatus?: ThreadStatus;
+  event: DomainEvent;
 }): Result<void> {
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -3788,12 +3890,23 @@ export function updateTaskWorkflowState(input: {
       .prepare('SELECT * FROM task_items WHERE task_id = ?')
       .get(input.taskId) as TaskItemRow | null;
     if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
-    if (
-      normalizeTaskLifecycle(taskRow.lifecycle) === TASK_LIFECYCLE.CANCELLED &&
-      input.lifecycle !== TASK_LIFECYCLE.CANCELLED
-    ) {
-      return failure('Task 已关闭，不能更新工作流状态');
-    }
+
+    const threadRow = dbRes.data
+      .prepare('SELECT * FROM task_threads WHERE task_id = ? AND thread_id = ?')
+      .get(input.taskId, taskRow.active_thread_id) as TaskThreadRow | null;
+
+    const currentState: WorkflowRuntimeState = {
+      lifecycle: normalizeTaskLifecycle(taskRow.lifecycle),
+      currentWorkflowKind:
+        (taskRow.current_workflow_kind as WorkflowKind) || WORKFLOW_KIND.ASK,
+      workflowState:
+        (threadRow?.status as WorkflowRuntimeState['workflowState']) ||
+        'planned',
+    };
+
+    const next = reduceWorkflowEvent(currentState, input.event);
+
+    const threadStatus = deriveThreadStatusFromWorkflow(next);
     const now = iso_timestamp();
     const txn = dbRes.data.transaction(() => {
       dbRes.data
@@ -3804,8 +3917,8 @@ export function updateTaskWorkflowState(input: {
             WHERE task_id = ?
           `,
         )
-        .run(input.lifecycle, input.currentWorkflowKind, now, input.taskId);
-      if (input.threadStatus) {
+        .run(next.lifecycle, next.currentWorkflowKind, now, input.taskId);
+      if (threadStatus) {
         dbRes.data
           .prepare(
             `
@@ -3816,15 +3929,41 @@ export function updateTaskWorkflowState(input: {
               )
             `,
           )
-          .run(input.threadStatus, now, input.taskId, input.taskId);
+          .run(threadStatus, now, input.taskId, input.taskId);
       }
     });
     txn();
     return success(undefined);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    return failure(`更新 Task 工作流状态失败: ${message}`);
+    return failure(`Task 工作流状态转换失败: ${message}`);
   }
+}
+
+function deriveThreadStatusFromWorkflow(
+  state: WorkflowRuntimeState,
+): ThreadStatus | null {
+  if (state.lifecycle === TASK_LIFECYCLE.FAILED) return THREAD_STATUS.FAILED;
+  if (state.lifecycle === TASK_LIFECYCLE.RUNNING) {
+    if (state.workflowState === 'verifying') return THREAD_STATUS.VERIFYING;
+    if (state.workflowState === 'implementing')
+      return THREAD_STATUS.IMPLEMENTING;
+  }
+  if (state.lifecycle === TASK_LIFECYCLE.COMPLETED)
+    return THREAD_STATUS.COMPLETED;
+  if (
+    state.lifecycle === TASK_LIFECYCLE.READY &&
+    state.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION
+  ) {
+    return THREAD_STATUS.COMPLETED;
+  }
+  if (
+    state.lifecycle === TASK_LIFECYCLE.READY &&
+    state.currentWorkflowKind === WORKFLOW_KIND.PLANNING
+  ) {
+    return THREAD_STATUS.APPROVED;
+  }
+  return null;
 }
 
 export function updateTaskDelivery(
@@ -3959,11 +4098,9 @@ export function completeTaskAgentStageManually(
       isTaskDelivering({ task: snapshot.task, thread: snapshot.thread }) ||
       isTaskDelivered(snapshot.task)
         ? success(undefined)
-        : updateTaskWorkflowState({
+        : transitionTaskWorkflow({
             taskId: input.taskId,
-            lifecycle: TASK_LIFECYCLE.READY,
-            currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-            threadStatus: THREAD_STATUS.COMPLETED,
+            event: { type: 'implementation.completed_manually' },
           });
   } else if (input.stage === TASK_AGENT_STAGE.DELIVERY && input.prUrl) {
     const deliveryRes = updateTaskDelivery({
@@ -3972,11 +4109,9 @@ export function completeTaskAgentStageManually(
       prNumber: input.prNumber || parseTaskPrNumber(input.prUrl),
     });
     statusRes = deliveryRes.success
-      ? updateTaskWorkflowState({
+      ? transitionTaskWorkflow({
           taskId: input.taskId,
-          lifecycle: TASK_LIFECYCLE.READY,
-          currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-          threadStatus: THREAD_STATUS.COMPLETED,
+          event: { type: 'verification.passed_manually' },
         })
       : deliveryRes;
   } else {
@@ -4426,23 +4561,10 @@ export function recoverInterruptedTaskAgentRuns(
       if (!finishRes.success) return finishRes;
       recoveredRuns.push(finishRes.data);
 
-      if (row.agent_id === 'implementer') {
-        const resetRes = updateTaskWorkflowState({
+      if (row.agent_id === 'implementer' || row.agent_id === 'delivery') {
+        const resetRes = transitionTaskWorkflow({
           taskId: String(row.task_id),
-          lifecycle: TASK_LIFECYCLE.READY,
-          currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-          threadStatus: THREAD_STATUS.APPROVED,
-        });
-        if (!resetRes.success) return resetRes;
-        resetTaskIds.add(String(row.task_id));
-      }
-
-      if (row.agent_id === 'delivery') {
-        const resetRes = updateTaskWorkflowState({
-          taskId: String(row.task_id),
-          lifecycle: TASK_LIFECYCLE.READY,
-          currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-          threadStatus: THREAD_STATUS.COMPLETED,
+          event: { type: 'recovery.interrupted' },
         });
         if (!resetRes.success) return resetRes;
         resetTaskIds.add(String(row.task_id));

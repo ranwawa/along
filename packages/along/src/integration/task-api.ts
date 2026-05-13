@@ -10,6 +10,7 @@ import {
   handleTaskCloseRequest,
   handleTaskCompleteRequest,
   handleTaskCreateRequest,
+  handleTaskDeleteRequest,
   handleTaskDeliveryRequest,
   handleTaskGetRequest,
   handleTaskImplementationRequest,
@@ -75,6 +76,7 @@ const ACTION_ROUTES: Record<string, TaskActionHandler> = {
   close: (req, taskId) => handleTaskCloseRequest(req, taskId),
   complete: (_req, taskId, context) =>
     handleTaskCompleteRequest(taskId, context),
+  delete: (_req, taskId) => handleTaskDeleteRequest(taskId),
   delivery: handleTaskDeliveryRequest,
   implementation: handleTaskImplementationRequest,
   'manual-complete': (req, taskId) =>

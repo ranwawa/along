@@ -16,6 +16,7 @@ import {
   completeDeliveredTask,
   completeTaskAgentStageManually,
   createPlanningTask,
+  deleteTask,
   listTaskPlanningSnapshots,
   readTaskPlanningSnapshot,
   requestTaskPlan,
@@ -517,4 +518,10 @@ function scheduledResponse(
   if (!scheduledRes.success) return errorResponse(scheduledRes.error, 400);
   if (!scheduledRes.data) return errorResponse(disabledMessage, 503);
   return jsonResponse({ taskId, scheduled: true }, 202);
+}
+
+export function handleTaskDeleteRequest(taskId: string): Response {
+  const result = deleteTask(taskId);
+  if (!result.success) return errorResponse(result.error, 404);
+  return jsonResponse({ taskId, deleted: true });
 }
