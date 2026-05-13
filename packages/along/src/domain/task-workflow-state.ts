@@ -51,9 +51,12 @@ export type DomainEventType =
   | 'plan.approved'
   | 'implementation.started'
   | 'implementation.completed'
+  | 'implementation.completed_manually'
   | 'verification.started'
   | 'verification.passed'
+  | 'verification.passed_manually'
   | 'implementation.failed'
+  | 'recovery.interrupted'
   | 'task.closed';
 
 export interface DomainEvent {
@@ -87,6 +90,9 @@ export function reduceWorkflowEvent(
   state: WorkflowRuntimeState,
   event: DomainEvent,
 ): WorkflowRuntimeState {
+  if (event.type === 'recovery.interrupted') {
+    return reduceRecoveryEvent(state);
+  }
   assertTransition(
     !TERMINAL_LIFECYCLES.has(state.lifecycle) || event.type === 'task.created',
     event.type,
@@ -190,6 +196,19 @@ function reduceImplementationEvent(
       workflowState: 'implementing',
     };
   }
+  if (
+    event.type === 'implementation.completed_manually' ||
+    event.type === 'verification.passed_manually'
+  ) {
+    return {
+      lifecycle:
+        event.type === 'verification.passed_manually'
+          ? TASK_LIFECYCLE.COMPLETED
+          : TASK_LIFECYCLE.READY,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      workflowState: 'completed',
+    };
+  }
   assertTransition(
     state.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION,
     event.type,
@@ -242,3 +261,31 @@ const IMPLEMENTATION_EVENT_PATCHES: Partial<
     workflowState: 'failed',
   },
 };
+
+// recovery.interrupted: 服务重启时中断的 run。
+// 只有正在运行中的 task 才需要回退；已完成/已交付的保持不变。
+function reduceRecoveryEvent(
+  state: WorkflowRuntimeState,
+): WorkflowRuntimeState {
+  if (state.lifecycle !== TASK_LIFECYCLE.RUNNING) {
+    return state;
+  }
+  if (state.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION) {
+    if (state.workflowState === 'verifying') {
+      return {
+        lifecycle: TASK_LIFECYCLE.READY,
+        currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+        workflowState: 'completed',
+      };
+    }
+    return {
+      lifecycle: TASK_LIFECYCLE.READY,
+      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
+      workflowState: 'planned',
+    };
+  }
+  return {
+    ...state,
+    lifecycle: TASK_LIFECYCLE.READY,
+  };
+}

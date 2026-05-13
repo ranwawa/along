@@ -18,8 +18,8 @@ import {
   type TaskAgentRunRecord,
   type TaskPlanningSnapshot,
   THREAD_STATUS,
+  transitionTaskWorkflow,
   updateTaskDelivery,
-  updateTaskWorkflowState,
   WORKFLOW_KIND,
 } from './task-planning';
 import {
@@ -135,11 +135,9 @@ function failDeliveryRun(
   threadId: string,
   message: string,
 ): Result<never> {
-  updateTaskWorkflowState({
+  transitionTaskWorkflow({
     taskId,
-    lifecycle: TASK_LIFECYCLE.READY,
-    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-    threadStatus: THREAD_STATUS.COMPLETED,
+    event: { type: 'implementation.completed' },
   });
   recordTaskAgentResult({
     taskId,
@@ -263,11 +261,9 @@ export async function runTaskDelivery(
       startedRes.error,
     );
   }
-  const workflowStartedRes = updateTaskWorkflowState({
+  const workflowStartedRes = transitionTaskWorkflow({
     taskId: input.taskId,
-    lifecycle: TASK_LIFECYCLE.RUNNING,
-    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-    threadStatus: THREAD_STATUS.VERIFYING,
+    event: { type: 'verification.started' },
   });
   if (!workflowStartedRes.success) {
     return failDeliveryRun(
