@@ -25,6 +25,7 @@ import {
 } from './TaskDetailPanels';
 import { TaskFlowPanel } from './TaskFlowPanel';
 import { TaskRecordsPanel } from './TaskRecords';
+import { getTaskFailureSummary } from './taskAgentFailure';
 
 function NewTaskComposer({
   draft,
@@ -49,6 +50,7 @@ function NewTaskComposer({
       busy={busyAction === 'create'}
       executionMode={draft.executionMode}
       runtimeExecutionMode={draft.runtimeExecutionMode}
+      workspaceMode={draft.workspaceMode}
       placeholder={selectedRepository ? '输入任务目标或问题' : '请先选择仓库'}
       submitDisabled={!selectedRepository || !hasDraft || Boolean(busyAction)}
       submitTitle="创建任务"
@@ -58,6 +60,7 @@ function NewTaskComposer({
       onRuntimeExecutionModeChange={(value) =>
         onDraftChange('runtimeExecutionMode', value)
       }
+      onWorkspaceModeChange={(value) => onDraftChange('workspaceMode', value)}
       onSubmit={onCreateTask}
     />
   );
@@ -232,6 +235,7 @@ function SelectedTaskMain({
   onScroll: (element: HTMLDivElement) => void;
   onOpenDialog: (kind: TaskDetailDialogKind) => void;
 }) {
+  const failureSummary = getTaskFailureSummary(selected);
   return (
     <section className="min-h-0 min-w-0 flex flex-col">
       <div
@@ -241,6 +245,7 @@ function SelectedTaskMain({
       >
         <TaskDetailHeader onOpenDialog={onOpenDialog} />
         <div className="min-w-0 flex flex-col gap-5 p-4 md:p-6">
+          {failureSummary && <TaskFailureBanner summary={failureSummary} />}
           <TaskRecordsPanel artifacts={detail.sortedArtifacts} />
         </div>
       </div>
@@ -262,6 +267,17 @@ function SelectedTaskMain({
           onSubmitMessage={detail.onSubmitMessage}
           onCancelAgentRun={detail.onCancelAgentRun}
         />
+      </div>
+    </section>
+  );
+}
+
+function TaskFailureBanner({ summary }: { summary: string }) {
+  return (
+    <section className="rounded-lg border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+      <div className="font-semibold">Agent 运行失败</div>
+      <div className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-rose-100/90">
+        {summary}
       </div>
     </section>
   );

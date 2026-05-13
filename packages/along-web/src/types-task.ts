@@ -36,6 +36,8 @@ export type TaskExecutionMode = 'manual' | 'autonomous';
 
 export type TaskRuntimeExecutionMode = 'auto' | 'ask' | 'plan' | 'build';
 
+export type TaskWorkspaceMode = 'worktree' | 'default_branch';
+
 export type TaskThreadStatus =
   | 'active'
   | 'waiting_user'
@@ -93,6 +95,7 @@ export interface TaskItemRecord {
   seq?: number;
   type?: string;
   executionMode: TaskExecutionMode;
+  workspaceMode?: TaskWorkspaceMode;
   createdAt: string;
   updatedAt: string;
 }

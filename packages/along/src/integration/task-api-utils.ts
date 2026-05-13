@@ -9,10 +9,12 @@ import {
   TASK_AGENT_STAGE,
   TASK_EXECUTION_MODE,
   TASK_RUNTIME_EXECUTION_MODE,
+  TASK_WORKSPACE_MODE,
   type TaskAgentStage,
   type TaskExecutionMode,
   type TaskPlanningSnapshot,
   type TaskRuntimeExecutionMode,
+  type TaskWorkspaceMode,
 } from '../domain/task-planning';
 import type {
   ScheduledTaskDeliveryRun,
@@ -157,6 +159,24 @@ export function readTaskRuntimeExecutionModeField(
     return success(value);
   }
   return failure('runtimeExecutionMode 必须是 auto、ask、plan 或 build');
+}
+
+export function readTaskWorkspaceModeField(
+  payload: UnknownRecord,
+  key: string,
+): Result<TaskWorkspaceMode | undefined> {
+  const rawValue = payload[key];
+  const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+  if (value === undefined || value === null || value === '') {
+    return success(undefined);
+  }
+  if (
+    value === TASK_WORKSPACE_MODE.WORKTREE ||
+    value === TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+  ) {
+    return success(value);
+  }
+  return failure('workspaceMode 必须是 worktree 或 default_branch');
 }
 
 export function readTaskAgentStageField(

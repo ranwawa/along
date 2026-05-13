@@ -95,7 +95,7 @@ describe('TaskFlowPanel', () => {
     expect(html).toContain('计划确认');
   });
 
-  it('当前计划弹窗使用 Markdown 渲染计划正文', () => {
+  it('当前计划抽屉使用 Markdown 渲染计划正文且不渲染遮罩', () => {
     const html = renderToStaticMarkup(
       <CurrentPlanDialog
         plan={makePlan()}
@@ -105,6 +105,8 @@ describe('TaskFlowPanel', () => {
     );
 
     expect(html).toContain('当前计划 v1');
+    expect(html).toContain('fixed inset-y-0 right-0');
+    expect(html).not.toContain('fixed inset-0 z-50 bg-black/45');
     expect(html).toContain('<h2');
     expect(html).toContain('方案');
   });

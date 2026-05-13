@@ -116,6 +116,10 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isRecoverableCodexStreamError(message: string): boolean {
+  return /^Reconnecting\.\.\. \d+\/\d+\b/.test(message);
+}
+
 export async function runTaskCodexTurn(
   input: RunTaskCodexTurnInput,
 ): Promise<Result<RunTaskCodexTurnOutput>> {
@@ -344,6 +348,7 @@ async function consumeCodexStream(
   let finalResponse = '';
   let usage: Usage | null = null;
   let latestThreadId: string | undefined;
+  let lastRecoverableError: string | undefined;
 
   for await (const event of events) {
     const eventRes = mapper.handleEvent(event);
@@ -359,12 +364,19 @@ async function consumeCodexStream(
       }
     } else if (event.type === 'turn.completed') {
       usage = event.usage;
+      lastRecoverableError = undefined;
     } else if (event.type === 'turn.failed') {
       throw new Error(event.error.message);
     } else if (event.type === 'error') {
+      if (isRecoverableCodexStreamError(event.message)) {
+        lastRecoverableError = event.message;
+        continue;
+      }
       throw new Error(event.message);
     }
   }
+
+  if (lastRecoverableError) throw new Error(lastRecoverableError);
 
   return {
     turn: {

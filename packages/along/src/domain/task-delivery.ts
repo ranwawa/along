@@ -14,6 +14,7 @@ import {
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
   TASK_LIFECYCLE,
+  TASK_WORKSPACE_MODE,
   type TaskAgentRunRecord,
   type TaskPlanningSnapshot,
   THREAD_STATUS,
@@ -44,7 +45,7 @@ export interface RunTaskDeliveryOutput {
   snapshot: TaskPlanningSnapshot;
   branchName: string;
   commitShas: string[];
-  prUrl: string;
+  prUrl?: string;
   prNumber?: number;
 }
 
@@ -167,6 +168,18 @@ export async function runTaskDelivery(
   if (!snapshot) return failure(`Task 不存在: ${input.taskId}`);
 
   if (snapshot.task.prUrl) {
+    return success({
+      snapshot,
+      branchName: snapshot.task.branchName || '',
+      commitShas: snapshot.task.commitShas,
+      prUrl: snapshot.task.prUrl,
+      prNumber: snapshot.task.prNumber,
+    });
+  }
+  if (
+    snapshot.task.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH &&
+    snapshot.task.status === 'delivered'
+  ) {
     return success({
       snapshot,
       branchName: snapshot.task.branchName || '',
@@ -387,6 +400,67 @@ export async function runTaskDelivery(
       snapshot.thread.threadId,
       `推送分支失败: ${pushRes.error}`,
     );
+  }
+
+  if (snapshot.task.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH) {
+    const deliveryRes = updateTaskDelivery({
+      taskId: input.taskId,
+      branchName,
+      commitShas,
+    });
+    if (!deliveryRes.success) {
+      return failDeliveryRun(
+        run,
+        input.taskId,
+        snapshot.thread.threadId,
+        deliveryRes.error,
+      );
+    }
+    const workflowDeliveredRes = updateTaskWorkflowState({
+      taskId: input.taskId,
+      lifecycle: TASK_LIFECYCLE.READY,
+      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
+      threadStatus: THREAD_STATUS.COMPLETED,
+    });
+    if (!workflowDeliveredRes.success) {
+      return failDeliveryRun(
+        run,
+        input.taskId,
+        snapshot.thread.threadId,
+        workflowDeliveredRes.error,
+      );
+    }
+
+    recordTaskAgentResult({
+      taskId: input.taskId,
+      threadId: snapshot.thread.threadId,
+      agentId: 'delivery',
+      runtimeId: 'system',
+      body: [
+        'Delivery 完成：已推送默认分支。',
+        '',
+        `- 分支：${branchName}`,
+        `- Commit：${finalCommitSha}`,
+      ].join('\n'),
+    });
+
+    const finishedRunRes = finishTaskAgentRun({
+      runId: run.runId,
+      status: AGENT_RUN_STATUS.SUCCEEDED,
+    });
+    if (!finishedRunRes.success) return finishedRunRes;
+
+    const refreshedSnapshotRes = readTaskPlanningSnapshot(input.taskId);
+    if (!refreshedSnapshotRes.success) return refreshedSnapshotRes;
+    if (!refreshedSnapshotRes.data) {
+      return failure(`Task ${input.taskId} 已交付，但读取快照失败`);
+    }
+
+    return success({
+      snapshot: refreshedSnapshotRes.data,
+      branchName,
+      commitShas,
+    });
   }
 
   const tokenRes = await readToken();

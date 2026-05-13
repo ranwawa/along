@@ -1,7 +1,7 @@
 // biome-ignore-all lint/style/noJsxLiterals: task planning panels use existing inline labels.
 // biome-ignore-all lint/style/noMagicNumbers: task planning layout uses fixed UI thresholds.
 import { Button } from '../components/ui/button';
-import { Dialog, DialogContent } from '../components/ui/dialog';
+import { Sheet, SheetContent } from '../components/ui/sheet';
 import type { TaskPlanningSnapshot } from '../types';
 import { formatTime, getTaskStatusLabel, getThreadStatusLabel } from './format';
 import { FlowHistory } from './TaskFlowPanel';
@@ -149,7 +149,7 @@ export function TaskDetailDialogContent({
   }
 
   if (kind === 'tail') {
-    return <TaskSessionTailView snapshot={selected} />;
+    return <TaskSessionTailView snapshot={selected} chrome={false} />;
   }
 
   if (kind === 'metadata') {
@@ -182,12 +182,20 @@ export function TaskDetailDialog({
   const title = getTaskDialogTitle(kind);
 
   return (
-    <Dialog open={Boolean(kind)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent title={title}>
-        <div className="min-h-0 overflow-auto p-4">
+    <Sheet
+      modal={false}
+      open={Boolean(kind)}
+      onOpenChange={(open) => !open && onClose()}
+    >
+      <SheetContent
+        title={title}
+        showOverlay={false}
+        className="max-w-[560px] animate-[slideInRight_0.22s_cubic-bezier(0.16,1,0.3,1)] md:w-[42vw] xl:w-[34vw]"
+      >
+        <div className="min-h-0 flex-1 overflow-auto p-4">
           <TaskDetailDialogContent kind={kind} selected={selected} />
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

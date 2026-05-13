@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noMagicNumbers: tests use task seq values directly for readability.
 import { describe, expect, it } from 'vitest';
 import type { TaskPlanningSnapshot, TaskStatus } from '../types';
 import { mergeSnapshotIntoList, sortTaskSnapshotsBySeqDesc } from './api';
@@ -17,6 +18,7 @@ function makeSnapshot(
       commitShas: [],
       seq,
       executionMode: 'manual',
+      workspaceMode: 'worktree',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
       ...overrides,

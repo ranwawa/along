@@ -12,6 +12,7 @@ const draft: DraftTaskInput = {
   attachments: [],
   executionMode: 'manual',
   runtimeExecutionMode: 'auto',
+  workspaceMode: 'worktree',
 };
 
 function makeTask(): TaskPlanningSnapshot['task'] {
@@ -24,6 +25,7 @@ function makeTask(): TaskPlanningSnapshot['task'] {
     currentWorkflowKind: 'implementation',
     commitShas: [],
     executionMode: 'manual',
+    workspaceMode: 'worktree',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:05:00.000Z',
   };
@@ -148,6 +150,43 @@ function countText(value: string, text: string): number {
 }
 
 describe('TaskDetail layout', () => {
+  it('新增任务时展示执行位置下拉框', () => {
+    const html = renderToStaticMarkup(
+      <TaskDetail
+        selected={null}
+        isNewTaskOpen={true}
+        draft={draft}
+        selectedRepository={{
+          fullName: 'ranwawa/along',
+          owner: 'ranwawa',
+          repo: 'along',
+          path: '/workspace/along',
+          isDefault: true,
+        }}
+        sortedArtifacts={[]}
+        messageBody=""
+        messageAttachments={[]}
+        messageExecutionMode="manual"
+        messageRuntimeExecutionMode="auto"
+        busyAction={null}
+        onDraftChange={() => undefined}
+        onDraftAttachmentsChange={() => undefined}
+        onCreateTask={() => undefined}
+        onMessageChange={() => undefined}
+        onMessageAttachmentsChange={() => undefined}
+        onMessageExecutionModeChange={() => undefined}
+        onMessageRuntimeExecutionModeChange={() => undefined}
+        onSubmitMessage={() => undefined}
+        onCancelAgentRun={() => undefined}
+        onAction={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('aria-label="执行位置"');
+    expect(html).toContain('value="worktree"');
+    expect(html).toContain('默认分支');
+  });
+
   it('在中间滚动区顶部渲染固定 header 入口，并让右侧只保留状态图', () => {
     const html = renderDetail();
 
@@ -160,10 +199,41 @@ describe('TaskDetail layout', () => {
     expect(html).not.toContain('运行前端测试');
     expect(html).not.toContain('进入实现阶段');
   });
+
+  it('Agent 失败时在主内容区展示异常摘要', () => {
+    const html = renderDetail(
+      makeSnapshot({
+        agentStages: [
+          {
+            stage: 'planning',
+            agentId: 'planner',
+            label: '计划阶段',
+            status: 'failed',
+            latestRun: {
+              runId: 'run-1',
+              taskId: 'task-1',
+              threadId: 'thread-1',
+              agentId: 'planner',
+              runtimeId: 'codex',
+              status: 'failed',
+              inputArtifactIds: [],
+              outputArtifactIds: [],
+              error: 'Quota exceeded. Check your plan and billing details.',
+              startedAt: '2026-01-01T00:01:00.000Z',
+              endedAt: '2026-01-01T00:02:00.000Z',
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Agent 运行失败');
+    expect(html).toContain('Quota exceeded');
+  });
 });
 
 describe('TaskDetailDialog', () => {
-  it('实时进展弹框展示当前任务进展和失败态', () => {
+  it('实时进展抽屉展示当前任务进展和失败态且不渲染遮罩', () => {
     const snapshot = makeSnapshot({
       agentProgressEvents: [
         {
@@ -190,12 +260,14 @@ describe('TaskDetailDialog', () => {
     );
 
     expect(html).toContain('实时进展');
+    expect(html).toContain('fixed inset-y-0 right-0');
+    expect(html).not.toContain('fixed inset-0 z-50 bg-black/45');
     expect(html).toContain('Agent 运行失败');
     expect(html).toContain('失败');
     expect(html).toContain('命令退出码 1');
   });
 
-  it('Agent 会话 Tail 弹框展示当前任务会话输出', () => {
+  it('Agent 会话 Tail 抽屉展示当前任务会话输出且不重复内部标题', () => {
     const html = renderToStaticMarkup(
       <TaskDetailDialog
         kind="tail"
@@ -204,7 +276,8 @@ describe('TaskDetailDialog', () => {
       />,
     );
 
-    expect(html).toContain('Agent 会话 Tail');
+    expect(countText(html, 'Agent 会话 Tail')).toBe(1);
+    expect(html).not.toContain('Codex 实时输出');
     expect(html).toContain('正在输出日志');
   });
 

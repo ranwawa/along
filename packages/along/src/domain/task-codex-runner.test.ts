@@ -602,6 +602,109 @@ describe('task-codex-runner', () => {
     });
   });
 
+  it('当 Codex stream 返回可恢复重连错误时继续消费后续事件', async () => {
+    const thread = {
+      id: 'codex-thread-1',
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents([
+          { type: 'thread.started', thread_id: 'codex-thread-1' },
+          { type: 'turn.started' },
+          {
+            type: 'error',
+            message:
+              'Reconnecting... 2/5 (stream disconnected before completion: tls handshake eof)',
+          },
+          {
+            type: 'item.completed',
+            item: { id: 'msg-1', type: 'agent_message', text: '恢复完成' },
+          },
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 1,
+              cached_input_tokens: 0,
+              output_tokens: 1,
+              reasoning_output_tokens: 0,
+            },
+          },
+        ]),
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data.assistantText).toBe('恢复完成');
+    expect(planningMocks.recordTaskAgentSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'system',
+        kind: 'error',
+        content:
+          'Codex stream 错误：Reconnecting... 2/5 (stream disconnected before completion: tls handshake eof)',
+        metadata: expect.objectContaining({
+          provider_event_type: 'error',
+        }),
+      }),
+    );
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'succeeded',
+        runtimeSessionIdAtEnd: 'codex-thread-1',
+      }),
+    );
+  });
+
+  it('当 Codex stream 重连后未完成就结束时仍标记 run 失败', async () => {
+    const errorMessage =
+      'Reconnecting... 5/5 (stream disconnected before completion: tls handshake eof)';
+    const thread = {
+      id: 'codex-thread-1',
+      runStreamed: vi.fn().mockResolvedValue({
+        events: streamEvents([
+          { type: 'thread.started', thread_id: 'codex-thread-1' },
+          { type: 'turn.started' },
+          {
+            type: 'error',
+            message: errorMessage,
+          },
+        ]),
+      }),
+    };
+    const client = {
+      startThread: vi.fn().mockReturnValue(thread),
+      resumeThread: vi.fn(),
+    };
+
+    const result = await runTaskCodexTurn({
+      taskId: 'task-1',
+      threadId: 'thread-1',
+      agentId: 'planner',
+      prompt: '生成计划',
+      cwd: '/tmp/project',
+      createClient: () => client,
+    });
+
+    expect(result.success).toBe(false);
+    expect(planningMocks.finishTaskAgentRun).toHaveBeenCalledWith({
+      runId: 'run-1',
+      status: 'failed',
+      runtimeSessionIdAtEnd: 'codex-thread-1',
+      error: errorMessage,
+    });
+  });
+
   it('存在 Codex session 时恢复 Codex thread', async () => {
     planningMocks.ensureTaskAgentBinding.mockReturnValueOnce({
       success: true,

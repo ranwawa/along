@@ -27,6 +27,7 @@ const mockTaskConstants = vi.hoisted(() => ({
   },
   TASK_STATUS: {
     IMPLEMENTED: 'implemented',
+    DELIVERED: 'delivered',
   },
   THREAD_STATUS: {
     APPROVED: 'approved',
@@ -44,6 +45,10 @@ const mockTaskConstants = vi.hoisted(() => ({
 vi.mock('./task-planning', () => ({
   AGENT_RUN_STATUS: mockTaskConstants.AGENT_RUN_STATUS,
   TASK_LIFECYCLE: mockTaskConstants.TASK_LIFECYCLE,
+  TASK_WORKSPACE_MODE: {
+    WORKTREE: 'worktree',
+    DEFAULT_BRANCH: 'default_branch',
+  },
   THREAD_STATUS: mockTaskConstants.THREAD_STATUS,
   WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   createTaskAgentRun: planningMocks.createTaskAgentRun,
@@ -82,6 +87,7 @@ const snapshot = {
     repoName: 'kinkeeper',
     cwd: '/tmp/kinkeeper',
     commitShas: [],
+    workspaceMode: 'worktree',
     seq: 42,
     type: 'fix',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -303,6 +309,78 @@ describe('task-delivery', () => {
       currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
       threadStatus: mockTaskConstants.THREAD_STATUS.COMPLETED,
     });
+  });
+
+  it('当选择默认分支模式时，期望推送默认分支且不创建 PR', async () => {
+    const deliveredSnapshot = {
+      ...snapshot,
+      task: {
+        ...snapshot.task,
+        status: mockTaskConstants.TASK_STATUS.DELIVERED,
+        workspaceMode: 'default_branch',
+        branchName: 'main',
+        worktreePath: '/tmp/kinkeeper',
+        commitShas: ['abc123'],
+      },
+    };
+    planningMocks.readTaskPlanningSnapshot
+      .mockReturnValueOnce({
+        success: true,
+        data: {
+          ...snapshot,
+          task: {
+            ...snapshot.task,
+            workspaceMode: 'default_branch',
+            commitShas: ['abc123'],
+          },
+        },
+      })
+      .mockReturnValue({
+        success: true,
+        data: deliveredSnapshot,
+      });
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    const runner: TaskDeliveryCommandRunner = async (
+      command,
+      args,
+      options,
+    ) => {
+      calls.push({ command, args, cwd: options.cwd });
+      if (command === 'git' && args[0] === 'status') return ok('');
+      if (command === 'git' && args[0] === 'diff') return ok('src/app.ts');
+      if (command === 'git' && args[0] === 'rev-parse') return ok('abc123');
+      return ok('');
+    };
+
+    const result = await runTaskDelivery({
+      taskId: 'task_123456789abc',
+      cwd: '/tmp/kinkeeper',
+      commandRunner: runner,
+      readToken: async () => {
+        throw new Error('不应该读取 GitHub token');
+      },
+      readDefaultBranch: async () => ok('main'),
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data.prUrl).toBeUndefined();
+    expect(calls).toContainEqual({
+      command: 'git',
+      cwd: '/tmp/kinkeeper',
+      args: ['push', '--set-upstream', 'origin', 'main'],
+    });
+    expect(calls.some((call) => call.command === 'gh')).toBe(false);
+    expect(planningMocks.updateTaskDelivery).toHaveBeenLastCalledWith({
+      taskId: 'task_123456789abc',
+      branchName: 'main',
+      commitShas: ['abc123'],
+    });
+    expect(planningMocks.recordTaskAgentResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining('已推送默认分支'),
+      }),
+    );
   });
 
   it('当旧 Task 缺少 owner/repo 时，期望从 git origin 推断后创建 PR', async () => {

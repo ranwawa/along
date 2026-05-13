@@ -5,6 +5,7 @@ import { Select } from '../components/ui/input';
 import type { TaskPlanningSnapshot } from '../types';
 import type { DraftTaskInput, RepositoryOption } from './api';
 import { TaskStatusBadge } from './TaskStatusBadge';
+import { getLatestFailedAgentStage } from './taskAgentFailure';
 
 const EMPTY_REPOSITORY_LABEL = '暂无已注册仓库';
 const LOADING_TASKS_TEXT = '加载中...';
@@ -169,7 +170,10 @@ function TaskListItem({
           {snapshot.task.title}
         </div>
         <div className="shrink-0 whitespace-nowrap">
-          <TaskStatusBadge snapshot={snapshot} />
+          <TaskStatusBadge
+            snapshot={snapshot}
+            failed={Boolean(getLatestFailedAgentStage(snapshot.agentStages))}
+          />
         </div>
       </div>
     </button>

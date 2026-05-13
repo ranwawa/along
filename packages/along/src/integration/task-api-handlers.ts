@@ -21,6 +21,7 @@ import {
   requestTaskPlan,
   submitTaskMessage,
   TASK_LIFECYCLE,
+  TASK_WORKSPACE_MODE,
   type TaskPlanningSnapshot,
   WORKFLOW_KIND,
 } from '../domain/task-planning';
@@ -41,6 +42,7 @@ import {
   readTaskExecutionModeField,
   readTaskRequestPayload,
   readTaskRuntimeExecutionModeField,
+  readTaskWorkspaceModeField,
   resolveTaskCwd,
   scheduleDeliveryIfNeeded,
   scheduleImplementationIfNeeded,
@@ -117,6 +119,8 @@ function createTaskFromPayload(
     'runtimeExecutionMode',
   );
   if (!runtimeExecutionModeRes.success) return runtimeExecutionModeRes;
+  const workspaceModeRes = readTaskWorkspaceModeField(payload, 'workspaceMode');
+  if (!workspaceModeRes.success) return workspaceModeRes;
   const repository = getTaskRepositoryFields(payload, context, cwdRes.data);
   return createPlanningTask({
     title: deriveTitle(taskBody),
@@ -127,6 +131,7 @@ function createTaskFromPayload(
     cwd: cwdRes.data,
     executionMode: executionModeRes.data,
     runtimeExecutionMode: runtimeExecutionModeRes.data,
+    workspaceMode: workspaceModeRes.data,
     ...(attachments.length ? { attachments } : {}),
   });
 }
@@ -423,7 +428,10 @@ export async function handleTaskCompleteRequest(
   const snapshot = snapshotRes.data;
   if (!snapshot) return errorResponse(`Task 不存在: ${taskId}`, 404);
 
-  if (snapshot.task.lifecycle !== TASK_LIFECYCLE.COMPLETED) {
+  if (
+    snapshot.task.lifecycle !== TASK_LIFECYCLE.COMPLETED &&
+    snapshot.task.workspaceMode !== TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+  ) {
     const cleanupInputRes = readTaskCleanupInput(snapshot);
     if (!cleanupInputRes.success) {
       return errorResponse(cleanupInputRes.error, 409);
@@ -460,7 +468,12 @@ function readTaskCleanupInput(snapshot: TaskPlanningSnapshot): Result<{
   if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return failure('Task 已关闭，不能验收完成');
   }
-  if (!snapshot.task.prUrl) return failure('只有已交付 Task 可以验收完成');
+  if (
+    !snapshot.task.prUrl &&
+    snapshot.task.workspaceMode !== TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+  ) {
+    return failure('只有已交付 Task 可以验收完成');
+  }
   if (!snapshot.task.repoOwner || !snapshot.task.repoName) {
     return failure('当前 Task 缺少仓库信息，不能清理本地资源');
   }
@@ -470,7 +483,10 @@ function readTaskCleanupInput(snapshot: TaskPlanningSnapshot): Result<{
   if (snapshot.task.seq == null) {
     return failure('当前 Task 缺少本地序号，不能清理本地资源');
   }
-  if (!snapshot.task.worktreePath) {
+  if (
+    snapshot.task.workspaceMode !== TASK_WORKSPACE_MODE.DEFAULT_BRANCH &&
+    !snapshot.task.worktreePath
+  ) {
     return failure('当前 Task 缺少 worktree 路径，不能清理本地资源');
   }
   return success({
@@ -478,7 +494,7 @@ function readTaskCleanupInput(snapshot: TaskPlanningSnapshot): Result<{
     repoOwner: snapshot.task.repoOwner,
     repoName: snapshot.task.repoName,
     cwd: snapshot.task.cwd,
-    worktreePath: snapshot.task.worktreePath,
+    worktreePath: snapshot.task.worktreePath || snapshot.task.cwd,
     branchName: snapshot.task.branchName,
   });
 }

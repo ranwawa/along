@@ -20,6 +20,7 @@ function makeTask(
     commitShas: [],
     seq: 12,
     executionMode: 'manual',
+    workspaceMode: 'worktree',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: 'custom-updated-at',
     ...overrides,
@@ -106,6 +107,7 @@ function renderPanel(
         attachments: [],
         executionMode: 'manual',
         runtimeExecutionMode: 'auto',
+        workspaceMode: 'worktree',
       }}
       repositories={repositories}
       error={null}
@@ -127,9 +129,10 @@ describe('TaskListPanel', () => {
 
     expect(html).toContain('#12');
     expect(html).toContain('优化左侧任务列表展示');
-    expect(html).toContain('aria-label="实现中"');
-    expect(html).toContain('title="实现中"');
-    expect(html).not.toContain('>实现中<');
+    expect(html).toContain('aria-label="失败"');
+    expect(html).toContain('title="失败"');
+    expect(html).not.toContain('>失败<');
+    expect(html).toContain(TASK_STATUS_COLOR_STYLES.rose.dotClass);
     expect(html).not.toContain('custom-updated-at');
     expect(html).not.toContain('这段任务正文不应该出现在左侧列表');
     expect(html).not.toContain('命令退出码 1');
@@ -138,7 +141,12 @@ describe('TaskListPanel', () => {
 
   it('已关闭任务显示独立状态', () => {
     const html = renderPanel({
-      tasks: [makeSnapshot({ task: makeTask({ status: 'closed' }) })],
+      tasks: [
+        makeSnapshot({
+          task: makeTask({ status: 'closed' }),
+          agentStages: [],
+        }),
+      ],
     });
 
     expect(html).toContain('aria-label="已关闭"');
@@ -152,6 +160,7 @@ describe('TaskListPanel', () => {
     const html = renderPanel({
       tasks: [
         makeSnapshot({
+          agentStages: [],
           display: {
             state: 'waiting_user',
             label: '待用户补充',

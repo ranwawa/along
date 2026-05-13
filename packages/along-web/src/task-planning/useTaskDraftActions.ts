@@ -16,6 +16,7 @@ function buildCreatePayload(input: UseTaskPlanningActionsInput, body: string) {
     body,
     autoRun: true,
     runtimeExecutionMode: input.draft.runtimeExecutionMode,
+    workspaceMode: input.draft.workspaceMode,
   };
   if (input.draft.executionMode === 'autonomous') {
     payload.executionMode = 'autonomous';

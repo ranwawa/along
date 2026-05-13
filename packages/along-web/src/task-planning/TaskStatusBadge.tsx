@@ -13,14 +13,19 @@ const TASK_STATUS_DOT_RUNNING_CLASS =
 
 export function TaskStatusBadge({
   snapshot,
+  failed = false,
 }: {
   snapshot: TaskPlanningSnapshot;
+  failed?: boolean;
 }) {
-  const label =
-    snapshot.display?.label || getTaskStatusLabel(snapshot.task.status);
-  const style = snapshot.display
-    ? getTaskDisplayStatusStyle(snapshot.display.state)
-    : getTaskLegacyStatusStyle(snapshot.task.status);
+  const label = failed
+    ? '失败'
+    : snapshot.display?.label || getTaskStatusLabel(snapshot.task.status);
+  const style = failed
+    ? getTaskDisplayStatusStyle('failed')
+    : snapshot.display
+      ? getTaskDisplayStatusStyle(snapshot.display.state)
+      : getTaskLegacyStatusStyle(snapshot.task.status);
   const isAgentRunning = snapshot.agentStages.some(
     (stage) => stage.status === 'running',
   );

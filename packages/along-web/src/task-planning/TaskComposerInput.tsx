@@ -14,6 +14,7 @@ import type {
   TaskAgentRunRecord,
   TaskExecutionMode,
   TaskRuntimeExecutionMode,
+  TaskWorkspaceMode,
 } from '../types-task';
 import {
   ImageAttachmentPicker,
@@ -27,6 +28,7 @@ interface TaskComposerInputProps {
   disabled?: boolean;
   executionMode: TaskExecutionMode;
   runtimeExecutionMode: TaskRuntimeExecutionMode;
+  workspaceMode?: TaskWorkspaceMode;
   placeholder: string;
   rows?: number;
   runningRun?: TaskAgentRunRecord | null;
@@ -37,6 +39,7 @@ interface TaskComposerInputProps {
   onBodyChange: (value: string) => void;
   onExecutionModeChange: (value: TaskExecutionMode) => void;
   onRuntimeExecutionModeChange: (value: TaskRuntimeExecutionMode) => void;
+  onWorkspaceModeChange?: (value: TaskWorkspaceMode) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -372,6 +375,32 @@ function AutomaticModeCheckbox({
   );
 }
 
+function WorkspaceModeSelect({
+  busy,
+  disabled,
+  workspaceMode,
+  onWorkspaceModeChange,
+}: Pick<
+  TaskComposerInputProps,
+  'busy' | 'disabled' | 'workspaceMode' | 'onWorkspaceModeChange'
+>) {
+  if (!onWorkspaceModeChange) return null;
+  return (
+    <select
+      aria-label="执行位置"
+      value={workspaceMode || 'worktree'}
+      disabled={disabled || busy}
+      onChange={(event) =>
+        onWorkspaceModeChange(event.target.value as TaskWorkspaceMode)
+      }
+      className="h-9 shrink-0 rounded-lg border border-border-color bg-black/25 px-3 text-sm text-text-secondary outline-none focus:ring-1 focus:ring-brand/60 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <option value="worktree">worktree</option>
+      <option value="default_branch">默认分支</option>
+    </select>
+  );
+}
+
 function SubmitIconButton({
   busy,
   runningRun,
@@ -416,6 +445,7 @@ function ComposerActionRow({
         openPicker={controls.openPicker}
       />
       <AutomaticModeCheckbox {...props} />
+      <WorkspaceModeSelect {...props} />
       <div className="min-w-0 flex-1" />
       <SubmitIconButton {...props} />
     </div>

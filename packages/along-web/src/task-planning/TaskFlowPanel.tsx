@@ -1,6 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: existing task flow panel uses inline labels.
 import { useEffect, useState } from 'react';
-import { Dialog, DialogContent } from '../components/ui/dialog';
+import { Sheet, SheetContent } from '../components/ui/sheet';
 import type {
   TaskFlowAction,
   TaskFlowSnapshot,
@@ -86,16 +86,21 @@ export function CurrentPlanDialog({
 }) {
   if (!plan) return null;
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent
+    <Sheet
+      modal={false}
+      open={open}
+      onOpenChange={(nextOpen) => !nextOpen && onClose()}
+    >
+      <SheetContent
         title={`当前计划 v${plan.version}`}
-        className="max-h-[80vh] max-w-3xl"
+        showOverlay={false}
+        className="max-w-[640px] animate-[slideInRight_0.22s_cubic-bezier(0.16,1,0.3,1)] md:w-[48vw] xl:w-[38vw]"
       >
-        <div className="min-h-0 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-4">
           <MarkdownContent value={plan.body} />
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
 

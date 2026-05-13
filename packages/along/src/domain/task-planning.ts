@@ -66,6 +66,14 @@ export const TASK_RUNTIME_EXECUTION_MODE = {
 export type TaskRuntimeExecutionMode =
   (typeof TASK_RUNTIME_EXECUTION_MODE)[keyof typeof TASK_RUNTIME_EXECUTION_MODE];
 
+export const TASK_WORKSPACE_MODE = {
+  WORKTREE: 'worktree',
+  DEFAULT_BRANCH: 'default_branch',
+} as const;
+
+export type TaskWorkspaceMode =
+  (typeof TASK_WORKSPACE_MODE)[keyof typeof TASK_WORKSPACE_MODE];
+
 export const THREAD_PURPOSE = {
   ASK: 'ask',
   PLANNING: 'planning',
@@ -202,6 +210,7 @@ export interface TaskItemRecord {
   seq?: number;
   type?: string;
   executionMode: TaskExecutionMode;
+  workspaceMode: TaskWorkspaceMode;
   createdAt: string;
   updatedAt: string;
 }
@@ -446,6 +455,7 @@ export interface CreatePlanningTaskInput {
   cwd?: string;
   executionMode?: TaskExecutionMode;
   runtimeExecutionMode?: TaskRuntimeExecutionMode;
+  workspaceMode?: TaskWorkspaceMode;
   workflowKind?: WorkflowKind;
   attachments?: TaskAttachmentUploadInput[];
 }
@@ -620,6 +630,7 @@ interface TaskItemRow {
   seq: number | null;
   type: string | null;
   execution_mode?: string | null;
+  workspace_mode?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -737,6 +748,14 @@ function normalizeTaskExecutionMode(
   return value === TASK_EXECUTION_MODE.AUTONOMOUS
     ? TASK_EXECUTION_MODE.AUTONOMOUS
     : TASK_EXECUTION_MODE.MANUAL;
+}
+
+function normalizeTaskWorkspaceMode(
+  value: string | null | undefined,
+): TaskWorkspaceMode {
+  return value === TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+    ? TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+    : TASK_WORKSPACE_MODE.WORKTREE;
 }
 
 function normalizeWorkflowKind(value: string | null | undefined): WorkflowKind {
@@ -880,6 +899,7 @@ function mapTask(row: TaskItemRow): TaskItemRecord {
     seq: row.seq || undefined,
     type: row.type || undefined,
     executionMode: normalizeTaskExecutionMode(row.execution_mode),
+    workspaceMode: normalizeTaskWorkspaceMode(row.workspace_mode),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1069,11 +1089,20 @@ function isTaskCompleted(task: TaskItemRecord): boolean {
   return task.lifecycle === TASK_LIFECYCLE.COMPLETED;
 }
 
+function hasDeliveryResult(
+  task: Pick<TaskItemRecord, 'prUrl' | 'workspaceMode'>,
+) {
+  return (
+    Boolean(task.prUrl) ||
+    task.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+  );
+}
+
 function isTaskDelivered(task: TaskItemRecord): boolean {
   return (
     task.lifecycle === TASK_LIFECYCLE.READY &&
     task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION &&
-    Boolean(task.prUrl)
+    hasDeliveryResult(task)
   );
 }
 
@@ -1130,7 +1159,7 @@ function isPlanningActive(input: {
 
 function deriveTaskStatusFromWorkflow(
   workflow: WorkflowRuntimeState,
-  task?: Pick<TaskItemRecord, 'prUrl'>,
+  task?: Pick<TaskItemRecord, 'prUrl' | 'workspaceMode'>,
 ): TaskStatus {
   if (workflow.lifecycle === TASK_LIFECYCLE.CANCELLED) {
     return TASK_STATUS.CLOSED;
@@ -1143,7 +1172,9 @@ function deriveTaskStatusFromWorkflow(
       return TASK_STATUS.DELIVERING;
     }
     if (workflow.workflowState === 'completed') {
-      return task?.prUrl ? TASK_STATUS.DELIVERED : TASK_STATUS.IMPLEMENTED;
+      return task && hasDeliveryResult(task)
+        ? TASK_STATUS.DELIVERED
+        : TASK_STATUS.IMPLEMENTED;
     }
     return TASK_STATUS.IMPLEMENTING;
   }
@@ -2151,13 +2182,18 @@ function buildTaskFlowEvents(input: {
     }
   }
 
-  if (input.task.prUrl) {
+  if (
+    input.task.prUrl ||
+    input.task.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+  ) {
     events.push({
       eventId: `delivery:${input.task.taskId}`,
       type: 'delivery_updated',
       stage: 'delivery',
       title: '结果已交付',
-      summary: input.task.prUrl,
+      summary:
+        input.task.prUrl ||
+        `已推送默认分支 ${input.task.branchName || ''}`.trim(),
       occurredAt: input.task.updatedAt,
     });
   }
@@ -2564,8 +2600,8 @@ export function createPlanningTask(
             INSERT INTO task_items (
               task_id, title, body, source, status, active_thread_id,
               repo_owner, repo_name, cwd, seq, execution_mode, lifecycle,
-              current_workflow_kind, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              current_workflow_kind, workspace_mode, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
         ).run(
           taskId,
@@ -2581,6 +2617,7 @@ export function createPlanningTask(
           input.executionMode || TASK_EXECUTION_MODE.MANUAL,
           TASK_LIFECYCLE.OPEN,
           workflowKind,
+          input.workspaceMode || TASK_WORKSPACE_MODE.WORKTREE,
           now,
           now,
         );
@@ -2590,8 +2627,8 @@ export function createPlanningTask(
             INSERT INTO task_items (
               task_id, title, body, source, active_thread_id,
               repo_owner, repo_name, cwd, seq, execution_mode, lifecycle,
-              current_workflow_kind, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              current_workflow_kind, workspace_mode, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
         ).run(
           taskId,
@@ -2606,6 +2643,7 @@ export function createPlanningTask(
           input.executionMode || TASK_EXECUTION_MODE.MANUAL,
           TASK_LIFECYCLE.OPEN,
           workflowKind,
+          input.workspaceMode || TASK_WORKSPACE_MODE.WORKTREE,
           now,
           now,
         );
@@ -2918,7 +2956,10 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
     return failure('Task 已关闭，不能继续讨论');
   }
   if (thread.status === THREAD_STATUS.APPROVED) {
-    if (!task.prUrl && task.lifecycle !== TASK_LIFECYCLE.COMPLETED) {
+    if (
+      !hasDeliveryResult(task) &&
+      task.lifecycle !== TASK_LIFECYCLE.COMPLETED
+    ) {
       return failure('当前 Planning 已批准，不能继续提交反馈');
     }
   }
@@ -3535,7 +3576,7 @@ export function completeDeliveredTask(
   if (!openRes.success) return openRes;
   if (snapshot.task.lifecycle === TASK_LIFECYCLE.COMPLETED)
     return success(snapshot);
-  if (!snapshot.task.prUrl) {
+  if (!hasDeliveryResult(snapshot.task)) {
     return failure('只有已交付 Task 可以验收完成');
   }
 
@@ -3555,6 +3596,7 @@ export function completeDeliveredTask(
           kind: 'delivery_acceptance',
           prUrl: snapshot.task.prUrl,
           prNumber: snapshot.task.prNumber,
+          workspaceMode: snapshot.task.workspaceMode,
         },
         createdAt: now,
       });

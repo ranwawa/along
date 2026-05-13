@@ -181,6 +181,31 @@ describe('TaskProgressPanel session tail', () => {
     expect(html).toContain('command failed');
   });
 
+  it('Tail 过滤系统心跳事件，避免轮询日志污染实时输出', () => {
+    const html = renderPanel(
+      makeSnapshot({
+        agentRuns: [makeRunningRun()],
+        agentSessionEvents: [
+          makeSessionEvent({
+            eventId: 'sess-heartbeat',
+            source: 'system',
+            kind: 'progress',
+            content:
+              'Agent 仍在执行，已运行约 1 分钟。\n系统未收到新的阶段事件，任务仍保持运行状态。',
+            metadata: { phase: 'waiting' },
+          }),
+          makeSessionEvent({
+            eventId: 'sess-agent',
+            content: '正在处理用户请求。',
+          }),
+        ],
+      }),
+    );
+
+    expect(html).toContain('正在处理用户请求');
+    expect(html).not.toContain('系统未收到新的阶段事件');
+  });
+
   it('运行中但无会话输出时渲染可观测提示', () => {
     const html = renderPanel(
       makeSnapshot({

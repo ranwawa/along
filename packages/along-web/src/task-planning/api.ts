@@ -2,6 +2,7 @@ import type {
   TaskExecutionMode,
   TaskPlanningSnapshot,
   TaskRuntimeExecutionMode,
+  TaskWorkspaceMode,
 } from '../types';
 
 export interface CreateTaskResponse {
@@ -76,6 +77,7 @@ export interface DraftTaskInput {
   repository: string;
   executionMode: TaskExecutionMode;
   runtimeExecutionMode: TaskRuntimeExecutionMode;
+  workspaceMode: TaskWorkspaceMode;
   attachments: File[];
 }
 
@@ -88,6 +90,7 @@ export const emptyDraft: DraftTaskInput = {
   repository: '',
   executionMode: 'manual',
   runtimeExecutionMode: 'auto',
+  workspaceMode: 'worktree',
   attachments: [],
 };
 

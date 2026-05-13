@@ -1,6 +1,6 @@
 // biome-ignore-all lint/style/noJsxLiterals: task planning panels use existing inline labels.
 // biome-ignore-all lint/style/noMagicNumbers: task planning layout uses fixed UI thresholds.
-import { type RefObject, useEffect, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import type {
   TaskAgentRunRecord,
   TaskAgentSessionEventRecord,
@@ -14,6 +14,7 @@ const MILLISECONDS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
 const SESSION_QUIET_SECONDS = 2 * SECONDS_PER_MINUTE;
 const TEXT_SESSION_TAIL_TITLE = 'Agent 会话 Tail';
+const HEARTBEAT_PREFIX = 'Agent 仍在执行，已运行约';
 
 function formatCount(count: number): string {
   return `${count} 条`;
@@ -30,6 +31,15 @@ function getRuntimeLabel(runtimeId: string): string {
 function sortSessionEvents(events: TaskAgentSessionEventRecord[]) {
   return [...events].sort((left, right) =>
     left.createdAt.localeCompare(right.createdAt),
+  );
+}
+
+function isHeartbeatSessionEvent(event: TaskAgentSessionEventRecord): boolean {
+  return (
+    event.source === 'system' &&
+    event.kind === 'progress' &&
+    event.metadata.phase === 'waiting' &&
+    event.content.startsWith(HEARTBEAT_PREFIX)
   );
 }
 
@@ -189,14 +199,31 @@ function SessionEventList({
   );
 }
 
+function SessionTailFrame({
+  children,
+  chrome,
+}: {
+  children: ReactNode;
+  chrome: boolean;
+}) {
+  if (!chrome) return <>{children}</>;
+  return (
+    <div className="rounded-lg border border-border-color bg-black/20 p-3">
+      {children}
+    </div>
+  );
+}
+
 function SessionTail({
   events,
   runningRun,
   nowMs,
+  chrome,
 }: {
   events: TaskAgentSessionEventRecord[];
   runningRun: TaskAgentRunRecord | null;
   nowMs: number;
+  chrome: boolean;
 }) {
   const scrollRef = useRef<HTMLOListElement>(null);
   const latestEvent = events[events.length - 1];
@@ -206,13 +233,15 @@ function SessionTail({
   const scrollKey = `${latestEvent?.eventId || ''}:${latestEvent?.content || ''}:${events.length}`;
   useAutoScrollToBottom(scrollRef, scrollKey);
 
-  return (
-    <div className="rounded-lg border border-border-color bg-black/20 p-3">
-      <SessionTailHeader
-        events={events}
-        latestEvent={latestEvent}
-        nowMs={nowMs}
-      />
+  const body = (
+    <>
+      {chrome && (
+        <SessionTailHeader
+          events={events}
+          latestEvent={latestEvent}
+          nowMs={nowMs}
+        />
+      )}
       {quietHint && (
         <div className="mb-3 rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-200">
           {quietHint}
@@ -232,21 +261,34 @@ function SessionTail({
       ) : (
         <SessionEventList events={visibleEvents} scrollRef={scrollRef} />
       )}
-    </div>
+    </>
   );
+
+  return <SessionTailFrame chrome={chrome}>{body}</SessionTailFrame>;
 }
 
 export function TaskSessionTailView({
   snapshot,
   nowMs = Date.now(),
+  chrome = true,
 }: {
   snapshot: TaskPlanningSnapshot;
   nowMs?: number;
+  chrome?: boolean;
 }) {
-  const sessionEvents = sortSessionEvents(snapshot.agentSessionEvents || []);
+  const sessionEvents = sortSessionEvents(
+    (snapshot.agentSessionEvents || []).filter(
+      (event) => !isHeartbeatSessionEvent(event),
+    ),
+  );
   const runningRun = getLatestRunningRun(snapshot.agentRuns || []);
 
   return (
-    <SessionTail events={sessionEvents} runningRun={runningRun} nowMs={nowMs} />
+    <SessionTail
+      events={sessionEvents}
+      runningRun={runningRun}
+      nowMs={nowMs}
+      chrome={chrome}
+    />
   );
 }

@@ -20,6 +20,10 @@ const mockTaskConstants = vi.hoisted(() => ({
 }));
 
 vi.mock('./task-planning', () => ({
+  TASK_WORKSPACE_MODE: {
+    WORKTREE: 'worktree',
+    DEFAULT_BRANCH: 'default_branch',
+  },
   updateTaskDelivery: planningMocks.updateTaskDelivery,
   updateTaskRepository: planningMocks.updateTaskRepository,
 }));
@@ -54,6 +58,7 @@ const snapshot = {
     repoName: 'kinkeeper',
     cwd: '/repo/kinkeeper',
     commitShas: [],
+    workspaceMode: 'worktree',
     seq: 42,
     type: 'fix',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -194,5 +199,85 @@ describe('task-worktree', () => {
       repoName: 'kinkeeper',
       cwd: '/repo/kinkeeper',
     });
+  });
+
+  it('当选择默认分支模式时，期望复用仓库目录并同步默认分支', async () => {
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    const runner: TaskWorktreeCommandRunner = async (
+      command,
+      args,
+      options,
+    ) => {
+      calls.push({ command, args, cwd: options.cwd });
+      if (command === 'git' && args.join(' ') === 'status --porcelain') {
+        return ok('');
+      }
+      return ok('');
+    };
+
+    const result = await prepareTaskWorktree({
+      snapshot: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          workspaceMode: 'default_branch',
+        },
+      },
+      repoPath: '/repo/kinkeeper',
+      commandRunner: runner,
+      readDefaultBranch: async () => ok('main'),
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.data).toEqual({
+      worktreePath: '/repo/kinkeeper',
+      branchName: 'main',
+      defaultBranch: 'main',
+      workspaceMode: 'default_branch',
+    });
+    expect(calls).toContainEqual({
+      command: 'git',
+      cwd: '/repo/kinkeeper',
+      args: ['switch', 'main'],
+    });
+    expect(calls).toContainEqual({
+      command: 'git',
+      cwd: '/repo/kinkeeper',
+      args: ['merge', '--ff-only', 'origin/main'],
+    });
+    expect(calls.some((call) => call.args[0] === 'worktree')).toBe(false);
+    expect(planningMocks.updateTaskDelivery).toHaveBeenCalledWith({
+      taskId: 'task_123456789abc',
+      branchName: 'main',
+      worktreePath: '/repo/kinkeeper',
+    });
+  });
+
+  it('当默认分支模式下仓库存在未提交变更时，期望拒绝执行', async () => {
+    const runner: TaskWorktreeCommandRunner = async (command, args) => {
+      if (command === 'git' && args.join(' ') === 'status --porcelain') {
+        return ok(' M src/app.ts\n');
+      }
+      return ok('');
+    };
+
+    const result = await prepareTaskWorktree({
+      snapshot: {
+        ...snapshot,
+        task: {
+          ...snapshot.task,
+          workspaceMode: 'default_branch',
+        },
+      },
+      repoPath: '/repo/kinkeeper',
+      commandRunner: runner,
+      readDefaultBranch: async () => ok('main'),
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('expected failure');
+    expect(result.error).toContain('默认分支工作区存在未提交变更');
+    expect(planningMocks.updateTaskDelivery).not.toHaveBeenCalled();
   });
 });

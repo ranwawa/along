@@ -1,3 +1,5 @@
+// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: worktree orchestration keeps git preparation branches together.
+// biome-ignore-all lint/style/noMagicNumbers: branch naming limits are legacy behavior.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -5,6 +7,7 @@ import { config } from '../core/config';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
+  TASK_WORKSPACE_MODE,
   type TaskPlanningSnapshot,
   updateTaskDelivery,
   updateTaskRepository,
@@ -33,6 +36,7 @@ export interface PrepareTaskWorktreeOutput {
   worktreePath: string;
   branchName: string;
   defaultBranch: string;
+  workspaceMode: 'worktree' | 'default_branch';
 }
 
 export interface TaskRepositoryInfo {
@@ -193,6 +197,7 @@ interface TaskWorktreeContext {
   worktreePath: string;
   branchName: string;
   defaultBranch: string;
+  workspaceMode: 'worktree' | 'default_branch';
 }
 
 function getTaskDataDir(
@@ -246,14 +251,22 @@ async function resolveTaskWorktreeContext(
     snapshot: input.snapshot,
     repoPath: input.repoPath,
     worktreePath:
-      input.snapshot.task.worktreePath || path.join(taskDir, 'worktree'),
-    branchName: await resolveBranchName(input, runner),
+      input.snapshot.task.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+        ? input.repoPath
+        : input.snapshot.task.worktreePath || path.join(taskDir, 'worktree'),
+    branchName:
+      input.snapshot.task.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH
+        ? defaultBranchRes.data
+        : await resolveBranchName(input, runner),
     defaultBranch: defaultBranchRes.data,
+    workspaceMode: input.snapshot.task.workspaceMode,
   });
 }
 
 async function syncDefaultBranch(context: TaskWorktreeContext) {
-  fs.mkdirSync(path.dirname(context.worktreePath), { recursive: true });
+  if (context.workspaceMode === TASK_WORKSPACE_MODE.WORKTREE) {
+    fs.mkdirSync(path.dirname(context.worktreePath), { recursive: true });
+  }
   const fetchRes = await runGit(context.runner, context.repoPath, [
     'fetch',
     'origin',
@@ -262,8 +275,48 @@ async function syncDefaultBranch(context: TaskWorktreeContext) {
   if (!fetchRes.success) {
     return failure(`同步远端默认分支失败: ${fetchRes.error}`);
   }
-  await runGit(context.runner, context.repoPath, ['worktree', 'prune']);
+  if (context.workspaceMode === TASK_WORKSPACE_MODE.WORKTREE) {
+    await runGit(context.runner, context.repoPath, ['worktree', 'prune']);
+  }
   return success(null);
+}
+
+async function ensureDefaultBranchReady(context: TaskWorktreeContext) {
+  const statusRes = await runGit(context.runner, context.repoPath, [
+    'status',
+    '--porcelain',
+  ]);
+  if (!statusRes.success) {
+    return failure(`读取默认分支工作区状态失败: ${statusRes.error}`);
+  }
+  const changedFiles = statusRes.data
+    .split('\n')
+    .map((file) => file.trim())
+    .filter(Boolean);
+  if (changedFiles.length > 0) {
+    return failure(
+      `默认分支工作区存在未提交变更，不能直接执行 Task: ${changedFiles.join(
+        ', ',
+      )}`,
+    );
+  }
+
+  const switchRes = await runGit(context.runner, context.repoPath, [
+    'switch',
+    context.defaultBranch,
+  ]);
+  if (!switchRes.success) {
+    return failure(`切换默认分支失败: ${switchRes.error}`);
+  }
+
+  const ffRes = await runGit(context.runner, context.repoPath, [
+    'merge',
+    '--ff-only',
+    `origin/${context.defaultBranch}`,
+  ]);
+  return ffRes.success
+    ? success(null)
+    : failure(`同步默认分支失败: ${ffRes.error}`);
 }
 
 async function createTaskWorktree(context: TaskWorktreeContext) {
@@ -284,6 +337,10 @@ async function createTaskWorktree(context: TaskWorktreeContext) {
 }
 
 async function ensureTaskWorktreeReady(context: TaskWorktreeContext) {
+  if (context.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH) {
+    return ensureDefaultBranchReady(context);
+  }
+
   if (await isGitWorktree(context.runner, context.worktreePath)) {
     const switchRes = await runGit(context.runner, context.worktreePath, [
       'switch',
@@ -330,5 +387,6 @@ export async function prepareTaskWorktree(
     worktreePath: context.worktreePath,
     branchName: context.branchName,
     defaultBranch: context.defaultBranch,
+    workspaceMode: context.workspaceMode,
   });
 }

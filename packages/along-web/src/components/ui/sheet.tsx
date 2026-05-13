@@ -9,14 +9,18 @@ export function SheetContent({
   title,
   children,
   className,
+  showOverlay = true,
 }: {
   title: ReactNode;
   children: ReactNode;
   className?: string;
+  showOverlay?: boolean;
 }) {
   const content = (
     <>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px]" />
+      {showOverlay && (
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px]" />
+      )}
       <DialogPrimitive.Content
         className={cn(
           'fixed inset-y-0 right-0 z-50 flex w-full max-w-[1280px] flex-col border-l border-border-color bg-bg-secondary shadow-2xl focus:outline-none md:w-[88vw] xl:w-[82vw]',
