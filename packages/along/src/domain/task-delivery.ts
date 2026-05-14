@@ -17,7 +17,6 @@ import {
   TASK_WORKSPACE_MODE,
   type TaskAgentRunRecord,
   type TaskPlanningSnapshot,
-  THREAD_STATUS,
   transitionTaskWorkflow,
   updateTaskDelivery,
   WORKFLOW_KIND,
@@ -412,11 +411,9 @@ export async function runTaskDelivery(
         deliveryRes.error,
       );
     }
-    const workflowDeliveredRes = updateTaskWorkflowState({
+    const workflowDeliveredRes = transitionTaskWorkflow({
       taskId: input.taskId,
-      lifecycle: TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: THREAD_STATUS.COMPLETED,
+      event: { type: 'implementation.completed' },
     });
     if (!workflowDeliveredRes.success) {
       return failDeliveryRun(
@@ -528,11 +525,9 @@ export async function runTaskDelivery(
         deliveryRes.error,
       );
     }
-    const workflowDeliveredRes = updateTaskWorkflowState({
+    const workflowDeliveredRes = transitionTaskWorkflow({
       taskId: input.taskId,
-      lifecycle: TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: THREAD_STATUS.COMPLETED,
+      event: { type: 'implementation.completed' },
     });
     if (!workflowDeliveredRes.success) {
       return failDeliveryRun(

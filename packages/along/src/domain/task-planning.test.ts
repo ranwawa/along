@@ -924,11 +924,10 @@ import {
   TASK_STATUS,
   type TaskStatus,
   THREAD_STATUS,
+  transitionTaskWorkflow,
   updateTaskAgentRuntimeSession,
   updateTaskDelivery,
   updateTaskStatus,
-  updateTaskWorkflowState,
-  WORKFLOW_KIND,
 } from './task-planning';
 
 function createTaskWithPlan() {
@@ -951,67 +950,60 @@ function createTaskWithPlan() {
 }
 
 function moveTaskToCompatStatus(taskId: string, status: TaskStatus) {
+  const transitionThrough = (
+    events: Array<Parameters<typeof transitionTaskWorkflow>[0]['event']>,
+  ) => {
+    let result = transitionTaskWorkflow({ taskId, event: events[0] });
+    if (!result.success) return result;
+    for (const event of events.slice(1)) {
+      result = transitionTaskWorkflow({ taskId, event });
+      if (!result.success) return result;
+    }
+    return result;
+  };
+
   if (status === TASK_STATUS.PLANNING) {
-    return updateTaskWorkflowState({
-      taskId,
-      lifecycle: TASK_LIFECYCLE.OPEN,
-      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-      threadStatus: THREAD_STATUS.DRAFTING,
-    });
+    return transitionThrough([{ type: 'plan.requested' }]);
   }
   if (status === TASK_STATUS.PLANNING_APPROVED) {
-    return updateTaskWorkflowState({
-      taskId,
-      lifecycle: TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-      threadStatus: THREAD_STATUS.APPROVED,
-    });
+    return transitionThrough([{ type: 'plan.approved' }]);
   }
   if (status === TASK_STATUS.IMPLEMENTING) {
-    return updateTaskWorkflowState({
-      taskId,
-      lifecycle: TASK_LIFECYCLE.RUNNING,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: THREAD_STATUS.IMPLEMENTING,
-    });
+    return transitionThrough([{ type: 'implementation.started' }]);
   }
   if (status === TASK_STATUS.IMPLEMENTED) {
-    return updateTaskWorkflowState({
-      taskId,
-      lifecycle: TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: THREAD_STATUS.COMPLETED,
-    });
+    return transitionThrough([
+      { type: 'implementation.started' },
+      { type: 'implementation.completed' },
+    ]);
   }
   if (status === TASK_STATUS.DELIVERING) {
-    return updateTaskWorkflowState({
-      taskId,
-      lifecycle: TASK_LIFECYCLE.RUNNING,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: THREAD_STATUS.VERIFYING,
-    });
+    return transitionThrough([
+      { type: 'implementation.started' },
+      { type: 'implementation.completed' },
+      { type: 'verification.started' },
+    ]);
   }
   if (status === TASK_STATUS.DELIVERED) {
+    const implemented = transitionThrough([
+      { type: 'implementation.started' },
+      { type: 'implementation.completed' },
+    ]);
+    if (!implemented.success) return implemented;
     const delivery = updateTaskDelivery({
       taskId,
       prUrl: 'https://github.com/ranwawa/along/pull/1',
       prNumber: 1,
     });
-    if (!delivery.success) return delivery;
-    return updateTaskWorkflowState({
-      taskId,
-      lifecycle: TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: THREAD_STATUS.COMPLETED,
-    });
+    return delivery;
   }
   if (status === TASK_STATUS.COMPLETED) {
-    return updateTaskWorkflowState({
-      taskId,
-      lifecycle: TASK_LIFECYCLE.COMPLETED,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: THREAD_STATUS.COMPLETED,
-    });
+    return transitionThrough([
+      { type: 'implementation.started' },
+      { type: 'implementation.completed' },
+      { type: 'verification.started' },
+      { type: 'verification.passed' },
+    ]);
   }
   throw new Error(`unsupported compat status in test: ${status}`);
 }

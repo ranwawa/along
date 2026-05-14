@@ -14,8 +14,7 @@ import {
   TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
   type TaskPlanRevisionRecord,
-  THREAD_STATUS,
-  updateTaskWorkflowState,
+  transitionTaskWorkflow,
   WORKFLOW_KIND,
 } from './task-planning';
 import {
@@ -77,11 +76,9 @@ async function readRequiredSnapshot(
 }
 
 function rollbackToPlanningApproved<T>(taskId: string, result: Result<T>) {
-  const rollbackRes = updateTaskWorkflowState({
+  const rollbackRes = transitionTaskWorkflow({
     taskId,
-    lifecycle: TASK_LIFECYCLE.READY,
-    currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-    threadStatus: THREAD_STATUS.APPROVED,
+    event: { type: 'recovery.interrupted' },
   });
   return rollbackRes.success ? result : failure<T>(rollbackRes.error);
 }
@@ -142,11 +139,9 @@ async function prepareImplementationRun(
   });
   if (!worktreeRes.success) return failure(worktreeRes.error);
 
-  const startedRes = updateTaskWorkflowState({
+  const startedRes = transitionTaskWorkflow({
     taskId: input.taskId,
-    lifecycle: TASK_LIFECYCLE.RUNNING,
-    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-    threadStatus: THREAD_STATUS.IMPLEMENTING,
+    event: { type: 'implementation.started' },
   });
   if (!startedRes.success) return failure(startedRes.error);
 

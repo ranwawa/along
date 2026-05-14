@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const planningMocks = vi.hoisted(() => ({
   readTaskPlanningSnapshot: vi.fn(),
-  updateTaskWorkflowState: vi.fn(),
+  transitionTaskWorkflow: vi.fn(),
 }));
 const runnerMock = vi.hoisted(() => vi.fn());
 const worktreeMock = vi.hoisted(() => vi.fn());
@@ -38,7 +38,7 @@ vi.mock('./task-planning', () => ({
   THREAD_STATUS: mockTaskConstants.THREAD_STATUS,
   WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
-  updateTaskWorkflowState: planningMocks.updateTaskWorkflowState,
+  transitionTaskWorkflow: planningMocks.transitionTaskWorkflow,
 }));
 
 vi.mock('./task-agent-runtime', () => ({
@@ -170,7 +170,7 @@ describe('task-implementation-agent', () => {
       success: true,
       data: approvedSnapshot,
     });
-    planningMocks.updateTaskWorkflowState.mockReturnValue({
+    planningMocks.transitionTaskWorkflow.mockReturnValue({
       success: true,
       data: undefined,
     });
@@ -221,7 +221,7 @@ describe('task-implementation-agent', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
-    expect(planningMocks.updateTaskWorkflowState).not.toHaveBeenCalled();
+    expect(planningMocks.transitionTaskWorkflow).not.toHaveBeenCalled();
     expect(worktreeMock).not.toHaveBeenCalled();
     expect(autoCommitMock).not.toHaveBeenCalled();
     expect(result.data.commitShas).toEqual([]);
@@ -259,7 +259,7 @@ describe('task-implementation-agent', () => {
     expect(runnerMock).not.toHaveBeenCalled();
     expect(worktreeMock).not.toHaveBeenCalled();
     expect(autoCommitMock).not.toHaveBeenCalled();
-    expect(planningMocks.updateTaskWorkflowState).not.toHaveBeenCalled();
+    expect(planningMocks.transitionTaskWorkflow).not.toHaveBeenCalled();
   });
 
   it('当实施步骤已人工确认时，期望启动实现 Agent 并在完成后自动提交', async () => {
@@ -275,13 +275,11 @@ describe('task-implementation-agent', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) throw new Error(result.error);
-    expect(planningMocks.updateTaskWorkflowState).toHaveBeenNthCalledWith(1, {
+    expect(planningMocks.transitionTaskWorkflow).toHaveBeenNthCalledWith(1, {
       taskId: 'task-1',
-      lifecycle: mockTaskConstants.TASK_LIFECYCLE.RUNNING,
-      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: mockTaskConstants.THREAD_STATUS.IMPLEMENTING,
+      event: { type: 'implementation.started' },
     });
-    expect(planningMocks.updateTaskWorkflowState).toHaveBeenCalledTimes(1);
+    expect(planningMocks.transitionTaskWorkflow).toHaveBeenCalledTimes(1);
     expect(result.data.commitShas).toEqual(['abc123']);
     expect(runnerMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -320,11 +318,9 @@ describe('task-implementation-agent', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(planningMocks.updateTaskWorkflowState).toHaveBeenNthCalledWith(2, {
+    expect(planningMocks.transitionTaskWorkflow).toHaveBeenNthCalledWith(2, {
       taskId: 'task-1',
-      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
-      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.PLANNING,
-      threadStatus: mockTaskConstants.THREAD_STATUS.APPROVED,
+      event: { type: 'recovery.interrupted' },
     });
   });
 
@@ -388,6 +384,6 @@ describe('task-implementation-agent', () => {
 
     expect(result.success).toBe(false);
     expect(runnerMock).not.toHaveBeenCalled();
-    expect(planningMocks.updateTaskWorkflowState).not.toHaveBeenCalled();
+    expect(planningMocks.transitionTaskWorkflow).not.toHaveBeenCalled();
   });
 });

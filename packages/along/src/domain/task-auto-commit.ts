@@ -14,11 +14,8 @@ import {
 } from './task-auto-commit-utils';
 import {
   recordTaskAgentResult,
-  TASK_LIFECYCLE,
-  THREAD_STATUS,
+  transitionTaskWorkflow,
   updateTaskDelivery,
-  updateTaskWorkflowState,
-  WORKFLOW_KIND,
 } from './task-planning';
 import type { TaskWorktreeCommandRunner } from './task-worktree';
 
@@ -102,11 +99,9 @@ function updateCommitMetadata(
     commitShas,
   });
   if (!deliveryRes.success) return deliveryRes;
-  return updateTaskWorkflowState({
+  return transitionTaskWorkflow({
     taskId: input.snapshot.task.taskId,
-    lifecycle: TASK_LIFECYCLE.READY,
-    currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-    threadStatus: THREAD_STATUS.COMPLETED,
+    event: { type: 'implementation.completed' },
   });
 }
 

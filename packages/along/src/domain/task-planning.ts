@@ -25,7 +25,6 @@ import {
 } from './task-implementation-steps';
 import {
   type DomainEvent,
-  type DomainEventType,
   reduceWorkflowEvent,
   TASK_LIFECYCLE,
   type TaskLifecycle,

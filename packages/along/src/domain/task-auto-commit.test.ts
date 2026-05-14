@@ -6,8 +6,8 @@ const MAX_FAILURE_SUMMARY_LENGTH = 6000;
 
 const planningMocks = vi.hoisted(() => ({
   recordTaskAgentResult: vi.fn(),
+  transitionTaskWorkflow: vi.fn(),
   updateTaskDelivery: vi.fn(),
-  updateTaskWorkflowState: vi.fn(),
 }));
 const mockTaskConstants = vi.hoisted(() => ({
   TASK_LIFECYCLE: {
@@ -33,8 +33,8 @@ vi.mock('./task-planning', () => ({
   THREAD_STATUS: mockTaskConstants.THREAD_STATUS,
   WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
+  transitionTaskWorkflow: planningMocks.transitionTaskWorkflow,
   updateTaskDelivery: planningMocks.updateTaskDelivery,
-  updateTaskWorkflowState: planningMocks.updateTaskWorkflowState,
 }));
 
 import { runTaskAutoCommit } from './task-auto-commit';
@@ -87,7 +87,7 @@ describe('task-auto-commit', () => {
       success: true,
       data: undefined,
     });
-    planningMocks.updateTaskWorkflowState.mockReturnValue({
+    planningMocks.transitionTaskWorkflow.mockReturnValue({
       success: true,
       data: undefined,
     });
@@ -139,11 +139,9 @@ describe('task-auto-commit', () => {
       branchName: 'fix/demo-1',
       commitShas: ['abc123'],
     });
-    expect(planningMocks.updateTaskWorkflowState).toHaveBeenCalledWith({
+    expect(planningMocks.transitionTaskWorkflow).toHaveBeenCalledWith({
       taskId: 'task-1',
-      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
-      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: mockTaskConstants.THREAD_STATUS.COMPLETED,
+      event: { type: 'implementation.completed' },
     });
   });
 

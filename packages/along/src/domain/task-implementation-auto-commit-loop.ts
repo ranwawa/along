@@ -10,12 +10,9 @@ import type {
 } from './task-implementation-agent';
 import {
   readTaskPlanningSnapshot,
-  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
   type TaskPlanRevisionRecord,
-  THREAD_STATUS,
-  updateTaskWorkflowState,
-  WORKFLOW_KIND,
+  transitionTaskWorkflow,
 } from './task-planning';
 import type {
   PrepareTaskWorktreeOutput,
@@ -42,11 +39,9 @@ async function readRequiredSnapshot(
 }
 
 function rollbackToPlanningApproved<T>(taskId: string, result: Result<T>) {
-  const rollbackRes = updateTaskWorkflowState({
+  const rollbackRes = transitionTaskWorkflow({
     taskId,
-    lifecycle: TASK_LIFECYCLE.READY,
-    currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-    threadStatus: THREAD_STATUS.APPROVED,
+    event: { type: 'recovery.interrupted' },
   });
   return rollbackRes.success ? result : failure<T>(rollbackRes.error);
 }

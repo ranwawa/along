@@ -9,9 +9,9 @@ const planningMocks = vi.hoisted(() => ({
   finishTaskAgentRun: vi.fn(),
   readTaskPlanningSnapshot: vi.fn(),
   recordTaskAgentResult: vi.fn(),
+  transitionTaskWorkflow: vi.fn(),
   updateTaskDelivery: vi.fn(),
   updateTaskRepository: vi.fn(),
-  updateTaskWorkflowState: vi.fn(),
 }));
 const mockTaskConstants = vi.hoisted(() => ({
   AGENT_RUN_STATUS: {
@@ -55,9 +55,9 @@ vi.mock('./task-planning', () => ({
   finishTaskAgentRun: planningMocks.finishTaskAgentRun,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   recordTaskAgentResult: planningMocks.recordTaskAgentResult,
+  transitionTaskWorkflow: planningMocks.transitionTaskWorkflow,
   updateTaskDelivery: planningMocks.updateTaskDelivery,
   updateTaskRepository: planningMocks.updateTaskRepository,
-  updateTaskWorkflowState: planningMocks.updateTaskWorkflowState,
 }));
 
 vi.mock('../integration/github-client', () => ({
@@ -143,7 +143,7 @@ describe('task-delivery', () => {
       success: true,
       data: undefined,
     });
-    planningMocks.updateTaskWorkflowState.mockReturnValue({
+    planningMocks.transitionTaskWorkflow.mockReturnValue({
       success: true,
       data: undefined,
     });
@@ -257,17 +257,13 @@ describe('task-delivery', () => {
       prUrl: 'https://github.com/ranwawa/kinkeeper/pull/42',
       prNumber: 42,
     });
-    expect(planningMocks.updateTaskWorkflowState).toHaveBeenCalledWith({
+    expect(planningMocks.transitionTaskWorkflow).toHaveBeenCalledWith({
       taskId: 'task_123456789abc',
-      lifecycle: mockTaskConstants.TASK_LIFECYCLE.RUNNING,
-      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: mockTaskConstants.THREAD_STATUS.VERIFYING,
+      event: { type: 'verification.started' },
     });
-    expect(planningMocks.updateTaskWorkflowState).toHaveBeenLastCalledWith({
+    expect(planningMocks.transitionTaskWorkflow).toHaveBeenLastCalledWith({
       taskId: 'task_123456789abc',
-      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
-      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: mockTaskConstants.THREAD_STATUS.COMPLETED,
+      event: { type: 'implementation.completed' },
     });
     expect(calls.map((call) => `${call.command} ${call.args[0]}`)).toContain(
       'gh pr',
@@ -303,11 +299,9 @@ describe('task-delivery', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(planningMocks.updateTaskWorkflowState).toHaveBeenLastCalledWith({
+    expect(planningMocks.transitionTaskWorkflow).toHaveBeenLastCalledWith({
       taskId: 'task_123456789abc',
-      lifecycle: mockTaskConstants.TASK_LIFECYCLE.READY,
-      currentWorkflowKind: mockTaskConstants.WORKFLOW_KIND.IMPLEMENTATION,
-      threadStatus: mockTaskConstants.THREAD_STATUS.COMPLETED,
+      event: { type: 'implementation.completed' },
     });
   });
 
