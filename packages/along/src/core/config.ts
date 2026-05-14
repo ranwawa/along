@@ -153,7 +153,7 @@ export const config = {
       name: 'Codex',
       detectDir: '.codex',
       runTemplate:
-        'codex exec "请解决 GitHub Issue #{num}，严格按照 .codex/prompts/{workflow}.md 工作流执行"',
+        'codex exec "请解决任务 #{num}，严格按照 .codex/prompts/{workflow}.md 工作流执行"',
       mappings: [],
     },
   ] as RuntimeConfig[],

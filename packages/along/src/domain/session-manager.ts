@@ -3,7 +3,6 @@ import type { Result } from '../core/common';
 import { iso_timestamp, success } from '../core/common';
 import { readSession, transactSession, upsertSession } from '../core/db';
 import { SessionPathManager } from '../core/session-paths';
-import { syncLifecycleLabel } from '../integration/github-client';
 import type { UnifiedLogEntry } from '../logging/log-types';
 import { logWriter } from '../logging/log-writer';
 import {
@@ -151,14 +150,6 @@ export class SessionManager {
       smLogger.info(
         `Issue #${this.issueNumber} [状态变更] event=${event.type} lifecycle: ${oldLifecycle || '无'} → ${newLifecycle}`,
       );
-      try {
-        await syncLifecycleLabel(
-          this.owner,
-          this.repo,
-          this.issueNumber,
-          newLifecycle,
-        );
-      } catch {}
     }
 
     return dbRes;

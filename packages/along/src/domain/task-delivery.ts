@@ -4,9 +4,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readGhToken } from '../core/git-token';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
-import { readGithubToken } from '../integration/github-client';
 import {
   AGENT_RUN_STATUS,
   createTaskAgentRun,
@@ -157,7 +157,7 @@ export async function runTaskDelivery(
   input: RunTaskDeliveryInput,
 ): Promise<Result<RunTaskDeliveryOutput>> {
   const runner = input.commandRunner || defaultTaskWorktreeCommandRunner;
-  const readToken = input.readToken || readGithubToken;
+  const readToken = input.readToken || readGhToken;
 
   const snapshotRes = readTaskPlanningSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;

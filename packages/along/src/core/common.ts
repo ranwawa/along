@@ -84,6 +84,25 @@ export function iso_timestamp(): string {
   return new Date().toISOString();
 }
 
+let cachedRepoInfo: { owner: string; repo: string } | null = null;
+
+export async function readRepoInfo(): Promise<
+  Result<{ owner: string; repo: string }>
+> {
+  if (cachedRepoInfo) return success(cachedRepoInfo);
+  try {
+    const remoteStr = await git.remote(['get-url', 'origin']);
+    const remote = typeof remoteStr === 'string' ? remoteStr.trim() : '';
+    if (!remote) return failure('无法获取 git 远程仓库 origin 信息');
+    const match = remote.match(/[:/]([^/]+)\/([^/]+?)(\.git)?$/);
+    if (!match) return failure(`无法解析远程仓库地址: ${remote}`);
+    cachedRepoInfo = { owner: match[1], repo: match[2].trim() };
+    return success(cachedRepoInfo);
+  } catch (e: any) {
+    return failure(`无法获取 git 远程仓库 origin 信息: ${e.message}`);
+  }
+}
+
 const commonLogger = consola.withTag('common');
 
 /**

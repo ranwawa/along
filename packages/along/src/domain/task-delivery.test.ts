@@ -60,8 +60,8 @@ vi.mock('./task-planning', () => ({
   updateTaskRepository: planningMocks.updateTaskRepository,
 }));
 
-vi.mock('../integration/github-client', () => ({
-  readGithubToken: vi.fn(),
+vi.mock('../core/git-token', () => ({
+  readGhToken: vi.fn(),
 }));
 
 vi.mock('./worktree-init', () => ({

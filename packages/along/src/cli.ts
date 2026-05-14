@@ -14,9 +14,7 @@ function printHelp(commands: string[], tag: string) {
   console.log(chalk.bold.cyan(`${tag.toUpperCase()} 可用命令 (由 Bun 驱动):`));
 
   const descriptions: Record<string, string> = {
-    run: '一键启动（默认前台，支持 --ci）',
-    'webhook-server':
-      '启动本地 webhook 服务器，接收 GitHub App webhook 事件（支持 --watch 热重载）',
+    'commit-push': '提交并推送代码变更',
     'project-sync': '将 preset-assets 中的通用基建资产同步到目标项目',
   };
 
@@ -29,8 +27,7 @@ function printHelp(commands: string[], tag: string) {
 
   console.log('');
   console.log(chalk.cyan('快速开始:'));
-  console.log(`  along webhook-server  # 启动 webhook 服务`);
-  console.log(`  along run 42          # 手动处理 Issue 42`);
+  console.log(`  along project-sync  # 同步基建资产`);
   console.log('');
 }
 

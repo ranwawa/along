@@ -13,26 +13,7 @@ import {
 function IssueLinks({ session }: { session: DashboardSession }) {
   return (
     <>
-      <a
-        href={`https://github.com/${session.owner}/${session.repo}/issues/${session.issueNumber}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(event) => event.stopPropagation()}
-        className="text-inherit hover:underline"
-      >
-        #{session.issueNumber}
-      </a>
-      {session.context?.prNumber && session.context?.prUrl && (
-        <a
-          href={session.context.prUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => event.stopPropagation()}
-          className="ml-1 text-inherit hover:underline"
-        >
-          PR #{session.context.prNumber}
-        </a>
-      )}
+      <span className="text-inherit">#{session.issueNumber}</span>
       {session.hasWorktree && (
         <Folder
           aria-label="Worktree exists"

@@ -6,9 +6,9 @@ import {
   failure,
   getGit,
   git,
+  readRepoInfo,
   success,
 } from '../core/common';
-import { readRepoInfo } from '../integration/github-client';
 import { getDefaultBranch } from './worktree-init';
 
 const logger = consola.withTag('cleanup-utils');

@@ -90,11 +90,11 @@ async function runGit(
   return runner('git', args, { cwd });
 }
 
-function parseGitHubRemoteUrl(
+function parseGitRemoteUrl(
   remote: string,
 ): { repoOwner: string; repoName: string } | null {
   const trimmed = remote.trim();
-  const match = trimmed.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+  const match = trimmed.match(/[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
   if (!match) return null;
   return { repoOwner: match[1], repoName: match[2].trim() };
 }
@@ -123,7 +123,7 @@ export async function ensureTaskRepository(
     );
   }
 
-  const parsed = parseGitHubRemoteUrl(remoteRes.data);
+  const parsed = parseGitRemoteUrl(remoteRes.data);
   if (!parsed) {
     return failure(
       `当前 Task 缺少仓库 owner/repo，且无法解析 git origin: ${remoteRes.data.trim()}`,

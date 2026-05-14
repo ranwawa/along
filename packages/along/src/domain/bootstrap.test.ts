@@ -33,16 +33,6 @@ vi.mock('./worktree-init', () => ({
   syncRuntimeMappings: vi.fn(() => ({ success: true, data: undefined })),
 }));
 
-vi.mock('../integration/agent-config', () => ({
-  getWebhookSecret: vi.fn(() => null),
-}));
-
-vi.mock('../integration/github-client', () => ({
-  readRepoInfo: vi.fn(() =>
-    Promise.resolve({ success: true, data: { owner: 'test', repo: 'repo' } }),
-  ),
-}));
-
 vi.mock('consola', () => ({
   consola: {
     withTag: () => ({
@@ -63,28 +53,13 @@ vi.mock('fs', () => ({
   },
 }));
 
-vi.mock('chalk', () => {
-  const passthrough = (s: string) => s;
-  const handler: ProxyHandler<(value: string) => string> = {
-    get: () => new Proxy(passthrough, handler),
-    apply: (_target, _thisArg, args: [string]) => args[0],
-  };
-  return { default: new Proxy(passthrough, handler) };
-});
-
 import fs from 'node:fs';
 import { config } from '../core/config';
-import { getWebhookSecret } from '../integration/agent-config';
-import {
-  ensureProjectBootstrap,
-  ensureWebhookSecret,
-  printGitHubAppGuide,
-} from './bootstrap';
+import { ensureProjectBootstrap } from './bootstrap';
 
 describe('bootstrap.ts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   describe('ensureProjectBootstrap()', () => {
@@ -113,60 +88,6 @@ describe('bootstrap.ts', () => {
       });
       const result = await ensureProjectBootstrap();
       expect(result.success).toBe(false);
-    });
-  });
-
-  describe('ensureWebhookSecret()', () => {
-    it('CLI flag 优先级最高', async () => {
-      const result = await ensureWebhookSecret({ secret: 'cli-secret' });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data).toBe('cli-secret');
-    });
-
-    it('环境变量次之', async () => {
-      const original = process.env.ALONG_WEBHOOK_SECRET;
-      process.env.ALONG_WEBHOOK_SECRET = 'env-secret';
-      try {
-        const result = await ensureWebhookSecret({});
-        expect(result.success).toBe(true);
-        if (result.success) expect(result.data).toBe('env-secret');
-      } finally {
-        if (original === undefined) delete process.env.ALONG_WEBHOOK_SECRET;
-        else process.env.ALONG_WEBHOOK_SECRET = original;
-      }
-    });
-
-    it('config file 第三优先级', async () => {
-      const original = process.env.ALONG_WEBHOOK_SECRET;
-      delete process.env.ALONG_WEBHOOK_SECRET;
-      vi.mocked(getWebhookSecret).mockReturnValue('config-secret');
-      try {
-        const result = await ensureWebhookSecret({});
-        expect(result.success).toBe(true);
-        if (result.success) expect(result.data).toBe('config-secret');
-      } finally {
-        if (original !== undefined) process.env.ALONG_WEBHOOK_SECRET = original;
-      }
-    });
-
-    it('全部未配置时返回 failure 并打印指引', async () => {
-      const original = process.env.ALONG_WEBHOOK_SECRET;
-      delete process.env.ALONG_WEBHOOK_SECRET;
-      vi.mocked(getWebhookSecret).mockReturnValue(null);
-      try {
-        const result = await ensureWebhookSecret({});
-        expect(result.success).toBe(false);
-        expect(console.log).toHaveBeenCalled();
-      } finally {
-        if (original !== undefined) process.env.ALONG_WEBHOOK_SECRET = original;
-      }
-    });
-  });
-
-  describe('printGitHubAppGuide()', () => {
-    it('调用不抛异常', async () => {
-      await expect(printGitHubAppGuide()).resolves.not.toThrow();
-      expect(console.log).toHaveBeenCalled();
     });
   });
 });

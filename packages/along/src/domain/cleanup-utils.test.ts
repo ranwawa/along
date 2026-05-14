@@ -16,6 +16,7 @@ vi.mock('../core/common', () => ({
     raw: vi.fn(),
   })),
   check_process_running: vi.fn(),
+  readRepoInfo: vi.fn(),
 }));
 
 vi.mock('consola', () => ({
@@ -31,10 +32,6 @@ vi.mock('consola', () => ({
 
 vi.mock('./worktree-init', () => ({
   getDefaultBranch: vi.fn(),
-}));
-
-vi.mock('../integration/github-client', () => ({
-  readRepoInfo: vi.fn(),
 }));
 
 vi.mock('../core/config', () => ({
