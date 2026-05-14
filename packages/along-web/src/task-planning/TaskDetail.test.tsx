@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { clampSheetWidth } from '../components/ui/sheet';
 import type { TaskArtifactRecord, TaskPlanningSnapshot } from '../types';
 import type { DraftTaskInput } from './api';
 import { TaskDetail } from './TaskDetail';
@@ -267,6 +268,22 @@ describe('TaskDetailDialog', () => {
     expect(html).toContain('命令退出码 1');
   });
 
+  it('实时进展抽屉默认使用更窄宽度并支持手动调整', () => {
+    const html = renderToStaticMarkup(
+      <TaskDetailDialog
+        kind="progress"
+        selected={makeSnapshot()}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('data-resizable-sheet="true"');
+    expect(html).toContain('width:320px');
+    expect(html).toContain('min-width:280px');
+    expect(html).toContain('max-width:min(560px, calc(100vw - 280px))');
+    expect(html).toContain('aria-label="调整抽屉宽度"');
+  });
+
   it('Agent 会话 Tail 抽屉展示当前任务会话输出且不重复内部标题', () => {
     const html = renderToStaticMarkup(
       <TaskDetailDialog
@@ -329,5 +346,40 @@ describe('TaskDetailDialog', () => {
 
     expect(progressHtml).toContain('暂无 Agent 运行进展');
     expect(historyHtml).toContain('暂无历史事件');
+  });
+});
+
+describe('clampSheetWidth', () => {
+  const options = {
+    minWidth: 280,
+    maxWidth: 560,
+    minMainWidth: 280,
+  };
+  const desktopViewportWidth = 1280;
+  const narrowViewportWidth = 760;
+  const widthWithinBounds = 420;
+  const widthBelowMinimum = 180;
+  const widthAboveMaximum = 720;
+  const expectedNarrowViewportMax = 480;
+
+  it('允许抽屉在边界内拉宽和变窄', () => {
+    expect(
+      clampSheetWidth(widthWithinBounds, options, desktopViewportWidth),
+    ).toBe(widthWithinBounds);
+  });
+
+  it('限制抽屉最小宽度', () => {
+    expect(
+      clampSheetWidth(widthBelowMinimum, options, desktopViewportWidth),
+    ).toBe(options.minWidth);
+  });
+
+  it('限制抽屉最大宽度并保留主区域宽度', () => {
+    expect(
+      clampSheetWidth(widthAboveMaximum, options, desktopViewportWidth),
+    ).toBe(options.maxWidth);
+    expect(
+      clampSheetWidth(options.maxWidth, options, narrowViewportWidth),
+    ).toBe(expectedNarrowViewportMax);
   });
 });

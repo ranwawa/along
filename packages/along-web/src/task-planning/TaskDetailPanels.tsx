@@ -28,6 +28,13 @@ const TASK_DETAIL_ACTIONS: {
   { kind: 'history', label: '历史流转', icon: History },
 ];
 
+const TASK_DETAIL_DIALOG_WIDTH = {
+  defaultWidth: 320,
+  minWidth: 280,
+  maxWidth: 560,
+  minMainWidth: 280,
+};
+
 function getTaskDialogTitle(kind: TaskDetailDialogKind): string {
   return (
     TASK_DETAIL_ACTIONS.find((action) => action.kind === kind)?.label || ''
@@ -202,7 +209,8 @@ export function TaskDetailDialog({
       <SheetContent
         title={title}
         showOverlay={false}
-        className="max-w-[560px] animate-[slideInRight_0.22s_cubic-bezier(0.16,1,0.3,1)] md:w-[42vw] xl:w-[34vw]"
+        resizable={TASK_DETAIL_DIALOG_WIDTH}
+        className="animate-[slideInRight_0.22s_cubic-bezier(0.16,1,0.3,1)]"
       >
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <TaskDetailDialogContent kind={kind} selected={selected} />

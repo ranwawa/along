@@ -10,6 +10,13 @@ import { formatTime } from './format';
 import { MarkdownContent } from './MarkdownContent';
 import { FlowStages } from './TaskFlowStageCard';
 
+const CURRENT_PLAN_DIALOG_WIDTH = {
+  defaultWidth: 320,
+  minWidth: 280,
+  maxWidth: 640,
+  minMainWidth: 280,
+};
+
 export function TaskFlowPanel({
   flow,
   currentPlan,
@@ -94,7 +101,8 @@ export function CurrentPlanDialog({
       <SheetContent
         title={`当前计划 v${plan.version}`}
         showOverlay={false}
-        className="max-w-[640px] animate-[slideInRight_0.22s_cubic-bezier(0.16,1,0.3,1)] md:w-[48vw] xl:w-[38vw]"
+        resizable={CURRENT_PLAN_DIALOG_WIDTH}
+        className="animate-[slideInRight_0.22s_cubic-bezier(0.16,1,0.3,1)]"
       >
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <MarkdownContent value={plan.body} />

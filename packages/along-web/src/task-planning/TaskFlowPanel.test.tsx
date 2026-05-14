@@ -110,4 +110,20 @@ describe('TaskFlowPanel', () => {
     expect(html).toContain('<h2');
     expect(html).toContain('方案');
   });
+
+  it('当前计划抽屉默认使用更窄宽度并支持手动调整', () => {
+    const html = renderToStaticMarkup(
+      <CurrentPlanDialog
+        plan={makePlan()}
+        open={true}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('data-resizable-sheet="true"');
+    expect(html).toContain('width:320px');
+    expect(html).toContain('min-width:280px');
+    expect(html).toContain('max-width:min(640px, calc(100vw - 280px))');
+    expect(html).toContain('aria-label="调整抽屉宽度"');
+  });
 });
