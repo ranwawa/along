@@ -52,6 +52,22 @@ function ArtifactAttachments({
 }
 
 export function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
+  if (artifact.type === 'chat_reply') {
+    return (
+      <div className="flex gap-2">
+        <div className="shrink-0 mt-1 w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center">
+          <span className="text-[10px] text-indigo-300">AI</span>
+        </div>
+        <div className="flex-1 rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-3 py-2">
+          <MarkdownContent value={artifact.body} />
+          <div className="mt-1 text-[11px] text-text-muted">
+            {formatTime(artifact.createdAt)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`rounded-lg border p-3 ${getArtifactClass(artifact.type)}`}>
       <div className="flex items-center justify-between gap-3 mb-2">
@@ -71,18 +87,19 @@ export function ArtifactItem({ artifact }: { artifact: TaskArtifactRecord }) {
 export function isDuplicatePlannerAgentResult(
   artifact: TaskArtifactRecord,
 ): boolean {
-  if (
-    artifact.type !== 'agent_result' ||
-    artifact.metadata.agentId !== 'planner'
-  ) {
-    return false;
-  }
+  if (artifact.type !== 'agent_result') return false;
+  const agentId = artifact.metadata.agentId;
+  if (agentId !== 'planner' && agentId !== 'chat') return false;
 
   try {
     const parsed: unknown = JSON.parse(artifact.body);
     if (!parsed || typeof parsed !== 'object') return false;
     const action = (parsed as { action?: unknown }).action;
-    return action === 'plan_revision' || action === 'planning_update';
+    return (
+      action === 'plan_revision' ||
+      action === 'planning_update' ||
+      (parsed as { body?: unknown }).body !== undefined
+    );
   } catch {
     return false;
   }

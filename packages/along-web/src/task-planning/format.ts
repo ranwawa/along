@@ -138,6 +138,8 @@ export function getArtifactLabel(
   switch (type) {
     case 'user_message':
       return '用户';
+    case 'chat_reply':
+      return 'AI';
     case 'plan_revision':
       return '计划';
     case 'planning_update':
@@ -166,6 +168,8 @@ export function getArtifactClass(type: TaskArtifactType): string {
   switch (type) {
     case 'user_message':
       return 'border-emerald-500/20 bg-emerald-500/10';
+    case 'chat_reply':
+      return 'border-indigo-500/20 bg-indigo-500/10';
     case 'plan_revision':
       return 'border-amber-500/20 bg-amber-500/10';
     case 'planning_update':

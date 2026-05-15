@@ -62,10 +62,10 @@ const RUNTIME_MODE_OPTIONS: {
     description: '让 runtime 判断路径',
   },
   {
-    value: 'ask',
-    command: '/ask',
-    label: 'Ask',
-    description: '优先澄清需求',
+    value: 'chat',
+    command: '/chat',
+    label: 'Chat',
+    description: '对话讨论模式',
   },
   {
     value: 'plan',
@@ -100,7 +100,7 @@ function matchesSlashQuery(
 }
 
 function stripSlashCommand(body: string): string {
-  return body.replace(/^\/(?:auto|ask|plan|exec)(?:\s+|$)/i, '');
+  return body.replace(/^\/(?:auto|chat|plan|exec)(?:\s+|$)/i, '');
 }
 
 function stripSlashTrigger(body: string): string {

@@ -8,9 +8,15 @@ import path from 'node:path';
 import { Command } from 'commander';
 import { consola } from 'consola';
 import { config } from '../core/config';
+import { runTaskChatAgent } from '../domain/task-chat-agent';
 import { runTaskDelivery } from '../domain/task-delivery';
 import { runTaskExecAgent } from '../domain/task-exec-agent';
-import { recoverInterruptedTaskAgentRuns } from '../domain/task-planning';
+import { routeTaskMessage } from '../domain/task-message-router';
+import {
+  readTaskPlanningSnapshot,
+  recoverInterruptedTaskAgentRuns,
+  TASK_RUNTIME_EXECUTION_MODE,
+} from '../domain/task-planning';
 import { runTaskPlanningAgent } from '../domain/task-planning-agent';
 import { runTaskTitleSummary } from '../domain/task-title-summary';
 import {
@@ -204,6 +210,27 @@ function isTaskAgentCancellationError(error: string): boolean {
 function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
   enqueueAgent(`Task ${input.taskId} planning`, async () => {
     await withTaskLock(input.taskId, async () => {
+      const route = await resolveRoute(input);
+
+      if (route === 'chat') {
+        logger.info(`[Task ${input.taskId}] router → chat`);
+        const chatResult = await runTaskChatAgent({
+          taskId: input.taskId,
+          cwd: input.cwd,
+          agentId: input.agentId,
+          modelId: input.modelId,
+          personalityVersion: input.personalityVersion,
+        });
+        if (!chatResult.success) {
+          if (isTaskAgentCancellationError(chatResult.error)) {
+            logger.info(`[Task ${input.taskId}] chat 已中断`);
+            return;
+          }
+          logger.error(`[Task ${input.taskId}] chat 失败: ${chatResult.error}`);
+        }
+        return;
+      }
+
       logger.info(`[Task ${input.taskId}] planning 开始: ${input.reason}`);
       const result = await runTaskPlanningAgent(input);
       if (!result.success) {
@@ -230,6 +257,46 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
       }
     });
   });
+}
+
+async function resolveRoute(
+  input: ScheduledTaskPlanningRun,
+): Promise<'chat' | 'planning'> {
+  const mode = input.runtimeExecutionMode;
+  if (mode === TASK_RUNTIME_EXECUTION_MODE.CHAT) return 'chat';
+  if (mode === TASK_RUNTIME_EXECUTION_MODE.PLAN) return 'planning';
+  if (mode === TASK_RUNTIME_EXECUTION_MODE.EXEC) return 'planning';
+  if (mode !== TASK_RUNTIME_EXECUTION_MODE.AUTO && mode !== undefined) {
+    return 'planning';
+  }
+
+  if (input.reason !== 'user_message') return 'planning';
+
+  const snapshotRes = readTaskPlanningSnapshot(input.taskId);
+  if (!snapshotRes.success || !snapshotRes.data) return 'planning';
+  const snapshot = snapshotRes.data;
+
+  if (snapshot.currentPlan) return 'planning';
+
+  const lastArtifact = snapshot.artifacts[snapshot.artifacts.length - 1];
+  if (!lastArtifact || lastArtifact.type !== 'user_message') return 'planning';
+
+  const routeRes = await routeTaskMessage({
+    messageBody: lastArtifact.body,
+    taskTitle: snapshot.task.title || '',
+    hasApprovedPlan: Boolean(
+      snapshot.currentPlan && snapshot.thread.status === 'approved',
+    ),
+  });
+
+  if (!routeRes.success) {
+    logger.warn(
+      `[Task ${input.taskId}] router 失败，回退到 planning: ${routeRes.error}`,
+    );
+    return 'planning';
+  }
+
+  return routeRes.data.intent === 'chat' ? 'chat' : 'planning';
 }
 
 function enqueueTaskExecRun(input: ScheduledTaskExecRun) {

@@ -38,7 +38,7 @@ vi.mock('../domain/task-planning', () => ({
   },
   TASK_RUNTIME_EXECUTION_MODE: {
     AUTO: 'auto',
-    ASK: 'ask',
+    CHAT: 'chat',
     PLAN: 'plan',
     EXEC: 'exec',
   },

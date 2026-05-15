@@ -34,7 +34,7 @@ export type TaskStatus =
 
 export type TaskExecutionMode = 'manual' | 'autonomous';
 
-export type TaskRuntimeExecutionMode = 'auto' | 'ask' | 'plan' | 'exec';
+export type TaskRuntimeExecutionMode = 'auto' | 'chat' | 'plan' | 'exec';
 
 export type TaskWorkspaceMode = 'worktree' | 'default_branch';
 
@@ -50,6 +50,7 @@ export type TaskThreadStatus =
 
 export type TaskArtifactType =
   | 'user_message'
+  | 'chat_reply'
   | 'plan_revision'
   | 'planning_update'
   | 'approval'

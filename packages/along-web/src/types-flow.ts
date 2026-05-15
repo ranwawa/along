@@ -1,5 +1,5 @@
 export type TaskFlowStageId =
-  | 'ask'
+  | 'chat'
   | 'requirements'
   | 'plan_discussion'
   | 'plan_confirmation'

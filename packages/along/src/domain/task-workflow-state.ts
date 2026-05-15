@@ -15,18 +15,25 @@ export const RESOLUTION = {
 export type Resolution = (typeof RESOLUTION)[keyof typeof RESOLUTION];
 
 export const WORKFLOW_KIND = {
+  CHAT: 'chat',
   PLAN: 'plan',
   EXEC: 'exec',
 } as const;
 
 export type WorkflowKind = (typeof WORKFLOW_KIND)[keyof typeof WORKFLOW_KIND];
 
+export type ChatWorkflowState = 'discussing';
 export type PlanWorkflowState = 'drafting' | 'awaiting_approval' | 'revising';
 export type ExecWorkflowState = 'implementing' | 'verifying' | 'implemented';
-export type WorkflowState = PlanWorkflowState | ExecWorkflowState;
+export type WorkflowState =
+  | ChatWorkflowState
+  | PlanWorkflowState
+  | ExecWorkflowState;
 
 export type DomainEventType =
   | 'task.activated'
+  | 'chat.replied'
+  | 'chat.escalated'
   | 'plan.draft_completed'
   | 'plan.feedback_submitted'
   | 'plan.revision_completed'
@@ -66,6 +73,13 @@ export function reduceWorkflowEvent(
 ): WorkflowRuntimeState {
   if (event.type === 'task.activated') {
     const kind = event.workflowKind ?? WORKFLOW_KIND.PLAN;
+    if (kind === WORKFLOW_KIND.CHAT) {
+      return {
+        lifecycle: LIFECYCLE.ACTIVE,
+        currentWorkflowKind: WORKFLOW_KIND.CHAT,
+        workflowState: 'discussing',
+      };
+    }
     return kind === WORKFLOW_KIND.EXEC
       ? {
           lifecycle: LIFECYCLE.ACTIVE,
@@ -104,6 +118,10 @@ export function reduceWorkflowEvent(
     return { ...state, lifecycle: LIFECYCLE.ACTIVE, resolution: undefined };
   }
 
+  if (event.type.startsWith('chat.')) {
+    return reduceChatEvent(state, event);
+  }
+
   if (event.type.startsWith('plan.')) {
     return reducePlanEvent(state, event);
   }
@@ -122,6 +140,26 @@ export function reduceWorkflowEvent(
   }
 
   return state;
+}
+
+function reduceChatEvent(
+  state: WorkflowRuntimeState,
+  event: DomainEvent,
+): WorkflowRuntimeState {
+  switch (event.type) {
+    case 'chat.replied':
+      assertTransition(state.workflowState === 'discussing', event.type);
+      return state;
+    case 'chat.escalated':
+      assertTransition(state.workflowState === 'discussing', event.type);
+      return {
+        lifecycle: LIFECYCLE.ACTIVE,
+        currentWorkflowKind: WORKFLOW_KIND.PLAN,
+        workflowState: 'drafting',
+      };
+    default:
+      return state;
+  }
 }
 
 function reducePlanEvent(

@@ -59,7 +59,7 @@ export type TaskExecutionMode =
 
 export const TASK_RUNTIME_EXECUTION_MODE = {
   AUTO: 'auto',
-  ASK: 'ask',
+  CHAT: 'chat',
   PLAN: 'plan',
   EXEC: 'exec',
 } as const;
@@ -76,7 +76,7 @@ export type TaskWorkspaceMode =
   (typeof TASK_WORKSPACE_MODE)[keyof typeof TASK_WORKSPACE_MODE];
 
 export const THREAD_PURPOSE = {
-  ASK: 'ask',
+  CHAT: 'chat',
   PLANNING: 'planning',
   EXEC: 'exec',
 } as const;
@@ -102,6 +102,7 @@ export type ThreadStatus = (typeof THREAD_STATUS)[keyof typeof THREAD_STATUS];
 
 export const ARTIFACT_TYPE = {
   USER_MESSAGE: 'user_message',
+  CHAT_REPLY: 'chat_reply',
   PLAN_REVISION: 'plan_revision',
   PLANNING_UPDATE: 'planning_update',
   APPROVAL: 'approval',
@@ -341,7 +342,7 @@ export interface TaskAgentStageRecord {
 }
 
 export type TaskFlowStageId =
-  | 'ask'
+  | 'chat'
   | 'requirements'
   | 'plan_discussion'
   | 'plan_confirmation'
@@ -1062,7 +1063,7 @@ function buildTaskAgentStages(
 }
 
 const TASK_FLOW_STAGE_ORDER: TaskFlowStageId[] = [
-  'ask',
+  'chat',
   'requirements',
   'plan_discussion',
   'plan_confirmation',
@@ -1072,7 +1073,7 @@ const TASK_FLOW_STAGE_ORDER: TaskFlowStageId[] = [
 ];
 
 const TASK_FLOW_STAGE_LABELS: Record<TaskFlowStageId, string> = {
-  ask: '咨询问答',
+  chat: '对话讨论',
   requirements: '需求接收',
   plan_discussion: '计划讨论',
   plan_confirmation: '计划确认',
@@ -1246,7 +1247,7 @@ function getCurrentTaskFlowStageId(input: {
 }): TaskFlowStageId {
   if (isTaskCancelled(input.task)) return 'completed';
   if (isTaskCompleted(input.task)) return 'completed';
-  if (input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) return 'ask';
+  if (input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) return 'chat';
   if (isTaskDelivered(input.task)) return 'delivery';
   if (input.openRound) return 'plan_discussion';
 
@@ -1449,7 +1450,7 @@ function buildTaskFlowActions(input: {
         label: '继续提问',
         description: '补充问题或继续当前咨询',
         enabled: true,
-        stage: 'ask',
+        stage: 'chat',
         variant: 'secondary',
       }),
       buildTaskFlowAction({
@@ -1457,16 +1458,18 @@ function buildTaskFlowActions(input: {
         label: '转为计划',
         description: '把当前咨询切换为正式计划流程',
         enabled: true,
-        stage: 'ask',
+        stage: 'chat',
         variant: 'primary',
       }),
-      ...(failedStage ? [buildRetryFailedStageAction(failedStage, 'ask')] : []),
+      ...(failedStage
+        ? [buildRetryFailedStageAction(failedStage, 'chat')]
+        : []),
       buildTaskFlowAction({
         id: 'close_task',
         label: '关闭任务',
         description: '结束当前咨询并保留历史记录',
         enabled: true,
-        stage: 'ask',
+        stage: 'chat',
         variant: 'danger',
       }),
     ];
@@ -1699,10 +1702,10 @@ function getTaskFlowStageSummary(input: {
   }
 
   switch (input.stageId) {
-    case 'ask':
+    case 'chat':
       if (input.thread.status === THREAD_STATUS.ANSWERED) return '已回答';
       if (input.thread.status === THREAD_STATUS.WAITING_USER) return '待补充';
-      return '咨询中';
+      return '对话中';
     case 'requirements':
       return '任务目标和上下文已记录';
     case 'plan_discussion':
@@ -1762,7 +1765,7 @@ function buildTaskFlowStageDetails(input: {
       details.push(`仓库：${input.task.repoOwner}/${input.task.repoName}`);
     }
   }
-  if (input.stageId === 'ask') {
+  if (input.stageId === 'chat') {
     details.push(`来源：${input.task.source}`);
     details.push(`消息数：${input.artifacts.length}`);
   }
@@ -1824,11 +1827,11 @@ function buildTaskFlowStages(input: {
       input.thread.status === THREAD_STATUS.ANSWERED ? 'completed' : 'current';
     return [
       {
-        id: 'ask',
-        label: TASK_FLOW_STAGE_LABELS.ask,
-        summary: getTaskFlowStageSummary({ stageId: 'ask', ...input }),
+        id: 'chat',
+        label: TASK_FLOW_STAGE_LABELS.chat,
+        summary: getTaskFlowStageSummary({ stageId: 'chat', ...input }),
         state,
-        details: buildTaskFlowStageDetails({ stageId: 'ask', ...input }),
+        details: buildTaskFlowStageDetails({ stageId: 'chat', ...input }),
         startedAt: input.task.createdAt,
         endedAt:
           input.thread.status === THREAD_STATUS.ANSWERED
@@ -1929,8 +1932,8 @@ function buildTaskFlowEvents(input: {
         eventId: artifact.artifactId,
         type: 'user_feedback',
         stage:
-          input.thread.purpose === THREAD_PURPOSE.ASK
-            ? 'ask'
+          input.thread.purpose === THREAD_PURPOSE.CHAT
+            ? 'chat'
             : 'plan_discussion',
         title: '用户补充反馈',
         summary: artifact.body.slice(0, 120),
@@ -2529,7 +2532,7 @@ export function createPlanningTask(
         taskId,
         workflowKind === WORKFLOW_KIND.PLAN
           ? THREAD_PURPOSE.PLANNING
-          : THREAD_PURPOSE.ASK,
+          : THREAD_PURPOSE.CHAT,
         workflowKind === WORKFLOW_KIND.PLAN
           ? THREAD_STATUS.DRAFTING
           : THREAD_STATUS.ACTIVE,
@@ -2875,7 +2878,7 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
       });
 
       if (!thread.current_plan_id || !createdArtifact) {
-        if (thread.purpose === THREAD_PURPOSE.ASK) {
+        if (thread.purpose === THREAD_PURPOSE.CHAT) {
           db.prepare(
             'UPDATE task_threads SET status = ?, updated_at = ? WHERE thread_id = ?',
           ).run(THREAD_STATUS.ACTIVE, now, thread.thread_id);
