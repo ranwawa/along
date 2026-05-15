@@ -5,7 +5,7 @@ import type {
 } from './task-planning';
 
 export const EXEC_STEPS_KIND = 'exec_steps';
-export const BUILDER_TACTICAL_PLAN_ROLE = 'builder_tactical_plan';
+export const EXECUTOR_TACTICAL_PLAN_ROLE = 'executor_tactical_plan';
 export const EXEC_STEPS_APPROVAL_KIND = 'exec_steps_approval';
 
 function matchesPlan(

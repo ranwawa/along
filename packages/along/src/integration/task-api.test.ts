@@ -40,7 +40,7 @@ vi.mock('../domain/task-planning', () => ({
     AUTO: 'auto',
     ASK: 'ask',
     PLAN: 'plan',
-    BUILD: 'build',
+    EXEC: 'exec',
   },
   TASK_WORKSPACE_MODE: {
     WORKTREE: 'worktree',

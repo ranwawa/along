@@ -25,6 +25,6 @@
 ## 约束
 
 - 编辑器原生资产目前只生成 Codex 相关目录。
-- Along Web Task 的 Planner / Builder / Tester 等节点角色和 runtime prompt 是 Along 内部实现，不分发到目标项目。
+- Along Web Task 的 Planner / Executor / Tester 等节点角色和 runtime prompt 是 Along 内部实现，不分发到目标项目。
 - 带有 generated 标记的文件应修改源模板后再同步。
 - 同步前要求工作区干净，避免覆盖用户未提交改动。

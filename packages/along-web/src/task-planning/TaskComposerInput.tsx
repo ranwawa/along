@@ -74,10 +74,10 @@ const RUNTIME_MODE_OPTIONS: {
     description: '先产出计划',
   },
   {
-    value: 'build',
-    command: '/build',
-    label: 'Build',
-    description: '优先直接构建',
+    value: 'exec',
+    command: '/exec',
+    label: 'Exec',
+    description: '优先直接执行',
   },
 ];
 
@@ -100,7 +100,7 @@ function matchesSlashQuery(
 }
 
 function stripSlashCommand(body: string): string {
-  return body.replace(/^\/(?:auto|ask|plan|build)(?:\s+|$)/i, '');
+  return body.replace(/^\/(?:auto|ask|plan|exec)(?:\s+|$)/i, '');
 }
 
 function stripSlashTrigger(body: string): string {

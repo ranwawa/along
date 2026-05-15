@@ -154,11 +154,11 @@ export function readTaskRuntimeExecutionModeField(
     value === TASK_RUNTIME_EXECUTION_MODE.AUTO ||
     value === TASK_RUNTIME_EXECUTION_MODE.ASK ||
     value === TASK_RUNTIME_EXECUTION_MODE.PLAN ||
-    value === TASK_RUNTIME_EXECUTION_MODE.BUILD
+    value === TASK_RUNTIME_EXECUTION_MODE.EXEC
   ) {
     return success(value);
   }
-  return failure('runtimeExecutionMode 必须是 auto、ask、plan 或 build');
+  return failure('runtimeExecutionMode 必须是 auto、ask、plan 或 exec');
 }
 
 export function readTaskWorkspaceModeField(
@@ -335,7 +335,7 @@ function isTaskRuntimeExecutionMode(
     value === TASK_RUNTIME_EXECUTION_MODE.AUTO ||
     value === TASK_RUNTIME_EXECUTION_MODE.ASK ||
     value === TASK_RUNTIME_EXECUTION_MODE.PLAN ||
-    value === TASK_RUNTIME_EXECUTION_MODE.BUILD
+    value === TASK_RUNTIME_EXECUTION_MODE.EXEC
   );
 }
 

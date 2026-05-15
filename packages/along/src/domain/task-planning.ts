@@ -61,7 +61,7 @@ export const TASK_RUNTIME_EXECUTION_MODE = {
   AUTO: 'auto',
   ASK: 'ask',
   PLAN: 'plan',
-  BUILD: 'build',
+  EXEC: 'exec',
 } as const;
 
 export type TaskRuntimeExecutionMode =

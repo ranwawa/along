@@ -2,7 +2,10 @@ import { buildExecStepsPrompt } from '../agents/task-exec';
 import { failure } from '../core/result';
 import { runTaskAgentTurn } from './task-agent-runtime';
 import type { RunTaskExecAgentInput } from './task-exec-agent';
-import { BUILDER_TACTICAL_PLAN_ROLE, EXEC_STEPS_KIND } from './task-exec-steps';
+import {
+  EXEC_STEPS_KIND,
+  EXECUTOR_TACTICAL_PLAN_ROLE,
+} from './task-exec-steps';
 import type {
   TaskPlanningSnapshot,
   TaskPlanRevisionRecord,
@@ -28,7 +31,7 @@ export async function runExecStepsTurn(input: {
     ],
     outputMetadata: {
       kind: EXEC_STEPS_KIND,
-      artifactRole: BUILDER_TACTICAL_PLAN_ROLE,
+      artifactRole: EXECUTOR_TACTICAL_PLAN_ROLE,
       planId: input.approvedPlan.planId,
       planVersion: input.approvedPlan.version,
     },

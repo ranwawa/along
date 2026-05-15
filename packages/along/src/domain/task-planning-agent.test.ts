@@ -214,7 +214,7 @@ describe('task-planning-agent', () => {
     expect(callInput?.prompt).toContain('不要主动设计向下兼容');
     expect(callInput?.prompt).toContain('Planner Workflow Node Prompt');
     expect(callInput?.prompt).toContain('Planner contract');
-    expect(callInput?.prompt).toContain('Builder Handoff');
+    expect(callInput?.prompt).toContain('Executor Handoff');
     expect(callInput?.prompt).toContain('Acceptance Criteria');
     expect(callInput?.prompt).toContain('Along Task / Thread / Artifact');
     expect(callInput?.prompt).toContain('Codex session 只用于提升连续性');

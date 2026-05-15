@@ -141,7 +141,7 @@ type Prompt = {
       "runtimeId": "codex-openai"
     },
     {
-      "id": "builder",
+      "id": "executor",
       "runtimeId": "opencode-router"
     }
   ],

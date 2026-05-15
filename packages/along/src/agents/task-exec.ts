@@ -13,8 +13,8 @@ const TASK_BODY_CONTEXT_LIMIT = 4000;
 const PLAN_BODY_CONTEXT_LIMIT = 8000;
 const RECENT_ARTIFACT_COUNT = 30;
 const ARTIFACT_CONTEXT_LIMIT = 2500;
-const BUILDER_EXEC_PROMPT_ID = 'builder-exec';
-const BUILDER_TACTICAL_PLAN_PROMPT_ID = 'builder-tactical-plan';
+const EXECUTOR_EXEC_PROMPT_ID = 'executor-exec';
+const EXECUTOR_TACTICAL_PLAN_PROMPT_ID = 'executor-tactical-plan';
 const AUTO_COMMIT_FIX_PROMPT_ID = 'auto-commit-fix';
 
 function truncateText(value: string, maxLength = DEFAULT_TEXT_LIMIT): string {
@@ -61,7 +61,7 @@ export function buildExecPrompt(
   worktreePath: string,
 ): string {
   const template = loadWorkflowNodePrompt({
-    name: BUILDER_EXEC_PROMPT_ID,
+    name: EXECUTOR_EXEC_PROMPT_ID,
   });
   return renderAgentMarkdownTemplate(template.content, {
     contextJson: JSON.stringify(
@@ -77,7 +77,7 @@ export function buildExecStepsPrompt(
   approvedPlan: TaskPlanRevisionRecord,
 ): string {
   const template = loadWorkflowNodePrompt({
-    name: BUILDER_TACTICAL_PLAN_PROMPT_ID,
+    name: EXECUTOR_TACTICAL_PLAN_PROMPT_ID,
   });
   return renderAgentMarkdownTemplate(template.content, {
     contextJson: JSON.stringify(

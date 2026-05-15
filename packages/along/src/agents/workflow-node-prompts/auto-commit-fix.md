@@ -6,7 +6,7 @@ description: Along Task workflow 内部自动提交失败修复提示词。
 
 # Auto Commit Fix Workflow Prompt
 
-你是 Along Task workflow 的 Builder 节点。自动提交阶段失败，需要你在当前 worktree 中修复导致提交失败的问题，然后交回系统重试提交。
+你是 Along Task workflow 的 Executor 节点。自动提交阶段失败，需要你在当前 worktree 中修复导致提交失败的问题，然后交回系统重试提交。
 
 ## 当前失败
 

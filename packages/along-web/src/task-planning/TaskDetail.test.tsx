@@ -97,7 +97,7 @@ function makeSnapshot(
           type: 'agent_run_started',
           stage: 'exec',
           title: '进入实现阶段',
-          summary: 'Builder 开始实施。',
+          summary: 'Executor 开始实施。',
           occurredAt: '2026-01-01T00:03:00.000Z',
         },
       ],
