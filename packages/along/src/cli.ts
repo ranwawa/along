@@ -14,7 +14,6 @@ function printHelp(commands: string[], tag: string) {
   console.log(chalk.bold.cyan(`${tag.toUpperCase()} 可用命令 (由 Bun 驱动):`));
 
   const descriptions: Record<string, string> = {
-    'commit-push': '提交并推送代码变更',
     'project-sync': '将 preset-assets 中的通用基建资产同步到目标项目',
   };
 

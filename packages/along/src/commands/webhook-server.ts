@@ -3,20 +3,11 @@
 // biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: server entrypoint centralizes route wiring.
 // biome-ignore-all lint/nursery/noExcessiveLinesPerFile: server entrypoint centralizes route wiring.
 // biome-ignore-all lint/style/noMagicNumbers: server route status codes and defaults are clearer inline.
-import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { Command } from 'commander';
 import { consola } from 'consola';
-import { calculate_runtime, check_process_running } from '../core/common';
 import { config } from '../core/config';
-import { findAllSessions, readSession } from '../core/db';
-import { SessionPathManager } from '../core/session-paths';
-import {
-  generateSessionDiagnostic,
-  readSessionDiagnostic,
-} from '../domain/session-diagnostics';
-import { isActiveSessionStatus } from '../domain/session-state-machine';
 import { runTaskDelivery } from '../domain/task-delivery';
 import { runTaskImplementationAgent } from '../domain/task-implementation-agent';
 import { recoverInterruptedTaskAgentRuns } from '../domain/task-planning';
@@ -43,16 +34,6 @@ import {
   type WorkspaceRegistry,
 } from '../integration/workspace-registry';
 import { initLogRouter } from '../logging/log-router';
-import type { LogCategory, UnifiedLogEntry } from '../logging/log-types';
-import {
-  getConversationDir,
-  getGlobalLogPath,
-  getSessionLogPath,
-  listConversationFiles,
-  readConversationFile,
-  readGlobalLog,
-  readSessionLog,
-} from './log-reader';
 
 const logger = consola.withTag('webhook-server');
 const require = createRequire(import.meta.url);
@@ -80,15 +61,6 @@ interface RepositoryOption {
   path: string;
   isDefault: boolean;
 }
-
-type DashboardLifecycle =
-  | 'running'
-  | 'waiting_human'
-  | 'waiting_external'
-  | 'completed'
-  | 'failed'
-  | 'interrupted'
-  | 'zombie';
 
 let registry: WorkspaceRegistry;
 let runningAgents = 0;
@@ -128,82 +100,6 @@ function resolveWebDistDir(): string {
   } catch {
     return path.resolve(import.meta.dir, '..', '..', '..', 'along-web', 'dist');
   }
-}
-
-function parseLogCategories(value: string | null): LogCategory[] | undefined {
-  const items = value
-    ?.split(',')
-    .filter((item): item is LogCategory =>
-      ['lifecycle', 'conversation', 'diagnostic', 'webhook', 'server'].includes(
-        item,
-      ),
-    );
-  return items && items.length > 0 ? items : undefined;
-}
-
-function parseLogLevels(
-  value: string | null,
-): UnifiedLogEntry['level'][] | undefined {
-  const items = value
-    ?.split(',')
-    .filter((item): item is UnifiedLogEntry['level'] =>
-      ['info', 'warn', 'error', 'success'].includes(item),
-    );
-  return items && items.length > 0 ? items : undefined;
-}
-
-function getSessionQuery(
-  url: URL,
-): { owner: string; repo: string; issueNumber: number } | null {
-  const owner = url.searchParams.get('owner') || '';
-  const repo = url.searchParams.get('repo') || '';
-  const issueNumber = Number(url.searchParams.get('issueNumber') || '');
-  if (!owner || !repo || !issueNumber) return null;
-  return { owner, repo, issueNumber };
-}
-
-function createLogSSEResponse(logPath: string, req: Request): Response {
-  return new Response(
-    new ReadableStream({
-      start(controller) {
-        let lastSize = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-        const timer = setInterval(() => {
-          if (!fs.existsSync(logPath)) return;
-          const stat = fs.statSync(logPath);
-          if (stat.size <= lastSize) return;
-          const fd = fs.openSync(logPath, 'r');
-          const buffer = Buffer.alloc(stat.size - lastSize);
-          fs.readSync(fd, buffer, 0, buffer.length, lastSize);
-          fs.closeSync(fd);
-          lastSize = stat.size;
-          const entries = buffer
-            .toString('utf-8')
-            .trim()
-            .split('\n')
-            .filter(Boolean)
-            .flatMap((line) => {
-              try {
-                return [JSON.parse(line)];
-              } catch {
-                return [];
-              }
-            });
-          for (const entry of entries) {
-            controller.enqueue(`data: ${JSON.stringify(entry)}\n\n`);
-          }
-        }, 1000);
-        req.signal.addEventListener('abort', () => clearInterval(timer));
-      },
-    }),
-    {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-      },
-    },
-  );
 }
 
 function listRepositoryOptions(defaultCwd: string): {
@@ -391,128 +287,6 @@ function runScheduledTaskTitleSummary(input: ScheduledTaskTitleSummaryRun) {
   });
 }
 
-async function handleSessionsRequest(): Promise<Response> {
-  const allRes = findAllSessions();
-  if (!allRes.success) return jsonResponse({ error: allRes.error }, 500);
-
-  const sessions = [];
-  for (const info of allRes.data) {
-    const res = readSession(info.owner, info.repo, info.issueNumber);
-    if (!res.success || !res.data) continue;
-    let lifecycle: DashboardLifecycle = res.data.lifecycle;
-    if (isActiveSessionStatus(lifecycle) && res.data.pid) {
-      const alive = await check_process_running(res.data.pid);
-      if (!alive) lifecycle = 'zombie';
-    }
-    sessions.push({
-      ...res.data,
-      lifecycle,
-      owner: info.owner,
-      repo: info.repo,
-      runtime: calculate_runtime(res.data.startTime),
-      hasWorktree: res.data.worktreePath
-        ? fs.existsSync(res.data.worktreePath)
-        : false,
-    });
-  }
-
-  return jsonResponse(sessions);
-}
-
-function handleSessionDiagnosticRequest(url: URL): Response {
-  const query = getSessionQuery(url);
-  if (!query)
-    return jsonResponse({ error: '缺少 owner/repo/issueNumber 参数' }, 400);
-  const paths = new SessionPathManager(
-    query.owner,
-    query.repo,
-    query.issueNumber,
-  );
-  let diagnostic = readSessionDiagnostic(paths);
-  if (!diagnostic) {
-    const sessionRes = readSession(query.owner, query.repo, query.issueNumber);
-    if (sessionRes.success && sessionRes.data) {
-      diagnostic = generateSessionDiagnostic(sessionRes.data, paths);
-    }
-  }
-  return jsonResponse(diagnostic);
-}
-
-function handleLogRequest(url: URL): Response {
-  const category = parseLogCategories(url.searchParams.get('category'));
-  const level = parseLogLevels(url.searchParams.get('level'));
-  const maxLines = url.searchParams.has('maxLines')
-    ? Number(url.searchParams.get('maxLines'))
-    : undefined;
-  const since = url.searchParams.get('since') || undefined;
-
-  if (url.pathname === '/api/logs/global') {
-    return jsonResponse(readGlobalLog({ category, level, maxLines, since }));
-  }
-
-  const query = getSessionQuery(url);
-  if (!query)
-    return jsonResponse({ error: '缺少 owner/repo/issueNumber 参数' }, 400);
-  return jsonResponse(
-    readSessionLog(query.owner, query.repo, query.issueNumber, {
-      category,
-      level,
-      maxLines,
-      since,
-    }),
-  );
-}
-
-function handleConversationRequest(url: URL): Response {
-  const query = getSessionQuery(url);
-  if (!query)
-    return jsonResponse({ error: '缺少 owner/repo/issueNumber 参数' }, 400);
-
-  if (url.pathname === '/api/logs/conversation/files') {
-    return jsonResponse(
-      listConversationFiles(query.owner, query.repo, query.issueNumber),
-    );
-  }
-
-  const file = url.searchParams.get('file');
-  if (!file) return jsonResponse({ error: '缺少 file 参数' }, 400);
-  const filePath = path.join(
-    getConversationDir(query.owner, query.repo, query.issueNumber),
-    path.basename(file),
-  );
-  const maxLines = url.searchParams.has('maxLines')
-    ? Number(url.searchParams.get('maxLines'))
-    : undefined;
-  return jsonResponse(readConversationFile(filePath, { maxLines }));
-}
-
-function handleStreamRequest(url: URL, req: Request): Response {
-  if (url.pathname === '/api/logs/global/stream') {
-    return createLogSSEResponse(getGlobalLogPath(), req);
-  }
-
-  const query = getSessionQuery(url);
-  if (!query)
-    return jsonResponse({ error: '缺少 owner/repo/issueNumber 参数' }, 400);
-
-  if (url.pathname === '/api/logs/session/stream') {
-    return createLogSSEResponse(
-      getSessionLogPath(query.owner, query.repo, query.issueNumber),
-      req,
-    );
-  }
-
-  const file = url.searchParams.get('file');
-  if (!file) return jsonResponse({ error: '缺少 file 参数' }, 400);
-  return createLogSSEResponse(
-    path.join(
-      getConversationDir(query.owner, query.repo, query.issueNumber),
-      path.basename(file),
-    ),
-    req,
-  );
-}
-
 async function handleStaticRequest(url: URL): Promise<Response | null> {
   const reqPath = url.pathname === '/' ? '/index.html' : url.pathname;
   const webDist = resolveWebDistDir();
@@ -601,48 +375,6 @@ async function main() {
 
       if (url.pathname === '/api/repositories' && req.method === 'GET') {
         return jsonResponse(listRepositoryOptions(process.cwd()));
-      }
-
-      if (url.pathname === '/api/sessions' && req.method === 'GET') {
-        return handleSessionsRequest();
-      }
-
-      if (url.pathname === '/api/logs/diagnostic' && req.method === 'GET') {
-        return handleSessionDiagnosticRequest(url);
-      }
-
-      if (
-        (url.pathname === '/api/logs/global' ||
-          url.pathname === '/api/logs/session') &&
-        req.method === 'GET'
-      ) {
-        return handleLogRequest(url);
-      }
-
-      if (
-        (url.pathname === '/api/logs/global/stream' ||
-          url.pathname === '/api/logs/session/stream' ||
-          url.pathname === '/api/logs/conversation/stream') &&
-        req.method === 'GET'
-      ) {
-        return handleStreamRequest(url, req);
-      }
-
-      if (
-        (url.pathname === '/api/logs/conversation/files' ||
-          url.pathname === '/api/logs/conversation') &&
-        req.method === 'GET'
-      ) {
-        return handleConversationRequest(url);
-      }
-
-      if (
-        ['/api/restart', '/api/cleanup', '/api/delete'].includes(
-          url.pathname,
-        ) &&
-        req.method === 'POST'
-      ) {
-        return jsonResponse({ error: 'GitHub Issue session 操作已移除' }, 410);
       }
 
       if (req.method === 'GET') {

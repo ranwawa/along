@@ -1,20 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
 const TABLES = [
-  `CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner TEXT NOT NULL, repo TEXT NOT NULL, issue_number INTEGER NOT NULL,
-    lifecycle TEXT, phase TEXT, step TEXT, message TEXT, progress TEXT,
-    context TEXT, error TEXT, start_time TEXT NOT NULL, end_time TEXT,
-    phase_started_at TEXT, step_started_at TEXT, worktree_path TEXT DEFAULT '',
-    title TEXT DEFAULT '', agent_role TEXT, agent_type TEXT, agent_command TEXT,
-    pid INTEGER, last_update TEXT, retry_count INTEGER DEFAULT 0,
-    ci_results TEXT, environment TEXT, status TEXT, branch_name TEXT DEFAULT '',
-    pr_url TEXT, pr_number INTEGER, commit_shas TEXT DEFAULT '[]',
-    last_message TEXT, current_step TEXT, error_message TEXT, exit_code INTEGER,
-    crash_log TEXT, review_comment_count INTEGER, workflow_phase TEXT,
-    UNIQUE(owner, repo, issue_number)
-  );`,
   `CREATE TABLE IF NOT EXISTS task_items (
     task_id TEXT PRIMARY KEY,
     title TEXT NOT NULL, body TEXT NOT NULL, source TEXT NOT NULL,
@@ -110,9 +96,6 @@ const TABLES = [
 ];
 
 const INDEXES = [
-  'CREATE INDEX IF NOT EXISTS idx_sessions_lifecycle ON sessions(lifecycle)',
-  'CREATE INDEX IF NOT EXISTS idx_sessions_pr_number ON sessions(pr_number)',
-  'CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch_name)',
   'CREATE INDEX IF NOT EXISTS idx_task_threads_task ON task_threads(task_id, purpose, status)',
   'CREATE INDEX IF NOT EXISTS idx_task_artifacts_thread ON task_artifacts(thread_id, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_task_attachments_artifact ON task_attachments(artifact_id, created_at)',
@@ -126,15 +109,6 @@ const INDEXES = [
 ];
 
 const COLUMN_MIGRATIONS = [
-  'ALTER TABLE sessions ADD COLUMN lifecycle TEXT',
-  'ALTER TABLE sessions ADD COLUMN phase TEXT',
-  'ALTER TABLE sessions ADD COLUMN step TEXT',
-  'ALTER TABLE sessions ADD COLUMN message TEXT',
-  'ALTER TABLE sessions ADD COLUMN progress TEXT',
-  'ALTER TABLE sessions ADD COLUMN context TEXT',
-  'ALTER TABLE sessions ADD COLUMN error TEXT',
-  'ALTER TABLE sessions ADD COLUMN phase_started_at TEXT',
-  'ALTER TABLE sessions ADD COLUMN step_started_at TEXT',
   'ALTER TABLE task_items ADD COLUMN repo_owner TEXT',
   'ALTER TABLE task_items ADD COLUMN repo_name TEXT',
   'ALTER TABLE task_items ADD COLUMN cwd TEXT',
