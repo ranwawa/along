@@ -1,28 +1,16 @@
-export type TaskLifecycle =
-  | 'open'
-  | 'waiting_user'
-  | 'ready'
-  | 'running'
-  | 'completed'
-  | 'cancelled'
-  | 'failed';
+export type TaskLifecycle = 'active' | 'waiting' | 'done' | 'failed';
 
-export type WorkflowKind = 'ask' | 'planning' | 'implementation';
+export type WorkflowKind = 'plan' | 'exec';
 
 export type TaskDisplayState =
-  | 'ask_active'
-  | 'waiting_user'
-  | 'ask_answered'
-  | 'planning_drafting'
-  | 'planning_awaiting_approval'
-  | 'planning_feedback'
-  | 'planning_planned'
-  | 'implementation_implementing'
-  | 'implementation_verifying'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'processing';
+  | 'plan_drafting'
+  | 'plan_awaiting_approval'
+  | 'plan_revising'
+  | 'exec_implementing'
+  | 'exec_verifying'
+  | 'exec_implemented'
+  | 'done'
+  | 'failed';
 
 export interface TaskDisplay {
   state: TaskDisplayState;

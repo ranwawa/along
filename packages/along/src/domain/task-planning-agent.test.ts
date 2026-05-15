@@ -8,7 +8,7 @@ const planningMocks = vi.hoisted(() => ({
 const runnerMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./task-planning', () => ({
-  TASK_LIFECYCLE: {
+  LIFECYCLE: {
     CANCELLED: 'cancelled',
   },
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,

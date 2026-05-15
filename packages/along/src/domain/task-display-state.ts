@@ -1,23 +1,18 @@
 import {
-  TASK_LIFECYCLE,
+  LIFECYCLE,
   WORKFLOW_KIND,
   type WorkflowRuntimeState,
 } from './task-workflow-state';
 
 export type TaskDisplayState =
-  | 'ask_active'
-  | 'waiting_user'
-  | 'ask_answered'
-  | 'planning_drafting'
-  | 'planning_awaiting_approval'
-  | 'planning_feedback'
-  | 'planning_planned'
-  | 'implementation_implementing'
-  | 'implementation_verifying'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'processing';
+  | 'plan_drafting'
+  | 'plan_awaiting_approval'
+  | 'plan_revising'
+  | 'exec_implementing'
+  | 'exec_verifying'
+  | 'exec_implemented'
+  | 'done'
+  | 'failed';
 
 export interface TaskDisplay {
   state: TaskDisplayState;
@@ -25,54 +20,39 @@ export interface TaskDisplay {
 }
 
 export function deriveTaskDisplay(state: WorkflowRuntimeState): TaskDisplay {
-  if (state.lifecycle === TASK_LIFECYCLE.CANCELLED) {
-    return { state: 'cancelled', label: '已取消' };
+  if (state.lifecycle === LIFECYCLE.DONE) {
+    return {
+      state: 'done',
+      label: state.resolution === 'cancelled' ? '已取消' : '已完成',
+    };
   }
-  if (state.lifecycle === TASK_LIFECYCLE.FAILED) {
+  if (state.lifecycle === LIFECYCLE.FAILED) {
     return { state: 'failed', label: '失败' };
   }
-  if (state.lifecycle === TASK_LIFECYCLE.COMPLETED) {
-    return { state: 'completed', label: '已完成' };
+  if (state.currentWorkflowKind === WORKFLOW_KIND.PLAN) {
+    return derivePlanDisplay(state);
   }
-  if (state.workflowState === 'waiting_user') {
-    return { state: 'waiting_user', label: '待补充' };
-  }
-  if (state.currentWorkflowKind === WORKFLOW_KIND.ASK) {
-    return state.workflowState === 'answered'
-      ? { state: 'ask_answered', label: '已回答' }
-      : { state: 'ask_active', label: '咨询中' };
-  }
-  if (state.currentWorkflowKind === WORKFLOW_KIND.PLANNING) {
-    return derivePlanningDisplay(state);
-  }
-  if (state.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION) {
-    return deriveImplementationDisplay(state);
-  }
-  return { state: 'processing', label: '处理中' };
+  return deriveExecDisplay(state);
 }
 
-function derivePlanningDisplay(state: WorkflowRuntimeState): TaskDisplay {
-  if (state.workflowState === 'awaiting_approval') {
-    return { state: 'planning_awaiting_approval', label: '待批准' };
+function derivePlanDisplay(state: WorkflowRuntimeState): TaskDisplay {
+  switch (state.workflowState) {
+    case 'awaiting_approval':
+      return { state: 'plan_awaiting_approval', label: '待批准' };
+    case 'revising':
+      return { state: 'plan_revising', label: '方案修改中' };
+    default:
+      return { state: 'plan_drafting', label: '规划中' };
   }
-  if (state.workflowState === 'feedback') {
-    return { state: 'planning_feedback', label: '计划反馈中' };
-  }
-  if (state.workflowState === 'planned') {
-    return { state: 'planning_planned', label: '已规划' };
-  }
-  return { state: 'planning_drafting', label: '规划中' };
 }
 
-function deriveImplementationDisplay(state: WorkflowRuntimeState): TaskDisplay {
-  if (state.workflowState === 'verifying') {
-    return { state: 'implementation_verifying', label: '验证中' };
+function deriveExecDisplay(state: WorkflowRuntimeState): TaskDisplay {
+  switch (state.workflowState) {
+    case 'verifying':
+      return { state: 'exec_verifying', label: '验证中' };
+    case 'implemented':
+      return { state: 'exec_implemented', label: '待验收' };
+    default:
+      return { state: 'exec_implementing', label: '实现中' };
   }
-  if (state.workflowState === 'completed') {
-    return { state: 'planning_planned', label: '已规划' };
-  }
-  if (state.workflowState === 'failed') {
-    return { state: 'failed', label: '失败' };
-  }
-  return { state: 'implementation_implementing', label: '实现中' };
 }

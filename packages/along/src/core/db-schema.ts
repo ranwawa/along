@@ -15,44 +15,12 @@ const TABLES = [
     crash_log TEXT, review_comment_count INTEGER, workflow_phase TEXT,
     UNIQUE(owner, repo, issue_number)
   );`,
-  `CREATE TABLE IF NOT EXISTS planning_threads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner TEXT NOT NULL, repo TEXT NOT NULL, issue_number INTEGER NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1, is_closed INTEGER NOT NULL DEFAULT 0,
-    current_plan_id TEXT, open_round_id TEXT, approved_plan_id TEXT,
-    last_processed_comment_id INTEGER, updated_at TEXT NOT NULL,
-    UNIQUE(owner, repo, issue_number)
-  );`,
-  `CREATE TABLE IF NOT EXISTS plan_revisions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner TEXT NOT NULL, repo TEXT NOT NULL, issue_number INTEGER NOT NULL,
-    plan_id TEXT NOT NULL, version INTEGER NOT NULL, based_on_plan_id TEXT,
-    status TEXT NOT NULL, comment_id INTEGER NOT NULL, summary TEXT, scope TEXT,
-    changes TEXT, risks TEXT, validation TEXT, decision_log TEXT,
-    changes_since_last_version TEXT, body TEXT, created_at TEXT NOT NULL,
-    UNIQUE(plan_id), UNIQUE(owner, repo, issue_number, version)
-  );`,
-  `CREATE TABLE IF NOT EXISTS discussion_rounds (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner TEXT NOT NULL, repo TEXT NOT NULL, issue_number INTEGER NOT NULL,
-    round_id TEXT NOT NULL, based_on_plan_id TEXT,
-    snapshot_comment_ids TEXT NOT NULL DEFAULT '[]',
-    snapshot_last_seen_comment_id INTEGER, status TEXT NOT NULL, resolution TEXT,
-    produced_plan_id TEXT, created_at TEXT NOT NULL, resolved_at TEXT,
-    UNIQUE(round_id)
-  );`,
-  `CREATE TABLE IF NOT EXISTS comment_mirror (
-    comment_id INTEGER PRIMARY KEY,
-    owner TEXT NOT NULL, repo TEXT NOT NULL, issue_number INTEGER NOT NULL,
-    author_login TEXT NOT NULL, author_type TEXT NOT NULL, body TEXT NOT NULL,
-    created_at TEXT NOT NULL, mirrored_at TEXT NOT NULL
-  );`,
   `CREATE TABLE IF NOT EXISTS task_items (
     task_id TEXT PRIMARY KEY,
     title TEXT NOT NULL, body TEXT NOT NULL, source TEXT NOT NULL,
     active_thread_id TEXT, repo_owner TEXT, repo_name TEXT,
-    lifecycle TEXT NOT NULL DEFAULT 'open',
-    current_workflow_kind TEXT NOT NULL DEFAULT 'ask',
+    lifecycle TEXT NOT NULL DEFAULT 'active',
+    current_workflow_kind TEXT NOT NULL DEFAULT 'plan',
     cwd TEXT, worktree_path TEXT, branch_name TEXT, commit_shas TEXT DEFAULT '[]',
     pr_url TEXT, pr_number INTEGER, seq INTEGER, type TEXT,
     execution_mode TEXT NOT NULL DEFAULT 'manual',
@@ -145,11 +113,6 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_sessions_lifecycle ON sessions(lifecycle)',
   'CREATE INDEX IF NOT EXISTS idx_sessions_pr_number ON sessions(pr_number)',
   'CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch_name)',
-  'CREATE INDEX IF NOT EXISTS idx_plan_revisions_issue ON plan_revisions(owner, repo, issue_number, version)',
-  'CREATE INDEX IF NOT EXISTS idx_discussion_rounds_issue ON discussion_rounds(owner, repo, issue_number, created_at)',
-  'CREATE INDEX IF NOT EXISTS idx_comment_mirror_issue ON comment_mirror(owner, repo, issue_number, comment_id)',
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_revisions_active_issue ON plan_revisions(owner, repo, issue_number) WHERE status = 'active'",
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_discussion_rounds_open_issue ON discussion_rounds(owner, repo, issue_number) WHERE status IN ('open','processing','stale_partial')",
   'CREATE INDEX IF NOT EXISTS idx_task_threads_task ON task_threads(task_id, purpose, status)',
   'CREATE INDEX IF NOT EXISTS idx_task_artifacts_thread ON task_artifacts(thread_id, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_task_attachments_artifact ON task_attachments(artifact_id, created_at)',
@@ -184,8 +147,8 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE task_items ADD COLUMN type TEXT',
   "ALTER TABLE task_items ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'manual'",
   "ALTER TABLE task_items ADD COLUMN workspace_mode TEXT NOT NULL DEFAULT 'worktree'",
-  "ALTER TABLE task_items ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'open'",
-  "ALTER TABLE task_items ADD COLUMN current_workflow_kind TEXT NOT NULL DEFAULT 'ask'",
+  "ALTER TABLE task_items ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'active'",
+  "ALTER TABLE task_items ADD COLUMN current_workflow_kind TEXT NOT NULL DEFAULT 'plan'",
 ];
 
 interface TableColumnRow {

@@ -15,8 +15,8 @@ function makeDispatch<T>(): Dispatch<SetStateAction<T>> {
 function makeAction(): TaskFlowAction {
   return {
     id: 'resume_failed_stage',
-    label: '继续执行',
-    description: '恢复最近失败阶段并继续执行',
+    label: '重试',
+    description: '恢复失败会话并重试最近失败阶段',
     enabled: true,
     stage: 'implementation',
     variant: 'primary',
@@ -124,7 +124,7 @@ describe('flowActionRouter', () => {
     ['planning', 'planner'],
     ['implementation', 'implementation'],
     ['delivery', 'delivery'],
-  ] as const)('当继续执行失败的 %s 阶段时，期望调度对应 API', (stage, path) => {
+  ] as const)('当重试失败的 %s 阶段时，期望调度对应 API', (stage, path) => {
     const actions = makeActions();
 
     runFlowAction(makeAction(), makeInput(makeSnapshot(stage)), actions);

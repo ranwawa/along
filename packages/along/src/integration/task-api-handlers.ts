@@ -17,11 +17,11 @@ import {
   completeTaskAgentStageManually,
   createPlanningTask,
   deleteTask,
+  LIFECYCLE,
   listTaskPlanningSnapshots,
   readTaskPlanningSnapshot,
   requestTaskPlan,
   submitTaskMessage,
-  TASK_LIFECYCLE,
   TASK_WORKSPACE_MODE,
   type TaskPlanningSnapshot,
   WORKFLOW_KIND,
@@ -322,7 +322,7 @@ export async function handleTaskImplementationRequest(
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
-  if (snapshotRes.data.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (snapshotRes.data.task.lifecycle === LIFECYCLE.DONE) {
     return errorResponse('Task 已关闭，不能开始实现', 409);
   }
   if (!snapshotRes.data.thread.approvedPlanId) {
@@ -377,13 +377,12 @@ export async function handleTaskDeliveryRequest(
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
-  if (snapshotRes.data.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (snapshotRes.data.task.lifecycle === LIFECYCLE.DONE) {
     return errorResponse('Task 已关闭，不能开始交付', 409);
   }
   if (
-    snapshotRes.data.task.currentWorkflowKind !==
-      WORKFLOW_KIND.IMPLEMENTATION ||
-    snapshotRes.data.task.lifecycle !== TASK_LIFECYCLE.READY ||
+    snapshotRes.data.task.currentWorkflowKind !== WORKFLOW_KIND.EXEC ||
+    snapshotRes.data.task.lifecycle !== LIFECYCLE.WAITING ||
     snapshotRes.data.task.prUrl
   ) {
     return errorResponse('当前 Task 只有在已实现后才能交付', 409);
@@ -430,7 +429,7 @@ export async function handleTaskCompleteRequest(
   if (!snapshot) return errorResponse(`Task 不存在: ${taskId}`, 404);
 
   if (
-    snapshot.task.lifecycle !== TASK_LIFECYCLE.COMPLETED &&
+    snapshot.task.lifecycle !== LIFECYCLE.DONE &&
     snapshot.task.workspaceMode !== TASK_WORKSPACE_MODE.DEFAULT_BRANCH
   ) {
     const cleanupInputRes = readTaskCleanupInput(snapshot);
@@ -466,7 +465,7 @@ function readTaskCleanupInput(snapshot: TaskPlanningSnapshot): Result<{
   worktreePath: string;
   branchName?: string;
 }> {
-  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (snapshot.task.lifecycle === LIFECYCLE.DONE) {
     return failure('Task 已关闭，不能验收完成');
   }
   if (
@@ -504,7 +503,7 @@ function readExistingTaskError(taskId: string): Response | null {
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return errorResponse(snapshotRes.error, 500);
   if (!snapshotRes.data) return errorResponse(`Task 不存在: ${taskId}`, 404);
-  if (snapshotRes.data.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (snapshotRes.data.task.lifecycle === LIFECYCLE.DONE) {
     return errorResponse('Task 已关闭，不能继续推进', 409);
   }
   return null;

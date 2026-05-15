@@ -1,63 +1,43 @@
-export const TASK_LIFECYCLE = {
-  OPEN: 'open',
-  WAITING_USER: 'waiting_user',
-  READY: 'ready',
-  RUNNING: 'running',
-  COMPLETED: 'completed',
-  CANCELLED: 'cancelled',
+export const LIFECYCLE = {
+  ACTIVE: 'active',
+  WAITING: 'waiting',
+  DONE: 'done',
   FAILED: 'failed',
 } as const;
 
-export type TaskLifecycle =
-  (typeof TASK_LIFECYCLE)[keyof typeof TASK_LIFECYCLE];
+export type Lifecycle = (typeof LIFECYCLE)[keyof typeof LIFECYCLE];
+
+export const RESOLUTION = {
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+} as const;
+
+export type Resolution = (typeof RESOLUTION)[keyof typeof RESOLUTION];
 
 export const WORKFLOW_KIND = {
-  ASK: 'ask',
-  PLANNING: 'planning',
-  IMPLEMENTATION: 'implementation',
+  PLAN: 'plan',
+  EXEC: 'exec',
 } as const;
 
 export type WorkflowKind = (typeof WORKFLOW_KIND)[keyof typeof WORKFLOW_KIND];
 
-export type AskWorkflowState = 'active' | 'waiting_user' | 'answered';
-export type PlanningWorkflowState =
-  | 'drafting'
-  | 'waiting_user'
-  | 'awaiting_approval'
-  | 'feedback'
-  | 'planned';
-export type ImplementationWorkflowState =
-  | 'implementing'
-  | 'waiting_user'
-  | 'verifying'
-  | 'completed'
-  | 'failed';
-export type WorkflowState =
-  | AskWorkflowState
-  | PlanningWorkflowState
-  | ImplementationWorkflowState;
+export type PlanWorkflowState = 'drafting' | 'awaiting_approval' | 'revising';
+export type ExecWorkflowState = 'implementing' | 'verifying' | 'implemented';
+export type WorkflowState = PlanWorkflowState | ExecWorkflowState;
 
 export type DomainEventType =
-  | 'task.created'
-  | 'user.message.received'
-  | 'ask.started'
-  | 'ask.needs_user_input'
-  | 'ask.answer.completed'
-  | 'plan.requested'
-  | 'plan.needs_user_input'
-  | 'plan.revision.created'
-  | 'feedback.round.opened'
-  | 'feedback.round.resolved'
+  | 'task.activated'
+  | 'plan.draft_completed'
+  | 'plan.feedback_submitted'
+  | 'plan.revision_completed'
   | 'plan.approved'
-  | 'implementation.started'
-  | 'implementation.completed'
-  | 'implementation.completed_manually'
-  | 'verification.started'
-  | 'verification.passed'
-  | 'verification.passed_manually'
-  | 'implementation.failed'
-  | 'recovery.interrupted'
-  | 'task.closed';
+  | 'exec.completed'
+  | 'exec.verified'
+  | 'task.accepted'
+  | 'task.failed'
+  | 'task.cancelled'
+  | 'task.retried'
+  | 'recovery.interrupted';
 
 export interface DomainEvent {
   type: DomainEventType;
@@ -65,17 +45,11 @@ export interface DomainEvent {
 }
 
 export interface WorkflowRuntimeState {
-  lifecycle: TaskLifecycle;
+  lifecycle: Lifecycle;
   currentWorkflowKind: WorkflowKind;
   workflowState: WorkflowState;
+  resolution?: Resolution;
 }
-
-type WorkflowPatch = Pick<WorkflowRuntimeState, 'lifecycle' | 'workflowState'>;
-
-const TERMINAL_LIFECYCLES = new Set<TaskLifecycle>([
-  TASK_LIFECYCLE.COMPLETED,
-  TASK_LIFECYCLE.CANCELLED,
-]);
 
 function assertTransition(
   condition: boolean,
@@ -87,205 +61,132 @@ function assertTransition(
 }
 
 export function reduceWorkflowEvent(
-  state: WorkflowRuntimeState,
+  state: WorkflowRuntimeState | null,
   event: DomainEvent,
 ): WorkflowRuntimeState {
+  if (event.type === 'task.activated') {
+    const kind = event.workflowKind ?? WORKFLOW_KIND.PLAN;
+    return kind === WORKFLOW_KIND.EXEC
+      ? {
+          lifecycle: LIFECYCLE.ACTIVE,
+          currentWorkflowKind: WORKFLOW_KIND.EXEC,
+          workflowState: 'implementing',
+        }
+      : {
+          lifecycle: LIFECYCLE.ACTIVE,
+          currentWorkflowKind: WORKFLOW_KIND.PLAN,
+          workflowState: 'drafting',
+        };
+  }
+
+  assertTransition(state !== null, event.type);
+
   if (event.type === 'recovery.interrupted') {
-    return reduceRecoveryEvent(state);
+    return reduceRecovery(state);
   }
-  assertTransition(
-    !TERMINAL_LIFECYCLES.has(state.lifecycle) || event.type === 'task.created',
-    event.type,
-  );
-  if (event.type === 'task.created') return createInitialState(event);
-  if (event.type === 'user.message.received') return state;
-  if (event.type.startsWith('ask.')) return reduceAskEvent(state, event);
-  if (event.type.startsWith('plan.') || event.type.startsWith('feedback.')) {
-    return reducePlanningEvent(state, event);
+
+  assertTransition(state.lifecycle !== LIFECYCLE.DONE, event.type);
+
+  if (event.type === 'task.cancelled') {
+    return {
+      ...state,
+      lifecycle: LIFECYCLE.DONE,
+      resolution: RESOLUTION.CANCELLED,
+    };
   }
-  if (
-    event.type.startsWith('implementation.') ||
-    event.type.startsWith('verification.')
-  ) {
-    return reduceImplementationEvent(state, event);
+
+  if (event.type === 'task.failed') {
+    return { ...state, lifecycle: LIFECYCLE.FAILED };
   }
-  if (event.type === 'task.closed') {
-    return { ...state, lifecycle: TASK_LIFECYCLE.CANCELLED };
+
+  if (event.type === 'task.retried') {
+    assertTransition(state.lifecycle === LIFECYCLE.FAILED, event.type);
+    return { ...state, lifecycle: LIFECYCLE.ACTIVE, resolution: undefined };
   }
+
+  if (event.type.startsWith('plan.')) {
+    return reducePlanEvent(state, event);
+  }
+
+  if (event.type.startsWith('exec.')) {
+    return reduceExecEvent(state, event);
+  }
+
+  if (event.type === 'task.accepted') {
+    assertTransition(state.workflowState === 'implemented', event.type);
+    return {
+      ...state,
+      lifecycle: LIFECYCLE.DONE,
+      resolution: RESOLUTION.COMPLETED,
+    };
+  }
+
   return state;
 }
 
-function createInitialState(event: DomainEvent): WorkflowRuntimeState {
-  const workflowKind = event.workflowKind || WORKFLOW_KIND.ASK;
-  return workflowKind === WORKFLOW_KIND.PLANNING
-    ? {
-        lifecycle: TASK_LIFECYCLE.OPEN,
-        currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-        workflowState: 'drafting',
-      }
-    : {
-        lifecycle: TASK_LIFECYCLE.OPEN,
-        currentWorkflowKind: WORKFLOW_KIND.ASK,
-        workflowState: 'active',
-      };
-}
-
-function reduceAskEvent(
+function reducePlanEvent(
   state: WorkflowRuntimeState,
   event: DomainEvent,
 ): WorkflowRuntimeState {
   switch (event.type) {
-    case 'ask.started':
-      return {
-        lifecycle: TASK_LIFECYCLE.OPEN,
-        currentWorkflowKind: WORKFLOW_KIND.ASK,
-        workflowState: 'active',
-      };
-    case 'ask.needs_user_input':
-      assertTransition(
-        state.currentWorkflowKind === WORKFLOW_KIND.ASK,
-        event.type,
-      );
+    case 'plan.draft_completed':
+      assertTransition(state.workflowState === 'drafting', event.type);
       return {
         ...state,
-        lifecycle: TASK_LIFECYCLE.WAITING_USER,
-        workflowState: 'waiting_user',
+        lifecycle: LIFECYCLE.WAITING,
+        workflowState: 'awaiting_approval',
       };
-    case 'ask.answer.completed':
-      assertTransition(
-        state.currentWorkflowKind === WORKFLOW_KIND.ASK,
-        event.type,
-      );
+    case 'plan.feedback_submitted':
+      assertTransition(state.workflowState === 'awaiting_approval', event.type);
       return {
         ...state,
-        lifecycle: TASK_LIFECYCLE.READY,
-        workflowState: 'answered',
+        lifecycle: LIFECYCLE.ACTIVE,
+        workflowState: 'revising',
+      };
+    case 'plan.revision_completed':
+      assertTransition(state.workflowState === 'revising', event.type);
+      return {
+        ...state,
+        lifecycle: LIFECYCLE.WAITING,
+        workflowState: 'awaiting_approval',
+      };
+    case 'plan.approved':
+      assertTransition(state.workflowState === 'awaiting_approval', event.type);
+      return {
+        lifecycle: LIFECYCLE.ACTIVE,
+        currentWorkflowKind: WORKFLOW_KIND.EXEC,
+        workflowState: 'implementing',
       };
     default:
       return state;
   }
 }
 
-function reducePlanningEvent(
+function reduceExecEvent(
   state: WorkflowRuntimeState,
   event: DomainEvent,
 ): WorkflowRuntimeState {
-  if (event.type === 'plan.requested') {
-    return {
-      lifecycle: TASK_LIFECYCLE.OPEN,
-      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-      workflowState: 'drafting',
-    };
-  }
-  assertTransition(
-    state.currentWorkflowKind === WORKFLOW_KIND.PLANNING,
-    event.type,
-  );
-  const patch = PLANNING_EVENT_PATCHES[event.type];
-  return patch ? { ...state, ...patch } : state;
-}
-
-function reduceImplementationEvent(
-  state: WorkflowRuntimeState,
-  event: DomainEvent,
-): WorkflowRuntimeState {
-  if (event.type === 'implementation.started') {
-    return {
-      lifecycle: TASK_LIFECYCLE.RUNNING,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      workflowState: 'implementing',
-    };
-  }
-  if (
-    event.type === 'implementation.completed_manually' ||
-    event.type === 'verification.passed_manually'
-  ) {
-    return {
-      lifecycle:
-        event.type === 'verification.passed_manually'
-          ? TASK_LIFECYCLE.COMPLETED
-          : TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      workflowState: 'completed',
-    };
-  }
-  assertTransition(
-    state.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION,
-    event.type,
-  );
-  const patch = IMPLEMENTATION_EVENT_PATCHES[event.type];
-  return patch ? { ...state, ...patch } : state;
-}
-
-const PLANNING_EVENT_PATCHES: Partial<Record<DomainEventType, WorkflowPatch>> =
-  {
-    'plan.needs_user_input': {
-      lifecycle: TASK_LIFECYCLE.WAITING_USER,
-      workflowState: 'waiting_user',
-    },
-    'plan.revision.created': {
-      lifecycle: TASK_LIFECYCLE.WAITING_USER,
-      workflowState: 'awaiting_approval',
-    },
-    'feedback.round.opened': {
-      lifecycle: TASK_LIFECYCLE.OPEN,
-      workflowState: 'feedback',
-    },
-    'feedback.round.resolved': {
-      lifecycle: TASK_LIFECYCLE.WAITING_USER,
-      workflowState: 'awaiting_approval',
-    },
-    'plan.approved': {
-      lifecycle: TASK_LIFECYCLE.READY,
-      workflowState: 'planned',
-    },
-  };
-
-const IMPLEMENTATION_EVENT_PATCHES: Partial<
-  Record<DomainEventType, WorkflowPatch>
-> = {
-  'implementation.completed': {
-    lifecycle: TASK_LIFECYCLE.READY,
-    workflowState: 'completed',
-  },
-  'verification.started': {
-    lifecycle: TASK_LIFECYCLE.RUNNING,
-    workflowState: 'verifying',
-  },
-  'verification.passed': {
-    lifecycle: TASK_LIFECYCLE.COMPLETED,
-    workflowState: 'completed',
-  },
-  'implementation.failed': {
-    lifecycle: TASK_LIFECYCLE.FAILED,
-    workflowState: 'failed',
-  },
-};
-
-// recovery.interrupted: 服务重启时中断的 run。
-// 只有正在运行中的 task 才需要回退；已完成/已交付的保持不变。
-function reduceRecoveryEvent(
-  state: WorkflowRuntimeState,
-): WorkflowRuntimeState {
-  if (state.lifecycle !== TASK_LIFECYCLE.RUNNING) {
-    return state;
-  }
-  if (state.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION) {
-    if (state.workflowState === 'verifying') {
+  switch (event.type) {
+    case 'exec.completed':
+      assertTransition(state.workflowState === 'implementing', event.type);
       return {
-        lifecycle: TASK_LIFECYCLE.READY,
-        currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-        workflowState: 'completed',
+        ...state,
+        lifecycle: LIFECYCLE.ACTIVE,
+        workflowState: 'verifying',
       };
-    }
-    return {
-      lifecycle: TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-      workflowState: 'planned',
-    };
+    case 'exec.verified':
+      assertTransition(state.workflowState === 'verifying', event.type);
+      return {
+        ...state,
+        lifecycle: LIFECYCLE.WAITING,
+        workflowState: 'implemented',
+      };
+    default:
+      return state;
   }
-  return {
-    ...state,
-    lifecycle: TASK_LIFECYCLE.READY,
-  };
+}
+
+function reduceRecovery(state: WorkflowRuntimeState): WorkflowRuntimeState {
+  if (state.lifecycle !== LIFECYCLE.ACTIVE) return state;
+  return { ...state, lifecycle: LIFECYCLE.FAILED };
 }

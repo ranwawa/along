@@ -22,26 +22,18 @@ export function formatTime(value: string): string {
 
 export function getThreadStatusLabel(status: TaskThreadStatus): string {
   switch (status) {
-    case 'active':
-      return '进行中';
-    case 'waiting_user':
-      return '待补充';
-    case 'answered':
-      return '已回答';
     case 'drafting':
       return '起草中';
     case 'awaiting_approval':
       return '待批准';
-    case 'discussing':
-      return '讨论中';
-    case 'approved':
-      return '已批准';
-    case 'planned':
-      return '已规划';
+    case 'revising':
+      return '修改中';
     case 'implementing':
       return '实现中';
     case 'verifying':
       return '验证中';
+    case 'implemented':
+      return '待验收';
     case 'completed':
       return '已完成';
     case 'failed':

@@ -7,10 +7,10 @@ import {
 import {
   approveCurrentTaskPlan,
   approveTaskImplementationSteps,
+  LIFECYCLE,
   PLAN_STATUS,
   readTaskPlanningSnapshot,
   TASK_EXECUTION_MODE,
-  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
   WORKFLOW_KIND,
 } from '../domain/task-planning';
@@ -52,7 +52,7 @@ function hasApprovedThread(snapshot: TaskPlanningSnapshot): boolean {
 }
 
 function isClosed(snapshot: TaskPlanningSnapshot): boolean {
-  return snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED;
+  return snapshot.task.lifecycle === LIFECYCLE.DONE;
 }
 
 export function continueAutonomousTaskAfterPlanning(
@@ -96,12 +96,12 @@ export function continueAutonomousTaskAfterImplementation(
   if (isClosed(snapshot)) return success('skipped');
   if (!isAutonomous(snapshot)) return success('skipped');
 
-  if (snapshot.task.currentWorkflowKind === WORKFLOW_KIND.PLANNING) {
+  if (snapshot.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) {
     return continueAfterImplementationSteps(input, snapshot);
   }
   if (
-    snapshot.task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION &&
-    snapshot.task.lifecycle === TASK_LIFECYCLE.READY
+    snapshot.task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
+    snapshot.task.lifecycle === LIFECYCLE.ACTIVE
   ) {
     return continueAfterImplemented(input, snapshot);
   }

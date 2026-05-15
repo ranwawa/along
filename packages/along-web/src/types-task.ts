@@ -34,21 +34,17 @@ export type TaskStatus =
 
 export type TaskExecutionMode = 'manual' | 'autonomous';
 
-export type TaskRuntimeExecutionMode = 'auto' | 'ask' | 'plan' | 'build';
+export type TaskRuntimeExecutionMode = 'auto' | 'ask' | 'plan' | 'exec';
 
 export type TaskWorkspaceMode = 'worktree' | 'default_branch';
 
 export type TaskThreadStatus =
-  | 'active'
-  | 'waiting_user'
-  | 'answered'
   | 'drafting'
   | 'awaiting_approval'
-  | 'discussing'
-  | 'approved'
-  | 'planned'
+  | 'revising'
   | 'implementing'
   | 'verifying'
+  | 'implemented'
   | 'completed'
   | 'failed';
 

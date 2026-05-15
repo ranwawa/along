@@ -51,7 +51,7 @@ vi.mock('../domain/task-planning', () => ({
     IMPLEMENTATION: 'implementation',
     DELIVERY: 'delivery',
   },
-  TASK_LIFECYCLE: {
+  LIFECYCLE: {
     CANCELLED: 'cancelled',
     COMPLETED: 'completed',
     OPEN: 'open',

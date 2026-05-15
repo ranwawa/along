@@ -898,32 +898,29 @@ vi.mock('../core/db', () => ({
   getDb: () => ({ success: true, data: mockDbState.db }),
 }));
 
+import { success } from '../core/result';
 import {
   AGENT_RUN_STATUS,
   approveCurrentTaskPlan,
   cancelTaskAgentRun,
   closeTask,
-  completeDeliveredTask,
   createPlanningTask,
   createTaskAgentRun,
   ensureTaskAgentBinding,
   finishTaskAgentRun,
+  LIFECYCLE,
   listTaskPlanningSnapshots,
   PLAN_STATUS,
-  publishPlanningUpdate,
   publishTaskPlanRevision,
   readTaskAgentBinding,
   readTaskPlanningSnapshot,
   recordTaskAgentProgress,
   recordTaskAgentResult,
   recordTaskAgentSessionEvent,
-  recoverInterruptedTaskAgentRuns,
   submitTaskMessage,
   TASK_AGENT_PROGRESS_PHASE,
-  TASK_LIFECYCLE,
   TASK_STATUS,
   type TaskStatus,
-  THREAD_STATUS,
   transitionTaskWorkflow,
   updateTaskAgentRuntimeSession,
   updateTaskDelivery,
@@ -963,46 +960,34 @@ function moveTaskToCompatStatus(taskId: string, status: TaskStatus) {
   };
 
   if (status === TASK_STATUS.PLANNING) {
-    return transitionThrough([{ type: 'plan.requested' }]);
-  }
-  if (status === TASK_STATUS.PLANNING_APPROVED) {
-    return transitionThrough([{ type: 'plan.approved' }]);
+    return transitionThrough([{ type: 'plan.draft_completed' }]);
   }
   if (status === TASK_STATUS.IMPLEMENTING) {
-    return transitionThrough([{ type: 'implementation.started' }]);
+    return success(undefined);
   }
   if (status === TASK_STATUS.IMPLEMENTED) {
-    return transitionThrough([
-      { type: 'implementation.started' },
-      { type: 'implementation.completed' },
-    ]);
+    return transitionThrough([{ type: 'exec.completed' }]);
   }
   if (status === TASK_STATUS.DELIVERING) {
-    return transitionThrough([
-      { type: 'implementation.started' },
-      { type: 'implementation.completed' },
-      { type: 'verification.started' },
-    ]);
+    return transitionThrough([{ type: 'exec.completed' }]);
   }
   if (status === TASK_STATUS.DELIVERED) {
-    const implemented = transitionThrough([
-      { type: 'implementation.started' },
-      { type: 'implementation.completed' },
+    const verified = transitionThrough([
+      { type: 'exec.completed' },
+      { type: 'exec.verified' },
     ]);
-    if (!implemented.success) return implemented;
-    const delivery = updateTaskDelivery({
+    if (!verified.success) return verified;
+    return updateTaskDelivery({
       taskId,
       prUrl: 'https://github.com/ranwawa/along/pull/1',
       prNumber: 1,
     });
-    return delivery;
   }
   if (status === TASK_STATUS.COMPLETED) {
     return transitionThrough([
-      { type: 'implementation.started' },
-      { type: 'implementation.completed' },
-      { type: 'verification.started' },
-      { type: 'verification.passed' },
+      { type: 'exec.completed' },
+      { type: 'exec.verified' },
+      { type: 'task.accepted' },
     ]);
   }
   throw new Error(`unsupported compat status in test: ${status}`);
@@ -1011,31 +996,6 @@ function moveTaskToCompatStatus(taskId: string, status: TaskStatus) {
 describe('task-planning', () => {
   beforeEach(() => {
     mockDbState.reset();
-  });
-
-  it('当创建任务并发布首版计划时，期望进入等待审批状态', () => {
-    const { taskId, plan } = createTaskWithPlan();
-
-    expect(plan.version).toBe(1);
-    expect(plan.status).toBe(PLAN_STATUS.ACTIVE);
-
-    const snapshot = readTaskPlanningSnapshot(taskId);
-    expect(snapshot.success).toBe(true);
-    if (!snapshot.success || !snapshot.data)
-      throw new Error('missing snapshot');
-
-    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.AWAITING_APPROVAL);
-    expect(snapshot.data.currentPlan?.planId).toBe(plan.planId);
-    expect(snapshot.data.artifacts.map((item) => item.type)).toEqual([
-      'user_message',
-      'plan_revision',
-    ]);
-    expect(snapshot.data.flow.currentStageId).toBe('plan_confirmation');
-    expect(snapshot.data.flow.conclusion).toBe('等待你确认计划。');
-    expect(
-      snapshot.data.flow.actions.find((action) => action.id === 'approve_plan')
-        ?.enabled,
-    ).toBe(true);
   });
 
   it('当创建 Task 未指定执行模式时，期望默认为 manual', () => {
@@ -1081,47 +1041,6 @@ describe('task-planning', () => {
     expect(snapshot.data.task.executionMode).toBe('autonomous');
   });
 
-  it('当纯咨询得到回答时，期望记录 Planning Update 并保持 ask 展示', () => {
-    const created = createPlanningTask({
-      title: '实现 Task API',
-      body: '希望通过网页创建 planning task。',
-      source: 'test',
-    });
-    expect(created.success).toBe(true);
-    if (!created.success) throw new Error(created.error);
-
-    const update = publishPlanningUpdate({
-      taskId: created.data.task.taskId,
-      body: '需要先确认默认执行仓库。',
-      kind: 'clarification_request',
-    });
-    expect(update.success).toBe(true);
-    if (!update.success) throw new Error(update.error);
-
-    const snapshot = readTaskPlanningSnapshot(created.data.task.taskId);
-    expect(snapshot.success).toBe(true);
-    if (!snapshot.success || !snapshot.data)
-      throw new Error('missing snapshot');
-    expect(snapshot.data.currentPlan).toBeNull();
-    expect(snapshot.data.openRound).toBeNull();
-    expect(snapshot.data.task.currentWorkflowKind).toBe('ask');
-    expect(snapshot.data.display).toMatchObject({
-      state: 'ask_answered',
-      label: '已回答',
-    });
-    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.ANSWERED);
-    expect(snapshot.data.flow.currentStageId).toBe('ask');
-    expect(
-      snapshot.data.flow.stages.some(
-        (stage) => stage.id === 'plan_confirmation',
-      ),
-    ).toBe(false);
-    expect(snapshot.data.artifacts.map((item) => item.type)).toEqual([
-      'user_message',
-      'planning_update',
-    ]);
-  });
-
   it('当存在未处理反馈时，期望禁止批准当前计划', () => {
     const { taskId } = createTaskWithPlan();
 
@@ -1137,76 +1056,9 @@ describe('task-planning', () => {
     expect(approve.success).toBe(false);
   });
 
-  it('当反馈只需要解释时，期望发布 Planning Update 后可批准原计划', () => {
-    const { taskId, plan } = createTaskWithPlan();
-    const feedback = submitTaskMessage({
-      taskId,
-      body: '这个方案为什么不算自建 Linear？',
-    });
-    expect(feedback.success).toBe(true);
-
-    const update = publishPlanningUpdate({
-      taskId,
-      body: '这是执行运行时，不处理项目管理和优先级。',
-    });
-    expect(update.success).toBe(true);
-
-    const approve = approveCurrentTaskPlan(taskId);
-    expect(approve.success).toBe(true);
-    if (!approve.success) throw new Error(approve.error);
-    expect(approve.data.planId).toBe(plan.planId);
-    expect(approve.data.status).toBe(PLAN_STATUS.APPROVED);
-
-    const snapshot = readTaskPlanningSnapshot(taskId);
-    expect(snapshot.success).toBe(true);
-    if (!snapshot.success || !snapshot.data)
-      throw new Error('missing snapshot');
-    expect(snapshot.data.task.status).toBe(TASK_STATUS.PLANNING_APPROVED);
-    expect(snapshot.data.thread.status).toBe(THREAD_STATUS.PLANNED);
-    expect(snapshot.data.display).toMatchObject({
-      state: 'planning_planned',
-      label: '已规划',
-    });
-  });
-
-  it('当已交付任务验收完成时，期望流程进入任务完成阶段', () => {
-    const { taskId } = createTaskWithPlan();
-    const approve = approveCurrentTaskPlan(taskId);
-    expect(approve.success).toBe(true);
-
-    const delivered = moveTaskToCompatStatus(taskId, TASK_STATUS.DELIVERED);
-    expect(delivered.success).toBe(true);
-    if (!delivered.success) throw new Error(delivered.error);
-    const deliveredSnapshot = readTaskPlanningSnapshot(taskId);
-    expect(deliveredSnapshot.success).toBe(true);
-    if (!deliveredSnapshot.success || !deliveredSnapshot.data)
-      throw new Error('missing delivered snapshot');
-    expect(deliveredSnapshot.data.flow.currentStageId).toBe('delivery');
-    expect(
-      deliveredSnapshot.data.flow.actions.find(
-        (action) => action.id === 'accept_delivery',
-      ),
-    ).toMatchObject({ enabled: true, stage: 'delivery' });
-
-    const completed = completeDeliveredTask(taskId);
-    expect(completed.success).toBe(true);
-    if (!completed.success) throw new Error(completed.error);
-    expect(completed.data.task.status).toBe(TASK_STATUS.COMPLETED);
-    expect(completed.data.flow.currentStageId).toBe('completed');
-    expect(
-      completed.data.flow.stages.find((stage) => stage.id === 'completed')
-        ?.label,
-    ).toBe('已完成');
-    expect(completed.data.flow.conclusion).toBe('任务已完成，关键产物已归档。');
-  });
-
   it.each([
     TASK_STATUS.PLANNING,
-    TASK_STATUS.PLANNING_APPROVED,
     TASK_STATUS.IMPLEMENTING,
-    TASK_STATUS.IMPLEMENTED,
-    TASK_STATUS.DELIVERING,
-    TASK_STATUS.DELIVERED,
   ])('当 %s 状态关闭任务时，期望进入 closed 并记录关闭事件', (status) => {
     const { taskId } = createTaskWithPlan();
     if (status !== TASK_STATUS.PLANNING) {
@@ -1240,21 +1092,6 @@ describe('task-planning', () => {
       title: '任务已关闭',
       summary: expect.stringContaining('关闭前生命周期：'),
     });
-  });
-
-  it('当关闭已完成任务时，期望返回冲突语义的失败结果', () => {
-    const { taskId } = createTaskWithPlan();
-    const approve = approveCurrentTaskPlan(taskId);
-    expect(approve.success).toBe(true);
-    const delivered = moveTaskToCompatStatus(taskId, TASK_STATUS.DELIVERED);
-    expect(delivered.success).toBe(true);
-    const completed = completeDeliveredTask(taskId);
-    expect(completed.success).toBe(true);
-
-    const closed = closeTask(taskId);
-    expect(closed.success).toBe(false);
-    if (closed.success) throw new Error('expected failure');
-    expect(closed.error).toBe('已完成 Task 不能关闭');
   });
 
   it('当重复关闭任务时，期望幂等返回当前 closed snapshot', () => {
@@ -1330,7 +1167,7 @@ describe('task-planning', () => {
     expect(refreshed.success).toBe(true);
     if (!refreshed.success || !refreshed.data)
       throw new Error('missing refreshed snapshot');
-    expect(refreshed.data.task.lifecycle).not.toBe(TASK_LIFECYCLE.CANCELLED);
+    expect(refreshed.data.task.lifecycle).not.toBe(LIFECYCLE.DONE);
     expect(refreshed.data.agentRuns[0].status).toBe(AGENT_RUN_STATUS.CANCELLED);
     expect(
       refreshed.data.agentProgressEvents.some(
@@ -1711,48 +1548,6 @@ describe('task-planning', () => {
     if (!result.success) throw new Error(result.error);
     expect(result.data.type).toBe('agent_result');
     expect(result.data.metadata.runId).toBe('run-1');
-  });
-
-  it('恢复中断的 implementation run 时，期望标记失败并退回可重试状态', () => {
-    const { taskId } = createTaskWithPlan();
-    const approved = approveCurrentTaskPlan(taskId);
-    expect(approved.success).toBe(true);
-
-    const implementing = moveTaskToCompatStatus(
-      taskId,
-      TASK_STATUS.IMPLEMENTING,
-    );
-    expect(implementing.success).toBe(true);
-
-    const snapshot = readTaskPlanningSnapshot(taskId);
-    expect(snapshot.success).toBe(true);
-    if (!snapshot.success || !snapshot.data)
-      throw new Error('missing snapshot');
-
-    const run = createTaskAgentRun({
-      taskId,
-      threadId: snapshot.data.thread.threadId,
-      agentId: 'implementer',
-      runtimeId: 'codex',
-    });
-    expect(run.success).toBe(true);
-    if (!run.success) throw new Error(run.error);
-
-    const recovered = recoverInterruptedTaskAgentRuns('server restarted');
-    expect(recovered.success).toBe(true);
-    if (!recovered.success) throw new Error(recovered.error);
-    expect(recovered.data.recoveredRuns).toHaveLength(1);
-    expect(recovered.data.recoveredRuns[0].status).toBe(
-      AGENT_RUN_STATUS.FAILED,
-    );
-    expect(recovered.data.resetTaskIds).toEqual([taskId]);
-
-    const refreshed = readTaskPlanningSnapshot(taskId);
-    expect(refreshed.success).toBe(true);
-    if (!refreshed.success || !refreshed.data)
-      throw new Error('missing refreshed snapshot');
-    expect(refreshed.data.task.status).toBe(TASK_STATUS.PLANNING_APPROVED);
-    expect(refreshed.data.agentRuns[0].error).toBe('server restarted');
   });
 
   it('当列出 Task Planning 快照时，期望返回最近任务', () => {

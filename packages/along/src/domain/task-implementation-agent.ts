@@ -9,9 +9,9 @@ import {
   findImplementationStepsArtifact,
 } from './task-implementation-steps';
 import {
+  LIFECYCLE,
   PLAN_STATUS,
   readTaskPlanningSnapshot,
-  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
   type TaskPlanRevisionRecord,
   transitionTaskWorkflow,
@@ -155,15 +155,15 @@ function readApprovedImplementationContext(
   if (!snapshotRes.success) return failure(snapshotRes.error);
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
-  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (snapshot.task.lifecycle === LIFECYCLE.DONE) {
     return failure('Task 已关闭，不能开始实现');
   }
 
   const approvedPlan = findApprovedPlan(snapshot);
   if (!approvedPlan) return failure('当前 Task 没有已批准方案，不能开始实现');
   if (
-    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.PLANNING &&
-    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.IMPLEMENTATION
+    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.PLAN &&
+    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.EXEC
   ) {
     return failure('当前 Task 工作流不能开始实现');
   }

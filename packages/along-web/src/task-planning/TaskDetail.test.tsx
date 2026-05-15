@@ -230,6 +230,58 @@ describe('TaskDetail layout', () => {
 
     expect(html).toContain('Agent 运行失败');
     expect(html).toContain('Quota exceeded');
+    expect(html).not.toContain('重试');
+  });
+
+  it('Agent 失败且 flow 允许恢复时在顶部错误条展示重试入口', () => {
+    const html = renderDetail(
+      makeSnapshot({
+        agentStages: [
+          {
+            stage: 'implementation',
+            agentId: 'implementer',
+            label: '实现阶段',
+            status: 'failed',
+            latestRun: {
+              runId: 'run-1',
+              taskId: 'task-1',
+              threadId: 'thread-1',
+              agentId: 'implementer',
+              runtimeId: 'codex',
+              status: 'failed',
+              inputArtifactIds: [],
+              outputArtifactIds: [],
+              error: 'Codex unavailable',
+              startedAt: '2026-01-01T00:01:00.000Z',
+              endedAt: '2026-01-01T00:02:00.000Z',
+            },
+          },
+        ],
+        flow: {
+          currentStageId: 'implementation',
+          conclusion: '实现阶段失败。',
+          severity: 'blocked',
+          blockers: [],
+          stages: [],
+          actions: [
+            {
+              id: 'resume_failed_stage',
+              label: '重试',
+              description: '恢复失败会话并重试实现阶段',
+              enabled: true,
+              stage: 'implementation',
+              variant: 'primary',
+            },
+          ],
+          events: [],
+        },
+      }),
+    );
+
+    expect(html).toContain('Agent 运行失败');
+    expect(html).toContain('Codex unavailable');
+    expect(html).toContain('title="恢复失败会话并重试实现阶段"');
+    expect(html).toContain('重试');
   });
 });
 

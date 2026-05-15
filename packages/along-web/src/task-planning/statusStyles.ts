@@ -68,19 +68,14 @@ export const TASK_DISPLAY_STATE_COLORS: Record<
   TaskDisplayState,
   TaskStatusColor
 > = {
-  ask_active: 'cyan',
-  ask_answered: 'emerald',
-  waiting_user: 'amber',
-  planning_drafting: 'sky',
-  planning_awaiting_approval: 'amber',
-  planning_feedback: 'violet',
-  planning_planned: 'blue',
-  implementation_implementing: 'cyan',
-  implementation_verifying: 'violet',
-  completed: 'emerald',
+  plan_drafting: 'sky',
+  plan_awaiting_approval: 'amber',
+  plan_revising: 'violet',
+  exec_implementing: 'cyan',
+  exec_verifying: 'violet',
+  exec_implemented: 'teal',
+  done: 'emerald',
   failed: 'rose',
-  cancelled: 'zinc',
-  processing: 'cyan',
 };
 
 export const TASK_LEGACY_STATUS_COLORS: Record<TaskStatus, TaskStatusColor> = {

@@ -16,10 +16,10 @@ import {
   runTaskAgentTurn,
 } from './task-agent-runtime';
 import {
+  LIFECYCLE,
   publishPlanningUpdate,
   publishTaskPlanRevision,
   readTaskPlanningSnapshot,
-  TASK_LIFECYCLE,
   type TaskPlanningSnapshot,
   type TaskRuntimeExecutionMode,
 } from './task-planning';
@@ -174,7 +174,7 @@ export async function runTaskPlanningAgent(
   const snapshotRes = readRequiredSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
-  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (snapshot.task.lifecycle === LIFECYCLE.DONE) {
     return failure('Task 已关闭，不能运行 Planner');
   }
 

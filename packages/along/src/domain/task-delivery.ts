@@ -11,9 +11,9 @@ import {
   AGENT_RUN_STATUS,
   createTaskAgentRun,
   finishTaskAgentRun,
+  LIFECYCLE,
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
-  TASK_LIFECYCLE,
   TASK_WORKSPACE_MODE,
   type TaskAgentRunRecord,
   type TaskPlanningSnapshot,
@@ -136,7 +136,7 @@ function failDeliveryRun(
 ): Result<never> {
   transitionTaskWorkflow({
     taskId,
-    event: { type: 'implementation.completed' },
+    event: { type: 'task.failed' },
   });
   recordTaskAgentResult({
     taskId,
@@ -186,12 +186,12 @@ export async function runTaskDelivery(
     });
   }
 
-  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (snapshot.task.lifecycle === LIFECYCLE.DONE) {
     return failure('Task 已关闭，不能交付');
   }
   if (
-    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.IMPLEMENTATION ||
-    snapshot.task.lifecycle !== TASK_LIFECYCLE.READY ||
+    snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.EXEC ||
+    snapshot.task.lifecycle !== LIFECYCLE.WAITING ||
     snapshot.task.prUrl
   ) {
     return failure(
@@ -258,18 +258,6 @@ export async function runTaskDelivery(
       input.taskId,
       snapshot.thread.threadId,
       startedRes.error,
-    );
-  }
-  const workflowStartedRes = transitionTaskWorkflow({
-    taskId: input.taskId,
-    event: { type: 'verification.started' },
-  });
-  if (!workflowStartedRes.success) {
-    return failDeliveryRun(
-      run,
-      input.taskId,
-      snapshot.thread.threadId,
-      workflowStartedRes.error,
     );
   }
 
@@ -413,7 +401,7 @@ export async function runTaskDelivery(
     }
     const workflowDeliveredRes = transitionTaskWorkflow({
       taskId: input.taskId,
-      event: { type: 'implementation.completed' },
+      event: { type: 'exec.verified' },
     });
     if (!workflowDeliveredRes.success) {
       return failDeliveryRun(
@@ -527,7 +515,7 @@ export async function runTaskDelivery(
     }
     const workflowDeliveredRes = transitionTaskWorkflow({
       taskId: input.taskId,
-      event: { type: 'implementation.completed' },
+      event: { type: 'exec.verified' },
     });
     if (!workflowDeliveredRes.success) {
       return failDeliveryRun(

@@ -25,16 +25,16 @@ import {
 } from './task-implementation-steps';
 import {
   type DomainEvent,
+  LIFECYCLE,
+  type Lifecycle,
   reduceWorkflowEvent,
-  TASK_LIFECYCLE,
-  type TaskLifecycle,
   WORKFLOW_KIND,
   type WorkflowKind,
   type WorkflowRuntimeState,
 } from './task-workflow-state';
 
-export type { TaskLifecycle, WorkflowKind };
-export { TASK_LIFECYCLE, WORKFLOW_KIND };
+export type { Lifecycle, WorkflowKind };
+export { LIFECYCLE, WORKFLOW_KIND };
 
 export const TASK_STATUS = {
   PLANNING: 'planning',
@@ -92,7 +92,6 @@ export const THREAD_STATUS = {
   AWAITING_APPROVAL: 'awaiting_approval',
   DISCUSSING: 'discussing',
   APPROVED: 'approved',
-  PLANNED: 'planned',
   IMPLEMENTING: 'implementing',
   VERIFYING: 'verifying',
   COMPLETED: 'completed',
@@ -197,7 +196,7 @@ export interface TaskItemRecord {
   body: string;
   source: string;
   status: TaskStatus;
-  lifecycle: TaskLifecycle;
+  lifecycle: Lifecycle;
   currentWorkflowKind: WorkflowKind;
   activeThreadId?: string;
   repoOwner?: string;
@@ -624,7 +623,7 @@ interface TaskItemRow {
   title: string;
   body: string;
   source: string;
-  lifecycle?: TaskLifecycle | null;
+  lifecycle?: Lifecycle | null;
   current_workflow_kind?: WorkflowKind | null;
   active_thread_id: string | null;
   repo_owner: string | null;
@@ -767,27 +766,21 @@ function normalizeTaskWorkspaceMode(
 }
 
 function normalizeWorkflowKind(value: string | null | undefined): WorkflowKind {
-  if (value === WORKFLOW_KIND.PLANNING) return WORKFLOW_KIND.PLANNING;
-  if (value === WORKFLOW_KIND.IMPLEMENTATION)
-    return WORKFLOW_KIND.IMPLEMENTATION;
-  return WORKFLOW_KIND.ASK;
+  if (value === WORKFLOW_KIND.PLAN) return WORKFLOW_KIND.PLAN;
+  if (value === WORKFLOW_KIND.EXEC) return WORKFLOW_KIND.EXEC;
+  return WORKFLOW_KIND.PLAN;
 }
 
-function normalizeTaskLifecycle(
-  value: string | null | undefined,
-): TaskLifecycle {
+function normalizeLifecycle(value: string | null | undefined): Lifecycle {
   if (
-    value === TASK_LIFECYCLE.OPEN ||
-    value === TASK_LIFECYCLE.WAITING_USER ||
-    value === TASK_LIFECYCLE.READY ||
-    value === TASK_LIFECYCLE.RUNNING ||
-    value === TASK_LIFECYCLE.COMPLETED ||
-    value === TASK_LIFECYCLE.CANCELLED ||
-    value === TASK_LIFECYCLE.FAILED
+    value === LIFECYCLE.ACTIVE ||
+    value === LIFECYCLE.WAITING ||
+    value === LIFECYCLE.DONE ||
+    value === LIFECYCLE.FAILED
   ) {
     return value;
   }
-  return TASK_LIFECYCLE.OPEN;
+  return LIFECYCLE.ACTIVE;
 }
 
 function parseMetadata(
@@ -877,22 +870,21 @@ function mapPlan(row: TaskPlanRevisionRow): TaskPlanRevisionRecord {
 }
 
 function mapTask(row: TaskItemRow): TaskItemRecord {
-  const lifecycle = normalizeTaskLifecycle(row.lifecycle);
+  const lifecycle = normalizeLifecycle(row.lifecycle);
   const currentWorkflowKind = normalizeWorkflowKind(row.current_workflow_kind);
   return {
     taskId: row.task_id,
     title: row.title,
     body: row.body,
     source: row.source,
-    status: deriveTaskStatusFromWorkflow(
-      {
-        lifecycle,
-        currentWorkflowKind,
-        workflowState:
-          currentWorkflowKind === WORKFLOW_KIND.ASK ? 'active' : 'drafting',
-      },
-      { prUrl: row.pr_url || undefined },
-    ),
+    status: deriveTaskStatusFromWorkflow({
+      lifecycle,
+      currentWorkflowKind,
+      workflowState:
+        currentWorkflowKind === WORKFLOW_KIND.EXEC
+          ? 'implementing'
+          : 'drafting',
+    }),
     lifecycle,
     currentWorkflowKind,
     activeThreadId: row.active_thread_id || undefined,
@@ -1090,11 +1082,11 @@ const TASK_FLOW_STAGE_LABELS: Record<TaskFlowStageId, string> = {
 };
 
 function isTaskCancelled(task: TaskItemRecord): boolean {
-  return task.lifecycle === TASK_LIFECYCLE.CANCELLED;
+  return task.lifecycle === LIFECYCLE.DONE;
 }
 
 function isTaskCompleted(task: TaskItemRecord): boolean {
-  return task.lifecycle === TASK_LIFECYCLE.COMPLETED;
+  return task.lifecycle === LIFECYCLE.DONE;
 }
 
 function hasDeliveryResult(
@@ -1108,16 +1100,16 @@ function hasDeliveryResult(
 
 function isTaskDelivered(task: TaskItemRecord): boolean {
   return (
-    task.lifecycle === TASK_LIFECYCLE.READY &&
-    task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION &&
+    task.lifecycle === LIFECYCLE.ACTIVE &&
+    task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
     hasDeliveryResult(task)
   );
 }
 
 function isTaskImplemented(task: TaskItemRecord): boolean {
   return (
-    task.lifecycle === TASK_LIFECYCLE.READY &&
-    task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION &&
+    task.lifecycle === LIFECYCLE.ACTIVE &&
+    task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
     !task.prUrl
   );
 }
@@ -1127,8 +1119,8 @@ function isTaskDelivering(input: {
   thread: TaskThreadRecord;
 }): boolean {
   return (
-    input.task.lifecycle === TASK_LIFECYCLE.RUNNING &&
-    input.task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION &&
+    input.task.lifecycle === LIFECYCLE.ACTIVE &&
+    input.task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
     input.thread.status === THREAD_STATUS.VERIFYING
   );
 }
@@ -1138,8 +1130,8 @@ function isTaskImplementing(input: {
   thread: TaskThreadRecord;
 }): boolean {
   return (
-    input.task.lifecycle === TASK_LIFECYCLE.RUNNING &&
-    input.task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION &&
+    input.task.lifecycle === LIFECYCLE.ACTIVE &&
+    input.task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
     input.thread.status !== THREAD_STATUS.VERIFYING
   );
 }
@@ -1149,8 +1141,8 @@ function isPlanningApproved(input: {
   thread: TaskThreadRecord;
 }): boolean {
   return (
-    input.task.lifecycle === TASK_LIFECYCLE.READY &&
-    input.task.currentWorkflowKind === WORKFLOW_KIND.PLANNING &&
+    input.task.lifecycle === LIFECYCLE.ACTIVE &&
+    input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN &&
     Boolean(input.thread.approvedPlanId)
   );
 }
@@ -1160,173 +1152,30 @@ function isPlanningActive(input: {
   thread: TaskThreadRecord;
 }): boolean {
   return (
-    input.task.currentWorkflowKind === WORKFLOW_KIND.PLANNING &&
+    input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN &&
     !isPlanningApproved(input)
   );
 }
 
 function deriveTaskStatusFromWorkflow(
   workflow: WorkflowRuntimeState,
-  task?: Pick<TaskItemRecord, 'prUrl' | 'workspaceMode'>,
+  _task?: Pick<TaskItemRecord, 'prUrl' | 'workspaceMode'>,
 ): TaskStatus {
-  if (workflow.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (workflow.lifecycle === LIFECYCLE.DONE) {
     return TASK_STATUS.CLOSED;
   }
-  if (workflow.lifecycle === TASK_LIFECYCLE.COMPLETED) {
-    return TASK_STATUS.COMPLETED;
-  }
-  if (workflow.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION) {
-    if (workflow.workflowState === 'verifying') {
-      return TASK_STATUS.DELIVERING;
-    }
-    if (workflow.workflowState === 'completed') {
-      return task && hasDeliveryResult(task)
-        ? TASK_STATUS.DELIVERED
-        : TASK_STATUS.IMPLEMENTED;
-    }
+  if (workflow.lifecycle === LIFECYCLE.FAILED) {
     return TASK_STATUS.IMPLEMENTING;
   }
-  if (
-    workflow.currentWorkflowKind === WORKFLOW_KIND.PLANNING &&
-    workflow.workflowState === 'planned'
-  ) {
+  if (workflow.currentWorkflowKind === WORKFLOW_KIND.EXEC) {
+    if (workflow.workflowState === 'verifying') return TASK_STATUS.DELIVERING;
+    if (workflow.workflowState === 'implemented') return TASK_STATUS.DELIVERED;
+    return TASK_STATUS.IMPLEMENTING;
+  }
+  if (workflow.workflowState === 'awaiting_approval') {
     return TASK_STATUS.PLANNING_APPROVED;
   }
   return TASK_STATUS.PLANNING;
-}
-
-function inferWorkflowState(input: {
-  task: TaskItemRecord;
-  thread: TaskThreadRecord;
-  currentPlan: TaskPlanRevisionRecord | null;
-  openRound: TaskFeedbackRoundRecord | null;
-  agentStages: TaskAgentStageRecord[];
-}): WorkflowRuntimeState {
-  if (isTaskCancelled(input.task)) {
-    return {
-      lifecycle: TASK_LIFECYCLE.CANCELLED,
-      currentWorkflowKind: input.task.currentWorkflowKind,
-      workflowState:
-        input.task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION
-          ? 'failed'
-          : input.task.currentWorkflowKind === WORKFLOW_KIND.PLANNING
-            ? 'planned'
-            : 'answered',
-    };
-  }
-  if (isTaskCompleted(input.task)) {
-    return {
-      lifecycle: TASK_LIFECYCLE.COMPLETED,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      workflowState: 'completed',
-    };
-  }
-  if (input.task.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION) {
-    const runningStage = input.agentStages.find(
-      (stage) =>
-        stage.stage === TASK_AGENT_STAGE.IMPLEMENTATION &&
-        stage.status === AGENT_RUN_STATUS.RUNNING,
-    );
-    const failedStage = input.agentStages.find(
-      (stage) =>
-        stage.stage === TASK_AGENT_STAGE.IMPLEMENTATION &&
-        stage.status === AGENT_RUN_STATUS.FAILED,
-    );
-    if (failedStage) {
-      return {
-        lifecycle: TASK_LIFECYCLE.FAILED,
-        currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-        workflowState: 'failed',
-      };
-    }
-    if (
-      input.thread.status === THREAD_STATUS.VERIFYING ||
-      input.agentStages.some(
-        (stage) =>
-          stage.stage === TASK_AGENT_STAGE.DELIVERY &&
-          stage.status === AGENT_RUN_STATUS.RUNNING,
-      )
-    ) {
-      return {
-        lifecycle: TASK_LIFECYCLE.RUNNING,
-        currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-        workflowState: 'verifying',
-      };
-    }
-    if (runningStage || input.task.lifecycle === TASK_LIFECYCLE.RUNNING) {
-      return reduceWorkflowEvent(
-        {
-          lifecycle: TASK_LIFECYCLE.READY,
-          currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-          workflowState: 'planned',
-        },
-        { type: 'implementation.started' },
-      );
-    }
-    return {
-      lifecycle: input.task.lifecycle,
-      currentWorkflowKind: WORKFLOW_KIND.IMPLEMENTATION,
-      workflowState:
-        input.thread.status === THREAD_STATUS.FAILED ? 'failed' : 'completed',
-    };
-  }
-  if (
-    input.task.currentWorkflowKind === WORKFLOW_KIND.ASK &&
-    input.thread.purpose === THREAD_PURPOSE.ASK &&
-    !input.currentPlan
-  ) {
-    return {
-      lifecycle: input.task.lifecycle,
-      currentWorkflowKind: WORKFLOW_KIND.ASK,
-      workflowState:
-        input.thread.status === THREAD_STATUS.WAITING_USER
-          ? 'waiting_user'
-          : input.thread.status === THREAD_STATUS.ANSWERED
-            ? 'answered'
-            : 'active',
-    };
-  }
-  if (input.openRound) {
-    return {
-      lifecycle: TASK_LIFECYCLE.OPEN,
-      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-      workflowState: 'feedback',
-    };
-  }
-  if (
-    input.thread.approvedPlanId ||
-    input.thread.status === THREAD_STATUS.APPROVED ||
-    input.thread.status === THREAD_STATUS.PLANNED
-  ) {
-    return {
-      lifecycle: TASK_LIFECYCLE.READY,
-      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-      workflowState: 'planned',
-    };
-  }
-  if (
-    input.currentPlan ||
-    input.thread.status === THREAD_STATUS.AWAITING_APPROVAL
-  ) {
-    return {
-      lifecycle: TASK_LIFECYCLE.WAITING_USER,
-      currentWorkflowKind: WORKFLOW_KIND.PLANNING,
-      workflowState: 'awaiting_approval',
-    };
-  }
-  return {
-    lifecycle: input.task.lifecycle,
-    currentWorkflowKind:
-      input.thread.purpose === THREAD_PURPOSE.PLANNING
-        ? WORKFLOW_KIND.PLANNING
-        : WORKFLOW_KIND.ASK,
-    workflowState:
-      input.thread.status === THREAD_STATUS.WAITING_USER
-        ? 'waiting_user'
-        : input.thread.purpose === THREAD_PURPOSE.PLANNING
-          ? 'drafting'
-          : 'active',
-  };
 }
 
 function applyWorkflowView(input: {
@@ -1341,19 +1190,19 @@ function applyWorkflowView(input: {
   display: TaskDisplay;
   workflow: WorkflowRuntimeState;
 } {
-  const workflow = inferWorkflowState(input);
+  const workflow: WorkflowRuntimeState = {
+    lifecycle: input.task.lifecycle,
+    currentWorkflowKind: input.task.currentWorkflowKind,
+    workflowState:
+      (input.thread.status as WorkflowRuntimeState['workflowState']) ||
+      'drafting',
+  };
   return {
     task: {
       ...input.task,
       status: deriveTaskStatusFromWorkflow(workflow, input.task),
-      lifecycle: workflow.lifecycle,
-      currentWorkflowKind: workflow.currentWorkflowKind,
     },
-    thread: {
-      ...input.thread,
-      purpose: workflow.currentWorkflowKind,
-      status: workflow.workflowState as ThreadStatus,
-    },
+    thread: input.thread,
     display: deriveTaskDisplay(workflow),
     workflow,
   };
@@ -1397,7 +1246,7 @@ function getCurrentTaskFlowStageId(input: {
 }): TaskFlowStageId {
   if (isTaskCancelled(input.task)) return 'completed';
   if (isTaskCompleted(input.task)) return 'completed';
-  if (input.task.currentWorkflowKind === WORKFLOW_KIND.ASK) return 'ask';
+  if (input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) return 'ask';
   if (isTaskDelivered(input.task)) return 'delivery';
   if (input.openRound) return 'plan_discussion';
 
@@ -1479,7 +1328,7 @@ function buildTaskFlowConclusion(input: {
   if (isTaskCompleted(input.task)) {
     return { conclusion: '任务已完成，关键产物已归档。', severity: 'success' };
   }
-  if (input.task.currentWorkflowKind === WORKFLOW_KIND.ASK) {
+  if (input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) {
     if (input.thread.status === THREAD_STATUS.ANSWERED) {
       return {
         conclusion: '咨询已回答，可以继续追问或转为计划。',
@@ -1592,7 +1441,8 @@ function buildTaskFlowActions(input: {
   agentStages: TaskAgentStageRecord[];
 }): TaskFlowAction[] {
   if (isTaskCancelled(input.task)) return [];
-  if (input.task.currentWorkflowKind === WORKFLOW_KIND.ASK) {
+  const failedStage = getLatestFailedAgentStage(input.agentStages);
+  if (input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) {
     return [
       buildTaskFlowAction({
         id: 'submit_feedback',
@@ -1610,6 +1460,7 @@ function buildTaskFlowActions(input: {
         stage: 'ask',
         variant: 'primary',
       }),
+      ...(failedStage ? [buildRetryFailedStageAction(failedStage, 'ask')] : []),
       buildTaskFlowAction({
         id: 'close_task',
         label: '关闭任务',
@@ -1621,7 +1472,6 @@ function buildTaskFlowActions(input: {
     ];
   }
 
-  const failedStage = getLatestFailedAgentStage(input.agentStages);
   const implementationStage = getStageByAgentStage(
     input.agentStages,
     TASK_AGENT_STAGE.IMPLEMENTATION,
@@ -1745,17 +1595,7 @@ function buildTaskFlowActions(input: {
       stage: 'implementation',
       variant: 'primary',
     }),
-    buildTaskFlowAction({
-      id: 'resume_failed_stage',
-      label: '继续执行',
-      description: failedStage
-        ? `恢复 ${failedStage.label} 的失败会话并继续执行`
-        : '恢复最近失败阶段并继续执行',
-      enabled: Boolean(failedStage),
-      disabledReason: '当前没有失败阶段可继续执行',
-      stage: failedFlowStage,
-      variant: 'primary',
-    }),
+    buildRetryFailedStageAction(failedStage, failedFlowStage),
     buildTaskFlowAction({
       id: 'copy_resume_command',
       label: '复制接管命令',
@@ -1816,6 +1656,23 @@ function buildTaskFlowActions(input: {
           }),
         ]),
   ];
+}
+
+function buildRetryFailedStageAction(
+  failedStage: TaskAgentStageRecord | undefined,
+  stage: TaskFlowStageId,
+): TaskFlowAction {
+  return buildTaskFlowAction({
+    id: 'resume_failed_stage',
+    label: '重试',
+    description: failedStage
+      ? `恢复失败会话并重试${failedStage.label}`
+      : '恢复失败会话并重试最近失败阶段',
+    enabled: Boolean(failedStage),
+    disabledReason: '当前没有失败阶段可重试',
+    stage,
+    variant: 'primary',
+  });
 }
 
 function getTaskFlowStageSummary(input: {
@@ -1969,7 +1826,7 @@ function buildTaskFlowStages(input: {
   artifacts: TaskArtifactRecord[];
   agentStages: TaskAgentStageRecord[];
 }): TaskFlowStage[] {
-  if (input.task.currentWorkflowKind === WORKFLOW_KIND.ASK) {
+  if (input.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) {
     const state: TaskFlowStageState =
       input.thread.status === THREAD_STATUS.ANSWERED ? 'completed' : 'current';
     return [
@@ -2431,7 +2288,7 @@ function ensureTaskIsOpen(
   snapshot: TaskPlanningSnapshot,
   action: string,
 ): Result<void> {
-  return snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED
+  return snapshot.task.lifecycle === LIFECYCLE.DONE
     ? failure(`Task 已关闭，不能${action}`)
     : success(undefined);
 }
@@ -2445,7 +2302,7 @@ function ensureTaskCanRecordAgentResult(taskId: string): Result<void> {
       .prepare('SELECT * FROM task_items WHERE task_id = ?')
       .get(taskId) as TaskItemRow | null;
     if (!row) return failure(`Task 不存在: ${taskId}`);
-    if (normalizeTaskLifecycle(row.lifecycle) === TASK_LIFECYCLE.CANCELLED) {
+    if (normalizeLifecycle(row.lifecycle) === LIFECYCLE.DONE) {
       return failure('Task 已关闭，不能记录 Agent Result');
     }
     return success(undefined);
@@ -2475,11 +2332,9 @@ export function closeTask(
   if (!snapshotRes.success) return snapshotRes;
   const snapshot = snapshotRes.data;
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
-  if (snapshot.task.lifecycle === TASK_LIFECYCLE.COMPLETED) {
-    return failure('已完成 Task 不能关闭');
-  }
-  if (snapshot.task.lifecycle === TASK_LIFECYCLE.CANCELLED)
+  if (snapshot.task.lifecycle === LIFECYCLE.DONE) {
     return success(snapshot);
+  }
 
   const dbRes = getDb();
   if (!dbRes.success) return dbRes;
@@ -2552,10 +2407,15 @@ export function closeTask(
       db.prepare(
         `
           UPDATE task_items
-          SET lifecycle = ?, updated_at = ?
+          SET lifecycle = ?, current_workflow_kind = ?, updated_at = ?
           WHERE task_id = ?
         `,
-      ).run(TASK_LIFECYCLE.CANCELLED, now, snapshot.task.taskId);
+      ).run(
+        LIFECYCLE.DONE,
+        snapshot.task.currentWorkflowKind,
+        now,
+        snapshot.task.taskId,
+      );
     });
 
     txn();
@@ -2585,7 +2445,7 @@ export function createPlanningTask(
   const db = dbRes.data;
   const taskId = generateId('task');
   const threadId = generateId('thread');
-  const workflowKind = input.workflowKind || WORKFLOW_KIND.ASK;
+  const workflowKind = input.workflowKind || WORKFLOW_KIND.PLAN;
   const preparedAttachmentsRes = prepareTaskImageAttachments({
     task: {
       taskId,
@@ -2635,7 +2495,7 @@ export function createPlanningTask(
           input.cwd || null,
           seq,
           input.executionMode || TASK_EXECUTION_MODE.MANUAL,
-          TASK_LIFECYCLE.OPEN,
+          LIFECYCLE.ACTIVE,
           workflowKind,
           input.workspaceMode || TASK_WORKSPACE_MODE.WORKTREE,
           now,
@@ -2661,7 +2521,7 @@ export function createPlanningTask(
           input.cwd || null,
           seq,
           input.executionMode || TASK_EXECUTION_MODE.MANUAL,
-          TASK_LIFECYCLE.OPEN,
+          LIFECYCLE.ACTIVE,
           workflowKind,
           input.workspaceMode || TASK_WORKSPACE_MODE.WORKTREE,
           now,
@@ -2678,10 +2538,10 @@ export function createPlanningTask(
       ).run(
         threadId,
         taskId,
-        workflowKind === WORKFLOW_KIND.PLANNING
+        workflowKind === WORKFLOW_KIND.PLAN
           ? THREAD_PURPOSE.PLANNING
           : THREAD_PURPOSE.ASK,
-        workflowKind === WORKFLOW_KIND.PLANNING
+        workflowKind === WORKFLOW_KIND.PLAN
           ? THREAD_STATUS.DRAFTING
           : THREAD_STATUS.ACTIVE,
         now,
@@ -2972,14 +2832,11 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
     .get(input.taskId) as TaskItemRow | null;
   if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
   const task = mapTask(taskRow);
-  if (task.lifecycle === TASK_LIFECYCLE.CANCELLED) {
+  if (task.lifecycle === LIFECYCLE.DONE) {
     return failure('Task 已关闭，不能继续讨论');
   }
   if (thread.status === THREAD_STATUS.APPROVED) {
-    if (
-      !hasDeliveryResult(task) &&
-      task.lifecycle !== TASK_LIFECYCLE.COMPLETED
-    ) {
+    if (!hasDeliveryResult(task)) {
       return failure('当前 Planning 已批准，不能继续提交反馈');
     }
   }
@@ -3128,7 +2985,7 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
             SET lifecycle = ?, current_workflow_kind = ?, updated_at = ?
             WHERE task_id = ?
           `,
-        ).run(TASK_LIFECYCLE.OPEN, WORKFLOW_KIND.PLANNING, now, thread.task_id);
+        ).run(LIFECYCLE.ACTIVE, WORKFLOW_KIND.PLAN, now, thread.task_id);
       }
       roundResult = mapRound(roundRow);
     });
@@ -3336,7 +3193,7 @@ export function publishPlanningUpdate(
             WHERE thread_id = ?
           `,
         ).run(THREAD_STATUS.AWAITING_APPROVAL, now, snapshot.thread.threadId);
-      } else if (snapshot.task.currentWorkflowKind === WORKFLOW_KIND.ASK) {
+      } else if (snapshot.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) {
         db.prepare(
           `
             UPDATE task_threads
@@ -3375,7 +3232,7 @@ export function requestTaskPlan(taskId: string): Result<void> {
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
   const openRes = ensureTaskIsOpen(snapshot, '转为计划');
   if (!openRes.success) return openRes;
-  if (snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.ASK) {
+  if (snapshot.task.currentWorkflowKind !== WORKFLOW_KIND.PLAN) {
     return success(undefined);
   }
 
@@ -3393,7 +3250,7 @@ export function requestTaskPlan(taskId: string): Result<void> {
             WHERE task_id = ?
           `,
         )
-        .run(WORKFLOW_KIND.PLANNING, TASK_LIFECYCLE.OPEN, now, taskId);
+        .run(WORKFLOW_KIND.PLAN, LIFECYCLE.ACTIVE, now, taskId);
       dbRes.data
         .prepare(
           `
@@ -3519,7 +3376,7 @@ export function recordTaskImplementationFailure(
 
   const stateRes = transitionTaskWorkflow({
     taskId: input.taskId,
-    event: { type: 'implementation.failed' },
+    event: { type: 'task.failed' },
   });
   if (!stateRes.success) return stateRes;
 
@@ -3574,7 +3431,7 @@ export function approveCurrentTaskPlan(
           WHERE thread_id = ?
         `,
       ).run(
-        THREAD_STATUS.APPROVED,
+        THREAD_STATUS.IMPLEMENTING,
         snapshot.currentPlan?.planId,
         now,
         snapshot.thread.threadId,
@@ -3585,12 +3442,7 @@ export function approveCurrentTaskPlan(
           SET lifecycle = ?, current_workflow_kind = ?, updated_at = ?
           WHERE task_id = ?
         `,
-      ).run(
-        TASK_LIFECYCLE.READY,
-        WORKFLOW_KIND.PLANNING,
-        now,
-        snapshot.task.taskId,
-      );
+      ).run(LIFECYCLE.ACTIVE, WORKFLOW_KIND.EXEC, now, snapshot.task.taskId);
     });
 
     txn();
@@ -3677,8 +3529,7 @@ export function completeDeliveredTask(
   if (!snapshot) return failure(`Task 不存在: ${taskId}`);
   const openRes = ensureTaskIsOpen(snapshot, '验收完成');
   if (!openRes.success) return openRes;
-  if (snapshot.task.lifecycle === TASK_LIFECYCLE.COMPLETED)
-    return success(snapshot);
+  if (snapshot.task.lifecycle === LIFECYCLE.DONE) return success(snapshot);
   if (!hasDeliveryResult(snapshot.task)) {
     return failure('只有已交付 Task 可以验收完成');
   }
@@ -3711,12 +3562,7 @@ export function completeDeliveredTask(
             WHERE task_id = ?
           `,
         )
-        .run(
-          TASK_LIFECYCLE.COMPLETED,
-          WORKFLOW_KIND.IMPLEMENTATION,
-          now,
-          snapshot.task.taskId,
-        );
+        .run(LIFECYCLE.DONE, WORKFLOW_KIND.EXEC, now, snapshot.task.taskId);
     });
 
     txn();
@@ -3895,12 +3741,12 @@ export function transitionTaskWorkflow(input: {
       .get(input.taskId, taskRow.active_thread_id) as TaskThreadRow | null;
 
     const currentState: WorkflowRuntimeState = {
-      lifecycle: normalizeTaskLifecycle(taskRow.lifecycle),
+      lifecycle: normalizeLifecycle(taskRow.lifecycle),
       currentWorkflowKind:
-        (taskRow.current_workflow_kind as WorkflowKind) || WORKFLOW_KIND.ASK,
+        (taskRow.current_workflow_kind as WorkflowKind) || WORKFLOW_KIND.PLAN,
       workflowState:
         (threadRow?.status as WorkflowRuntimeState['workflowState']) ||
-        'planned',
+        'drafting',
     };
 
     const next = reduceWorkflowEvent(currentState, input.event);
@@ -3942,27 +3788,24 @@ export function transitionTaskWorkflow(input: {
 function deriveThreadStatusFromWorkflow(
   state: WorkflowRuntimeState,
 ): ThreadStatus | null {
-  if (state.lifecycle === TASK_LIFECYCLE.FAILED) return THREAD_STATUS.FAILED;
-  if (state.lifecycle === TASK_LIFECYCLE.RUNNING) {
-    if (state.workflowState === 'verifying') return THREAD_STATUS.VERIFYING;
-    if (state.workflowState === 'implementing')
+  if (state.lifecycle === LIFECYCLE.FAILED) return THREAD_STATUS.FAILED;
+  if (state.lifecycle === LIFECYCLE.DONE) return THREAD_STATUS.COMPLETED;
+  switch (state.workflowState) {
+    case 'drafting':
+      return THREAD_STATUS.DRAFTING;
+    case 'awaiting_approval':
+      return THREAD_STATUS.AWAITING_APPROVAL;
+    case 'revising':
+      return THREAD_STATUS.DRAFTING;
+    case 'implementing':
       return THREAD_STATUS.IMPLEMENTING;
+    case 'verifying':
+      return THREAD_STATUS.VERIFYING;
+    case 'implemented':
+      return THREAD_STATUS.COMPLETED;
+    default:
+      return null;
   }
-  if (state.lifecycle === TASK_LIFECYCLE.COMPLETED)
-    return THREAD_STATUS.COMPLETED;
-  if (
-    state.lifecycle === TASK_LIFECYCLE.READY &&
-    state.currentWorkflowKind === WORKFLOW_KIND.IMPLEMENTATION
-  ) {
-    return THREAD_STATUS.COMPLETED;
-  }
-  if (
-    state.lifecycle === TASK_LIFECYCLE.READY &&
-    state.currentWorkflowKind === WORKFLOW_KIND.PLANNING
-  ) {
-    return THREAD_STATUS.APPROVED;
-  }
-  return null;
 }
 
 export function updateTaskDelivery(
@@ -3976,9 +3819,7 @@ export function updateTaskDelivery(
       .prepare('SELECT * FROM task_items WHERE task_id = ?')
       .get(input.taskId) as TaskItemRow | null;
     if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
-    if (
-      normalizeTaskLifecycle(taskRow.lifecycle) === TASK_LIFECYCLE.CANCELLED
-    ) {
+    if (normalizeLifecycle(taskRow.lifecycle) === LIFECYCLE.DONE) {
       return failure('Task 已关闭，不能更新交付信息');
     }
     const result = dbRes.data
@@ -4099,7 +3940,7 @@ export function completeTaskAgentStageManually(
         ? success(undefined)
         : transitionTaskWorkflow({
             taskId: input.taskId,
-            event: { type: 'implementation.completed_manually' },
+            event: { type: 'exec.completed' },
           });
   } else if (input.stage === TASK_AGENT_STAGE.DELIVERY && input.prUrl) {
     const deliveryRes = updateTaskDelivery({
@@ -4110,7 +3951,7 @@ export function completeTaskAgentStageManually(
     statusRes = deliveryRes.success
       ? transitionTaskWorkflow({
           taskId: input.taskId,
-          event: { type: 'verification.passed_manually' },
+          event: { type: 'exec.verified' },
         })
       : deliveryRes;
   } else {
@@ -4322,9 +4163,7 @@ export function createTaskAgentRun(
       .prepare('SELECT * FROM task_items WHERE task_id = ?')
       .get(input.taskId) as TaskItemRow | null;
     if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
-    if (
-      normalizeTaskLifecycle(taskRow.lifecycle) === TASK_LIFECYCLE.CANCELLED
-    ) {
+    if (normalizeLifecycle(taskRow.lifecycle) === LIFECYCLE.DONE) {
       return failure('Task 已关闭，不能创建 Agent Run');
     }
     dbRes.data
