@@ -146,7 +146,7 @@ export function getArtifactLabel(
       return '批准';
     case 'agent_result':
       switch (metadata.kind) {
-        case 'implementation_steps':
+        case 'exec_steps':
           return '实施步骤';
         case 'auto_commit':
           return '自动提交';

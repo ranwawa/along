@@ -4,7 +4,7 @@
 
 本规范定义 Along 的 AI 运行时配置架构，用于把以下两类调用拆开管理：
 
-- Agent 运行：Planning Agent、Implementation Agent 等需要通过 Codex 运行完整任务回合。
+- Agent 运行：Planning Agent、Exec Agent 等需要通过 Codex 运行完整任务回合。
 - 轻量模型调用：标题摘要、分类、PR 标题生成、结构化抽取等不需要进入 Agent 生命周期的直接 LLM 调用。
 
 目标是引入一套小型配置注册表，让 provider、model、runtime、agent、profile 之间的关系可验证、可解析、可扩展，并以 Codex 作为第一条真实 Agent 运行时。

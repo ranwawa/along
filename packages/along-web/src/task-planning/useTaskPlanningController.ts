@@ -20,8 +20,7 @@ export function getFlowFlags(getAction: (id: TaskFlowActionId) => unknown) {
   return {
     canApprove: Boolean(getAction('approve_plan')),
     canImplement: Boolean(
-      getAction('start_implementation') ||
-        getAction('confirm_implementation_steps'),
+      getAction('start_exec') || getAction('confirm_exec_steps'),
     ),
     canDeliver: Boolean(getAction('start_delivery')),
   };

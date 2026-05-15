@@ -18,7 +18,7 @@ function makeAction(): TaskFlowAction {
     label: '重试',
     description: '恢复失败会话并重试最近失败阶段',
     enabled: true,
-    stage: 'implementation',
+    stage: 'exec',
     variant: 'primary',
   };
 }
@@ -54,14 +54,14 @@ function makeSnapshot(stage: TaskAgentStage): TaskPlanningSnapshot {
     agentStages: [
       {
         stage,
-        agentId: stage === 'implementation' ? 'implementer' : stage,
+        agentId: stage === 'exec' ? 'implementer' : stage,
         label: stage,
         status: 'failed',
         latestRun: {
           runId: 'run-1',
           taskId: 'task-1',
           threadId: 'thread-1',
-          agentId: stage === 'implementation' ? 'implementer' : stage,
+          agentId: stage === 'exec' ? 'implementer' : stage,
           runtimeId: stage === 'delivery' ? 'system' : 'codex',
           status: 'failed',
           inputArtifactIds: [],
@@ -73,7 +73,7 @@ function makeSnapshot(stage: TaskAgentStage): TaskPlanningSnapshot {
       },
     ],
     flow: {
-      currentStageId: 'implementation',
+      currentStageId: 'exec',
       conclusion: '失败',
       severity: 'blocked',
       stages: [],
@@ -122,7 +122,7 @@ function makeActions() {
 describe('flowActionRouter', () => {
   it.each([
     ['planning', 'planner'],
-    ['implementation', 'implementation'],
+    ['exec', 'exec'],
     ['delivery', 'delivery'],
   ] as const)('当重试失败的 %s 阶段时，期望调度对应 API', (stage, path) => {
     const actions = makeActions();
@@ -136,29 +136,26 @@ describe('flowActionRouter', () => {
     );
   });
 
-  it('当确认实施步骤时，期望带显式确认参数调度 implementation API', () => {
+  it('当确认实施步骤时，期望带显式确认参数调度 exec API', () => {
     const actions = makeActions();
     const action: TaskFlowAction = {
-      id: 'confirm_implementation_steps',
+      id: 'confirm_exec_steps',
       label: '确认步骤并开始实现',
       description: '确认步骤',
       enabled: true,
-      stage: 'implementation',
+      stage: 'exec',
       variant: 'primary',
     };
 
     runFlowAction(
       action,
-      makeInput(makeSnapshot('implementation'), { canImplement: true }),
+      makeInput(makeSnapshot('exec'), { canImplement: true }),
       actions,
     );
 
-    expect(actions.runSimpleAction).toHaveBeenCalledWith(
-      'implementation',
-      'implementation',
-      true,
-      { confirmImplementationSteps: true },
-    );
+    expect(actions.runSimpleAction).toHaveBeenCalledWith('exec', 'exec', true, {
+      confirmExecSteps: true,
+    });
   });
 
   it('当关闭任务时，期望直接调度 close API', () => {
@@ -172,7 +169,7 @@ describe('flowActionRouter', () => {
       variant: 'danger',
     };
 
-    runFlowAction(action, makeInput(makeSnapshot('implementation')), actions);
+    runFlowAction(action, makeInput(makeSnapshot('exec')), actions);
 
     expect(actions.runSimpleAction).toHaveBeenCalledWith(
       'close_task',

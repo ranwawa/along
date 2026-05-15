@@ -47,7 +47,7 @@ function resumeFailedStage(
 ) {
   const pathByStage: Record<TaskAgentStageRecord['stage'], string> = {
     planning: 'planner',
-    implementation: 'implementation',
+    exec: 'exec',
     delivery: 'delivery',
   };
   runSimpleAction(`resume-${stage.stage}`, pathByStage[stage.stage], true);
@@ -62,12 +62,12 @@ function runStageAction(
     runSimpleAction('approve', 'approve', input.canApprove);
   if (id === 'request_plan') runSimpleAction('planner', 'planner', true);
   if (id === 'rerun_planner') runSimpleAction('planner', 'planner', true);
-  if (id === 'start_implementation') {
-    runSimpleAction('implementation', 'implementation', input.canImplement);
+  if (id === 'start_exec') {
+    runSimpleAction('exec', 'exec', input.canImplement);
   }
-  if (id === 'confirm_implementation_steps') {
-    runSimpleAction('implementation', 'implementation', input.canImplement, {
-      confirmImplementationSteps: true,
+  if (id === 'confirm_exec_steps') {
+    runSimpleAction('exec', 'exec', input.canImplement, {
+      confirmExecSteps: true,
     });
   }
   if (id === 'start_delivery') {

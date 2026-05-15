@@ -3,7 +3,7 @@ export type TaskFlowStageId =
   | 'requirements'
   | 'plan_discussion'
   | 'plan_confirmation'
-  | 'implementation'
+  | 'exec'
   | 'delivery'
   | 'completed';
 
@@ -20,8 +20,8 @@ export type TaskFlowActionId =
   | 'approve_plan'
   | 'request_revision'
   | 'rerun_planner'
-  | 'start_implementation'
-  | 'confirm_implementation_steps'
+  | 'start_exec'
+  | 'confirm_exec_steps'
   | 'resume_failed_stage'
   | 'copy_resume_command'
   | 'manual_complete'
@@ -35,7 +35,7 @@ export type TaskFlowEventType =
   | 'user_feedback'
   | 'plan_revision'
   | 'plan_approved'
-  | 'implementation_steps_approved'
+  | 'exec_steps_approved'
   | 'feedback_round'
   | 'agent_run_started'
   | 'agent_run_succeeded'

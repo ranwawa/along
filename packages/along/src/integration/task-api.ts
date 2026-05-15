@@ -12,8 +12,8 @@ import {
   handleTaskCreateRequest,
   handleTaskDeleteRequest,
   handleTaskDeliveryRequest,
+  handleTaskExecRequest,
   handleTaskGetRequest,
-  handleTaskImplementationRequest,
   handleTaskListRequest,
   handleTaskManualCompleteRequest,
   handleTaskMessageRequest,
@@ -31,7 +31,7 @@ export interface ScheduledTaskPlanningRun {
   runtimeExecutionMode?: TaskRuntimeExecutionMode;
 }
 
-export interface ScheduledTaskImplementationRun {
+export interface ScheduledTaskExecRun {
   taskId: string;
   cwd: string;
   reason: 'manual' | 'autonomous';
@@ -55,7 +55,7 @@ export interface ScheduledTaskTitleSummaryRun {
 export interface TaskApiContext {
   defaultCwd: string;
   schedulePlanner?: (input: ScheduledTaskPlanningRun) => void;
-  scheduleImplementation?: (input: ScheduledTaskImplementationRun) => void;
+  scheduleExec?: (input: ScheduledTaskExecRun) => void;
   scheduleDelivery?: (input: ScheduledTaskDeliveryRun) => void;
   scheduleTitleSummary?: (input: ScheduledTaskTitleSummaryRun) => void;
   resolveRepoPath?: (owner: string, repo: string) => string | undefined;
@@ -78,7 +78,7 @@ const ACTION_ROUTES: Record<string, TaskActionHandler> = {
     handleTaskCompleteRequest(taskId, context),
   delete: (_req, taskId) => handleTaskDeleteRequest(taskId),
   delivery: handleTaskDeliveryRequest,
-  implementation: handleTaskImplementationRequest,
+  exec: handleTaskExecRequest,
   'manual-complete': (req, taskId) =>
     handleTaskManualCompleteRequest(req, taskId),
   messages: handleTaskMessageRequest,

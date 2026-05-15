@@ -1,11 +1,11 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import {
-  continueAutonomousTaskAfterImplementation,
+  continueAutonomousTaskAfterExec,
   continueAutonomousTaskAfterPlanning,
 } from './task-autonomous-continuation';
 
 const planningMocks = vi.hoisted(() => ({
-  approveTaskImplementationSteps: vi.fn(),
+  approveTaskExecSteps: vi.fn(),
   approveCurrentTaskPlan: vi.fn(),
   readTaskPlanningSnapshot: vi.fn(),
 }));
@@ -37,7 +37,7 @@ const mockTaskConstants = vi.hoisted(() => ({
   },
   WORKFLOW_KIND: {
     PLANNING: 'planning',
-    IMPLEMENTATION: 'implementation',
+    EXEC: 'exec',
   },
 }));
 
@@ -46,7 +46,7 @@ vi.mock('../domain/task-planning', () => ({
   TASK_EXECUTION_MODE: mockTaskConstants.TASK_EXECUTION_MODE,
   LIFECYCLE: mockTaskConstants.LIFECYCLE,
   WORKFLOW_KIND: mockTaskConstants.WORKFLOW_KIND,
-  approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
+  approveTaskExecSteps: planningMocks.approveTaskExecSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
 }));
@@ -57,7 +57,7 @@ beforeEach(() => {
     success: true,
     data: plan,
   });
-  planningMocks.approveTaskImplementationSteps.mockReturnValue({
+  planningMocks.approveTaskExecSteps.mockReturnValue({
     success: true,
     data: stepsApproval,
   });
@@ -70,7 +70,7 @@ it('planner 产出 planning_update 时不自动批准', () => {
     taskId: 'task-1',
     cwd: '/tmp/project',
     plannerAction: 'planning_update',
-    scheduleImplementation: (input) => scheduled.push(input),
+    scheduleExec: (input) => scheduled.push(input),
   });
 
   expect(result).toEqual({ success: true, data: 'skipped' });
@@ -89,7 +89,7 @@ it('存在 openRound 时不自动批准 plan', () => {
     taskId: 'task-1',
     cwd: '/tmp/project',
     plannerAction: 'plan_revision',
-    scheduleImplementation: (input) => scheduled.push(input),
+    scheduleExec: (input) => scheduled.push(input),
   });
 
   expect(result).toEqual({ success: true, data: 'skipped' });
@@ -112,7 +112,7 @@ it('已有 prUrl 时不重复调度 delivery', () => {
     }),
   });
 
-  const result = continueAutonomousTaskAfterImplementation({
+  const result = continueAutonomousTaskAfterExec({
     taskId: 'task-1',
     cwd: '/tmp/project',
     scheduleDelivery: (input) => scheduled.push(input),
@@ -141,7 +141,7 @@ const steps = {
   role: 'agent',
   body: '实施步骤',
   metadata: {
-    kind: 'implementation_steps',
+    kind: 'exec_steps',
     planId: 'plan-1',
   },
   createdAt: '2026-01-01T00:00:02.000Z',
@@ -153,9 +153,9 @@ const stepsApproval = {
   threadId: 'thread-1',
   type: 'approval',
   role: 'user',
-  body: 'Approved Implementation Steps for Plan v1',
+  body: 'Approved Exec Steps for Plan v1',
   metadata: {
-    kind: 'implementation_steps_approval',
+    kind: 'exec_steps_approval',
     planId: 'plan-1',
     stepsArtifactId: 'art-steps',
   },

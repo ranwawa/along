@@ -1,13 +1,13 @@
-import { buildAutoCommitFixPrompt } from '../agents/task-implementation';
+import { buildAutoCommitFixPrompt } from '../agents/task-exec';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import { runTaskAgentTurn } from './task-agent-runtime';
 import { runTaskAutoCommit } from './task-auto-commit';
 import type { TaskAutoCommitFailure } from './task-auto-commit-types';
 import type {
-  RunTaskImplementationAgentInput,
-  RunTaskImplementationAgentOutput,
-} from './task-implementation-agent';
+  RunTaskExecAgentInput,
+  RunTaskExecAgentOutput,
+} from './task-exec-agent';
 import {
   readTaskPlanningSnapshot,
   type TaskPlanningSnapshot,
@@ -20,7 +20,7 @@ import type {
 } from './task-worktree';
 
 type AutoCommitAttemptResult =
-  | Result<RunTaskImplementationAgentOutput>
+  | Result<RunTaskExecAgentOutput>
   | {
       success: false;
       error: string;
@@ -47,7 +47,7 @@ function rollbackToPlanningApproved<T>(taskId: string, result: Result<T>) {
 }
 
 async function runAutoCommitFixTurn(input: {
-  taskInput: RunTaskImplementationAgentInput;
+  taskInput: RunTaskExecAgentInput;
   snapshot: TaskPlanningSnapshot;
   approvedPlan: TaskPlanRevisionRecord;
   worktree: PrepareTaskWorktreeOutput;
@@ -88,7 +88,7 @@ async function runAutoCommitFixTurn(input: {
 
 async function runAutoCommitAttempt(
   input: {
-    taskInput: RunTaskImplementationAgentInput;
+    taskInput: RunTaskExecAgentInput;
     approvedPlan: TaskPlanRevisionRecord;
     worktree: PrepareTaskWorktreeOutput;
     commandRunner: TaskWorktreeCommandRunner;
@@ -132,13 +132,13 @@ async function runAutoCommitAttempt(
 }
 
 export async function runAutoCommitLoop(input: {
-  taskInput: RunTaskImplementationAgentInput;
+  taskInput: RunTaskExecAgentInput;
   approvedPlan: TaskPlanRevisionRecord;
   worktree: PrepareTaskWorktreeOutput;
   agentId: string;
   commandRunner: TaskWorktreeCommandRunner;
   assistantText: string;
-}): Promise<Result<RunTaskImplementationAgentOutput>> {
+}): Promise<Result<RunTaskExecAgentOutput>> {
   let assistantText = input.assistantText;
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {

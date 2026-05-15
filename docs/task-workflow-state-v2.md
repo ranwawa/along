@@ -4,7 +4,7 @@
 
 当前 task-workflow-state 存在以下问题：
 - lifecycle 7 个值语义过载（`waiting_user` 覆盖"需补充信息"和"等待批准"两种不同场景，`ready` 承载过多含义）
-- ask 类型与 planning/implementation 生命周期模型不兼容，硬塞进同一个状态机
+- ask 类型与 planning/exec 生命周期模型不兼容，硬塞进同一个状态机
 - workflowState 的 `completed` 在不同 lifecycle 下含义不同
 - 草稿/备忘场景没有归属
 
@@ -190,7 +190,7 @@ failed:
 | exec/implemented | exec.verified | Verification Result | 验证报告 | 用户验收依据 |
 | done(completed) | task.accepted | 完整交付物 | 架构方案 + 详细设计 + 代码 + 验证报告 | 归档 |
 
-> **架构方案 vs 详细设计的边界：** 架构方案回答"要不要这么做"，是 planning 阶段的交付物，需要用户审批。详细设计回答"具体怎么做"，是 implementation 阶段 agent 内部的执行准备，不需要用户审批，不体现为独立状态。
+> **架构方案 vs 详细设计的边界：** 架构方案回答"要不要这么做"，是 planning 阶段的交付物，需要用户审批。详细设计回答"具体怎么做"，是 exec 阶段 agent 内部的执行准备，不需要用户审批，不体现为独立状态。
 
 ---
 
@@ -238,7 +238,7 @@ Session 完成时向 task 状态机发送事件：
 | 维度 | 当前 | 新方案 |
 |------|------|--------|
 | lifecycle 值数 | 7 | 4 |
-| workflowKind | 3 (ask/planning/implementation) | 2 (plan/exec) |
+| workflowKind | 3 (ask/planning/exec) | 2 (plan/exec) |
 | workflowState (plan) | 5 (drafting/waiting_user/awaiting_approval/feedback/planned) | 3 (drafting/awaiting_approval/revising) |
 | workflowState (exec) | 5 (implementing/waiting_user/verifying/completed/failed) | 3 (implementing/verifying/implemented) |
 | 事件数 | 20 | 12 |

@@ -13,7 +13,7 @@ const TASK_BODY_CONTEXT_LIMIT = 4000;
 const PLAN_BODY_CONTEXT_LIMIT = 8000;
 const RECENT_ARTIFACT_COUNT = 30;
 const ARTIFACT_CONTEXT_LIMIT = 2500;
-const BUILDER_IMPLEMENTATION_PROMPT_ID = 'builder-implementation';
+const BUILDER_EXEC_PROMPT_ID = 'builder-exec';
 const BUILDER_TACTICAL_PLAN_PROMPT_ID = 'builder-tactical-plan';
 const AUTO_COMMIT_FIX_PROMPT_ID = 'auto-commit-fix';
 
@@ -23,7 +23,7 @@ function truncateText(value: string, maxLength = DEFAULT_TEXT_LIMIT): string {
   return `${text.slice(0, maxLength)}\n...（内容已截断）`;
 }
 
-function buildImplementationContext(
+function buildExecContext(
   snapshot: TaskPlanningSnapshot,
   approvedPlan: TaskPlanRevisionRecord,
   worktreePath: string,
@@ -55,24 +55,24 @@ function buildImplementationContext(
   };
 }
 
-export function buildImplementationPrompt(
+export function buildExecPrompt(
   snapshot: TaskPlanningSnapshot,
   approvedPlan: TaskPlanRevisionRecord,
   worktreePath: string,
 ): string {
   const template = loadWorkflowNodePrompt({
-    name: BUILDER_IMPLEMENTATION_PROMPT_ID,
+    name: BUILDER_EXEC_PROMPT_ID,
   });
   return renderAgentMarkdownTemplate(template.content, {
     contextJson: JSON.stringify(
-      buildImplementationContext(snapshot, approvedPlan, worktreePath),
+      buildExecContext(snapshot, approvedPlan, worktreePath),
       null,
       2,
     ),
   });
 }
 
-export function buildImplementationStepsPrompt(
+export function buildExecStepsPrompt(
   snapshot: TaskPlanningSnapshot,
   approvedPlan: TaskPlanRevisionRecord,
 ): string {
@@ -81,11 +81,7 @@ export function buildImplementationStepsPrompt(
   });
   return renderAgentMarkdownTemplate(template.content, {
     contextJson: JSON.stringify(
-      buildImplementationContext(
-        snapshot,
-        approvedPlan,
-        snapshot.task.cwd || '',
-      ),
+      buildExecContext(snapshot, approvedPlan, snapshot.task.cwd || ''),
       null,
       2,
     ),

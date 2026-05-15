@@ -1,12 +1,12 @@
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
-  areImplementationStepsApproved,
-  findImplementationStepsArtifact,
-} from '../domain/task-implementation-steps';
+  areExecStepsApproved,
+  findExecStepsArtifact,
+} from '../domain/task-exec-steps';
 import {
   approveCurrentTaskPlan,
-  approveTaskImplementationSteps,
+  approveTaskExecSteps,
   LIFECYCLE,
   PLAN_STATUS,
   readTaskPlanningSnapshot,
@@ -16,17 +16,17 @@ import {
 } from '../domain/task-planning';
 import type {
   ScheduledTaskDeliveryRun,
-  ScheduledTaskImplementationRun,
+  ScheduledTaskExecRun,
 } from './task-api';
 
 export type AutonomousContinuationAction =
   | 'skipped'
   | 'approved_plan'
-  | 'approved_implementation_steps'
+  | 'approved_exec_steps'
   | 'scheduled_delivery';
 
 export interface TaskAutonomousContinuationSchedulers {
-  scheduleImplementation?: (input: ScheduledTaskImplementationRun) => void;
+  scheduleExec?: (input: ScheduledTaskExecRun) => void;
   scheduleDelivery?: (input: ScheduledTaskDeliveryRun) => void;
 }
 
@@ -73,13 +73,13 @@ export function continueAutonomousTaskAfterPlanning(
   ) {
     return success('skipped');
   }
-  if (!input.scheduleImplementation) {
-    return failure('Implementation 调度器未启用，无法自动推进');
+  if (!input.scheduleExec) {
+    return failure('Exec 调度器未启用，无法自动推进');
   }
 
   const approveRes = approveCurrentTaskPlan(input.taskId);
   if (!approveRes.success) return approveRes;
-  input.scheduleImplementation({
+  input.scheduleExec({
     taskId: input.taskId,
     cwd: input.cwd,
     reason: 'autonomous',
@@ -87,7 +87,7 @@ export function continueAutonomousTaskAfterPlanning(
   return success('approved_plan');
 }
 
-export function continueAutonomousTaskAfterImplementation(
+export function continueAutonomousTaskAfterExec(
   input: TaskAutonomousContinuationInput,
 ): Result<AutonomousContinuationAction> {
   const snapshotRes = readRequiredSnapshot(input.taskId);
@@ -97,18 +97,18 @@ export function continueAutonomousTaskAfterImplementation(
   if (!isAutonomous(snapshot)) return success('skipped');
 
   if (snapshot.task.currentWorkflowKind === WORKFLOW_KIND.PLAN) {
-    return continueAfterImplementationSteps(input, snapshot);
+    return continueAfterExecSteps(input, snapshot);
   }
   if (
     snapshot.task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
     snapshot.task.lifecycle === LIFECYCLE.ACTIVE
   ) {
-    return continueAfterImplemented(input, snapshot);
+    return continueAfterExecCompleted(input, snapshot);
   }
   return success('skipped');
 }
 
-function continueAfterImplementationSteps(
+function continueAfterExecSteps(
   input: TaskAutonomousContinuationInput,
   snapshot: TaskPlanningSnapshot,
 ): Result<AutonomousContinuationAction> {
@@ -118,27 +118,27 @@ function continueAfterImplementationSteps(
       plan.status === PLAN_STATUS.APPROVED,
   );
   if (!approvedPlan) return success('skipped');
-  if (!findImplementationStepsArtifact(snapshot, approvedPlan)) {
+  if (!findExecStepsArtifact(snapshot, approvedPlan)) {
     return success('skipped');
   }
-  if (areImplementationStepsApproved(snapshot, approvedPlan)) {
+  if (areExecStepsApproved(snapshot, approvedPlan)) {
     return success('skipped');
   }
-  if (!input.scheduleImplementation) {
-    return failure('Implementation 调度器未启用，无法自动推进');
+  if (!input.scheduleExec) {
+    return failure('Exec 调度器未启用，无法自动推进');
   }
 
-  const approveRes = approveTaskImplementationSteps(input.taskId);
+  const approveRes = approveTaskExecSteps(input.taskId);
   if (!approveRes.success) return approveRes;
-  input.scheduleImplementation({
+  input.scheduleExec({
     taskId: input.taskId,
     cwd: input.cwd,
     reason: 'autonomous',
   });
-  return success('approved_implementation_steps');
+  return success('approved_exec_steps');
 }
 
-function continueAfterImplemented(
+function continueAfterExecCompleted(
   input: TaskAutonomousContinuationInput,
   snapshot: TaskPlanningSnapshot,
 ): Result<AutonomousContinuationAction> {

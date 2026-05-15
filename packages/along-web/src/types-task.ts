@@ -162,7 +162,7 @@ export type TaskAgentProgressPhase =
   | 'failed'
   | 'cancelled';
 
-export type TaskAgentStage = 'planning' | 'implementation' | 'delivery';
+export type TaskAgentStage = 'planning' | 'exec' | 'delivery';
 
 export type TaskAgentStageStatus = 'idle' | TaskAgentRunStatus;
 

@@ -18,7 +18,7 @@ import {
 } from '../domain/task-planning';
 import type {
   ScheduledTaskDeliveryRun,
-  ScheduledTaskImplementationRun,
+  ScheduledTaskExecRun,
   ScheduledTaskPlanningRun,
   TaskApiContext,
 } from './task-api';
@@ -186,7 +186,7 @@ export function readTaskAgentStageField(
   const value = readStringField(payload, key);
   if (
     value === TASK_AGENT_STAGE.PLANNING ||
-    value === TASK_AGENT_STAGE.IMPLEMENTATION ||
+    value === TASK_AGENT_STAGE.EXEC ||
     value === TASK_AGENT_STAGE.DELIVERY
   ) {
     return value;
@@ -295,20 +295,20 @@ export function schedulePlannerIfNeeded(
   return success(true);
 }
 
-export function scheduleImplementationIfNeeded(
+export function scheduleExecIfNeeded(
   payload: UnknownRecord,
   context: TaskApiContext,
   input: Omit<
-    ScheduledTaskImplementationRun,
+    ScheduledTaskExecRun,
     'cwd' | 'agentId' | 'modelId' | 'personalityVersion'
   >,
 ): Result<boolean> {
-  if (!context.scheduleImplementation) return success(false);
+  if (!context.scheduleExec) return success(false);
 
   const cwdRes = resolveTaskCwd(payload, context, input.taskId);
   if (!cwdRes.success) return cwdRes;
 
-  context.scheduleImplementation({
+  context.scheduleExec({
     ...input,
     cwd: cwdRes.data,
     ...readRunnerOptions(payload),

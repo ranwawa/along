@@ -101,7 +101,7 @@ function updateCommitMetadata(
   if (!deliveryRes.success) return deliveryRes;
   return transitionTaskWorkflow({
     taskId: input.snapshot.task.taskId,
-    event: { type: 'implementation.completed' },
+    event: { type: 'exec.completed' },
   });
 }
 
@@ -153,7 +153,7 @@ async function reuseExistingCommit(
     return failAutoCommit({
       step: '没有可提交变更',
       command: 'git status --porcelain',
-      error: 'Implementation agent 完成后未检测到工作区变更或本地 commit。',
+      error: 'Exec agent 完成后未检测到工作区变更或本地 commit。',
       changedFiles,
       autoCommitInput: input,
     });

@@ -58,7 +58,7 @@ describe('TaskRecords', () => {
       type: 'agent_result',
       role: 'agent',
       body: '已完成只读核对，实施步骤如下。',
-      metadata: { agentId: 'implementer', kind: 'implementation_steps' },
+      metadata: { agentId: 'implementer', kind: 'exec_steps' },
     });
     const rawPlannerResult = makeArtifact({
       artifactId: 'raw',
@@ -91,7 +91,7 @@ describe('TaskRecords', () => {
             type: 'agent_result',
             role: 'agent',
             body: '**实施步骤**',
-            metadata: { agentId: 'implementer', kind: 'implementation_steps' },
+            metadata: { agentId: 'implementer', kind: 'exec_steps' },
           }),
         ]}
       />,

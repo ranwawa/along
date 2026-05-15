@@ -18,11 +18,11 @@ import {
 } from './task-attachments';
 import { deriveTaskDisplay, type TaskDisplay } from './task-display-state';
 import {
-  areImplementationStepsApproved,
-  findImplementationStepsApprovalArtifact,
-  findImplementationStepsArtifact,
-  IMPLEMENTATION_STEPS_APPROVAL_KIND,
-} from './task-implementation-steps';
+  areExecStepsApproved,
+  EXEC_STEPS_APPROVAL_KIND,
+  findExecStepsApprovalArtifact,
+  findExecStepsArtifact,
+} from './task-exec-steps';
 import {
   type DomainEvent,
   LIFECYCLE,
@@ -78,7 +78,7 @@ export type TaskWorkspaceMode =
 export const THREAD_PURPOSE = {
   ASK: 'ask',
   PLANNING: 'planning',
-  IMPLEMENTATION: 'implementation',
+  EXEC: 'exec',
 } as const;
 
 export type ThreadPurpose =
@@ -173,7 +173,7 @@ export type TaskAgentProgressPhase =
 
 export const TASK_AGENT_STAGE = {
   PLANNING: 'planning',
-  IMPLEMENTATION: 'implementation',
+  EXEC: 'exec',
   DELIVERY: 'delivery',
 } as const;
 
@@ -345,7 +345,7 @@ export type TaskFlowStageId =
   | 'requirements'
   | 'plan_discussion'
   | 'plan_confirmation'
-  | 'implementation'
+  | 'exec'
   | 'delivery'
   | 'completed';
 
@@ -362,8 +362,8 @@ export type TaskFlowActionId =
   | 'approve_plan'
   | 'request_revision'
   | 'rerun_planner'
-  | 'start_implementation'
-  | 'confirm_implementation_steps'
+  | 'start_exec'
+  | 'confirm_exec_steps'
   | 'resume_failed_stage'
   | 'copy_resume_command'
   | 'manual_complete'
@@ -377,7 +377,7 @@ export type TaskFlowEventType =
   | 'user_feedback'
   | 'plan_revision'
   | 'plan_approved'
-  | 'implementation_steps_approved'
+  | 'exec_steps_approved'
   | 'feedback_round'
   | 'agent_run_started'
   | 'agent_run_succeeded'
@@ -572,7 +572,7 @@ export interface RecordTaskAgentResultInput {
   metadata?: Record<string, unknown>;
 }
 
-export interface RecordTaskImplementationFailureInput {
+export interface RecordTaskExecFailureInput {
   taskId: string;
   error: string;
   agentId?: string;
@@ -1012,7 +1012,7 @@ const TASK_AGENT_STAGE_DEFINITIONS: Array<{
     label: '计划阶段',
   },
   {
-    stage: TASK_AGENT_STAGE.IMPLEMENTATION,
+    stage: TASK_AGENT_STAGE.EXEC,
     agentId: 'implementer',
     label: '实现阶段',
   },
@@ -1048,7 +1048,7 @@ function buildTaskAgentStages(
     const cwd =
       binding?.cwd ||
       fallbackBinding?.cwd ||
-      (definition.stage === TASK_AGENT_STAGE.IMPLEMENTATION
+      (definition.stage === TASK_AGENT_STAGE.EXEC
         ? task.worktreePath || task.cwd
         : task.cwd || task.worktreePath);
 
@@ -1066,7 +1066,7 @@ const TASK_FLOW_STAGE_ORDER: TaskFlowStageId[] = [
   'requirements',
   'plan_discussion',
   'plan_confirmation',
-  'implementation',
+  'exec',
   'delivery',
   'completed',
 ];
@@ -1076,7 +1076,7 @@ const TASK_FLOW_STAGE_LABELS: Record<TaskFlowStageId, string> = {
   requirements: '需求接收',
   plan_discussion: '计划讨论',
   plan_confirmation: '计划确认',
-  implementation: '实现执行',
+  exec: '实现执行',
   delivery: '结果交付',
   completed: '已完成',
 };
@@ -1125,7 +1125,7 @@ function isTaskDelivering(input: {
   );
 }
 
-function isTaskImplementing(input: {
+function isTaskExecing(input: {
   task: TaskItemRecord;
   thread: TaskThreadRecord;
 }): boolean {
@@ -1254,8 +1254,8 @@ function getCurrentTaskFlowStageId(input: {
   if (failedStage?.stage === TASK_AGENT_STAGE.PLANNING) {
     return 'plan_discussion';
   }
-  if (failedStage?.stage === TASK_AGENT_STAGE.IMPLEMENTATION) {
-    return 'implementation';
+  if (failedStage?.stage === TASK_AGENT_STAGE.EXEC) {
+    return 'exec';
   }
   if (failedStage?.stage === TASK_AGENT_STAGE.DELIVERY) {
     return 'delivery';
@@ -1277,14 +1277,14 @@ function getCurrentTaskFlowStageId(input: {
   if (input.thread.status === THREAD_STATUS.AWAITING_APPROVAL) {
     return 'plan_confirmation';
   }
-  if (isTaskImplementing(input)) return 'implementation';
+  if (isTaskExecing(input)) return 'exec';
 
-  const implementationStage = getStageByAgentStage(
+  const execStage = getStageByAgentStage(
     input.agentStages,
-    TASK_AGENT_STAGE.IMPLEMENTATION,
+    TASK_AGENT_STAGE.EXEC,
   );
-  if (implementationStage?.status === AGENT_RUN_STATUS.RUNNING) {
-    return 'implementation';
+  if (execStage?.status === AGENT_RUN_STATUS.RUNNING) {
+    return 'exec';
   }
   if (isTaskImplemented(input.task)) return 'delivery';
   if (isTaskDelivering(input)) return 'delivery';
@@ -1295,7 +1295,7 @@ function getCurrentTaskFlowStageId(input: {
   );
   if (deliveryStage?.status === AGENT_RUN_STATUS.RUNNING) return 'delivery';
   if (isPlanningApproved(input)) {
-    return 'implementation';
+    return 'exec';
   }
   return input.currentPlan ? 'plan_confirmation' : 'plan_discussion';
 }
@@ -1379,10 +1379,10 @@ function buildTaskFlowConclusion(input: {
         ? input.currentPlan
         : null;
     const steps = approvedPlan
-      ? findImplementationStepsArtifact(input, approvedPlan)
+      ? findExecStepsArtifact(input, approvedPlan)
       : undefined;
     const stepsApproved = approvedPlan
-      ? areImplementationStepsApproved(input, approvedPlan)
+      ? areExecStepsApproved(input, approvedPlan)
       : false;
     if (steps && !stepsApproved) {
       return {
@@ -1472,9 +1472,9 @@ function buildTaskFlowActions(input: {
     ];
   }
 
-  const implementationStage = getStageByAgentStage(
+  const execStage = getStageByAgentStage(
     input.agentStages,
-    TASK_AGENT_STAGE.IMPLEMENTATION,
+    TASK_AGENT_STAGE.EXEC,
   );
   const deliveryStage = getStageByAgentStage(
     input.agentStages,
@@ -1492,21 +1492,19 @@ function buildTaskFlowActions(input: {
   const canImplement = Boolean(
     input.thread.approvedPlanId &&
       isPlanningApproved(input) &&
-      implementationStage?.status !== AGENT_RUN_STATUS.RUNNING,
+      execStage?.status !== AGENT_RUN_STATUS.RUNNING,
   );
   const approvedPlan =
     input.currentPlan?.planId === input.thread.approvedPlanId
       ? input.currentPlan
       : null;
-  const implementationSteps = approvedPlan
-    ? findImplementationStepsArtifact(input, approvedPlan)
+  const execSteps = approvedPlan
+    ? findExecStepsArtifact(input, approvedPlan)
     : undefined;
-  const implementationStepsApproved = approvedPlan
-    ? areImplementationStepsApproved(input, approvedPlan)
+  const execStepsApproved = approvedPlan
+    ? areExecStepsApproved(input, approvedPlan)
     : false;
-  const needsImplementationStepsConfirmation = Boolean(
-    implementationSteps && !implementationStepsApproved,
-  );
+  const needsExecStepsConfirmation = Boolean(execSteps && !execStepsApproved);
   const canDeliver = Boolean(
     isTaskImplemented(input.task) &&
       deliveryStage?.status !== AGENT_RUN_STATUS.RUNNING,
@@ -1520,7 +1518,7 @@ function buildTaskFlowActions(input: {
       ? 'plan_discussion'
       : failedStage?.stage === TASK_AGENT_STAGE.DELIVERY
         ? 'delivery'
-        : 'implementation';
+        : 'exec';
 
   return [
     buildTaskFlowAction({
@@ -1573,26 +1571,24 @@ function buildTaskFlowActions(input: {
           : 'secondary',
     }),
     buildTaskFlowAction({
-      id: needsImplementationStepsConfirmation
-        ? 'confirm_implementation_steps'
-        : 'start_implementation',
-      label: needsImplementationStepsConfirmation
+      id: needsExecStepsConfirmation ? 'confirm_exec_steps' : 'start_exec',
+      label: needsExecStepsConfirmation
         ? '确认步骤并开始实现'
-        : implementationStepsApproved
+        : execStepsApproved
           ? '开始实现'
           : '产出实施步骤',
-      description: needsImplementationStepsConfirmation
-        ? '确认 Implementation Agent 输出的实施步骤并开始编码'
-        : implementationStepsApproved
-          ? '按已确认实施步骤启动 Implementation Agent'
-          : '先让 Implementation Agent 产出详细实施步骤',
+      description: needsExecStepsConfirmation
+        ? '确认 Exec Agent 输出的实施步骤并开始编码'
+        : execStepsApproved
+          ? '按已确认实施步骤启动 Exec Agent'
+          : '先让 Exec Agent 产出详细实施步骤',
       enabled: canImplement,
       disabledReason: input.thread.approvedPlanId
-        ? isTaskImplementing(input)
+        ? isTaskExecing(input)
           ? '实现 Agent 正在执行'
           : '当前 Task 状态不能开始实现'
         : '当前没有已批准计划',
-      stage: 'implementation',
+      stage: 'exec',
       variant: 'primary',
     }),
     buildRetryFailedStageAction(failedStage, failedFlowStage),
@@ -1687,11 +1683,8 @@ function getTaskFlowStageSummary(input: {
   const agentStage =
     input.stageId === 'plan_discussion'
       ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.PLANNING)
-      : input.stageId === 'implementation'
-        ? getStageByAgentStage(
-            input.agentStages,
-            TASK_AGENT_STAGE.IMPLEMENTATION,
-          )
+      : input.stageId === 'exec'
+        ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.EXEC)
         : input.stageId === 'delivery'
           ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.DELIVERY)
           : undefined;
@@ -1721,7 +1714,7 @@ function getTaskFlowStageSummary(input: {
         : input.thread.approvedPlanId
           ? '计划已确认'
           : '尚未进入确认';
-    case 'implementation':
+    case 'exec':
       if (isTaskImplemented(input.task)) return '实现已完成';
       if (isPlanningApproved(input)) {
         const approvedPlan =
@@ -1729,10 +1722,10 @@ function getTaskFlowStageSummary(input: {
             ? input.currentPlan
             : null;
         const steps = approvedPlan
-          ? findImplementationStepsArtifact(input, approvedPlan)
+          ? findExecStepsArtifact(input, approvedPlan)
           : undefined;
         const approved = approvedPlan
-          ? areImplementationStepsApproved(input, approvedPlan)
+          ? areExecStepsApproved(input, approvedPlan)
           : false;
         if (steps && !approved) return '等待确认实施步骤';
         if (approved) return '实施步骤已确认';
@@ -1782,20 +1775,20 @@ function buildTaskFlowStageDetails(input: {
   if (input.stageId === 'plan_confirmation' && input.currentPlan) {
     details.push(`当前计划：v${input.currentPlan.version}`);
   }
-  if (input.stageId === 'implementation') {
+  if (input.stageId === 'exec') {
     const stage = getStageByAgentStage(
       input.agentStages,
-      TASK_AGENT_STAGE.IMPLEMENTATION,
+      TASK_AGENT_STAGE.EXEC,
     );
     const approvedPlan =
       input.currentPlan?.planId === input.thread.approvedPlanId
         ? input.currentPlan
         : null;
     const steps = approvedPlan
-      ? findImplementationStepsArtifact(input, approvedPlan)
+      ? findExecStepsArtifact(input, approvedPlan)
       : undefined;
     const approved = approvedPlan
-      ? areImplementationStepsApproved(input, approvedPlan)
+      ? areExecStepsApproved(input, approvedPlan)
       : false;
     if (steps) details.push(`实施步骤：${steps.artifactId}`);
     if (approved) details.push('实施步骤已人工确认');
@@ -1863,8 +1856,7 @@ function buildTaskFlowStages(input: {
       failedStage &&
       ((stageId === 'plan_discussion' &&
         failedStage.stage === TASK_AGENT_STAGE.PLANNING) ||
-        (stageId === 'implementation' &&
-          failedStage.stage === TASK_AGENT_STAGE.IMPLEMENTATION) ||
+        (stageId === 'exec' && failedStage.stage === TASK_AGENT_STAGE.EXEC) ||
         (stageId === 'delivery' &&
           failedStage.stage === TASK_AGENT_STAGE.DELIVERY))
     ) {
@@ -1876,11 +1868,8 @@ function buildTaskFlowStages(input: {
       const runningStage =
         stageId === 'plan_discussion'
           ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.PLANNING)
-          : stageId === 'implementation'
-            ? getStageByAgentStage(
-                input.agentStages,
-                TASK_AGENT_STAGE.IMPLEMENTATION,
-              )
+          : stageId === 'exec'
+            ? getStageByAgentStage(input.agentStages, TASK_AGENT_STAGE.EXEC)
             : stageId === 'delivery'
               ? getStageByAgentStage(
                   input.agentStages,
@@ -1949,11 +1938,11 @@ function buildTaskFlowEvents(input: {
       });
     }
     if (artifact.type === ARTIFACT_TYPE.APPROVAL) {
-      if (artifact.metadata.kind === IMPLEMENTATION_STEPS_APPROVAL_KIND) {
+      if (artifact.metadata.kind === EXEC_STEPS_APPROVAL_KIND) {
         events.push({
           eventId: artifact.artifactId,
-          type: 'implementation_steps_approved',
-          stage: 'implementation',
+          type: 'exec_steps_approved',
+          stage: 'exec',
           title: '实施步骤已确认',
           summary: artifact.body,
           occurredAt: artifact.createdAt,
@@ -2021,7 +2010,7 @@ function buildTaskFlowEvents(input: {
         ? 'plan_discussion'
         : run.agentId === 'delivery'
           ? 'delivery'
-          : 'implementation';
+          : 'exec';
     events.push({
       eventId: `${run.runId}:start`,
       type: 'agent_run_started',
@@ -3304,8 +3293,8 @@ export function recordTaskAgentResult(
   }
 }
 
-export function recordTaskImplementationFailure(
-  input: RecordTaskImplementationFailureInput,
+export function recordTaskExecFailure(
+  input: RecordTaskExecFailureInput,
 ): Result<TaskPlanningSnapshot> {
   const snapshotRes = readTaskPlanningSnapshot(input.taskId);
   if (!snapshotRes.success) return snapshotRes;
@@ -3359,8 +3348,8 @@ export function recordTaskImplementationFailure(
     runId: runRes.data.runId,
     body: `实现启动失败：${input.error}`,
     metadata: {
-      kind: 'implementation_failure',
-      stage: TASK_AGENT_STAGE.IMPLEMENTATION,
+      kind: 'exec_failure',
+      stage: TASK_AGENT_STAGE.EXEC,
       retryable: true,
     },
   });
@@ -3456,7 +3445,7 @@ export function approveCurrentTaskPlan(
   }
 }
 
-export function approveTaskImplementationSteps(
+export function approveTaskExecSteps(
   taskId: string,
 ): Result<TaskArtifactRecord> {
   const snapshotRes = readTaskPlanningSnapshot(taskId);
@@ -3474,10 +3463,10 @@ export function approveTaskImplementationSteps(
   if (!approvedPlan)
     return failure('当前 Task 没有已批准方案，不能确认实施步骤');
 
-  const steps = findImplementationStepsArtifact(snapshot, approvedPlan);
+  const steps = findExecStepsArtifact(snapshot, approvedPlan);
   if (!steps) return failure('当前 Task 还没有可确认的实施步骤');
 
-  const existingApproval = findImplementationStepsApprovalArtifact(
+  const existingApproval = findExecStepsApprovalArtifact(
     snapshot,
     approvedPlan,
   );
@@ -3497,9 +3486,9 @@ export function approveTaskImplementationSteps(
         threadId: snapshot.thread.threadId,
         type: ARTIFACT_TYPE.APPROVAL,
         role: ARTIFACT_ROLE.USER,
-        body: `Approved Implementation Steps for Plan v${approvedPlan.version}`,
+        body: `Approved Exec Steps for Plan v${approvedPlan.version}`,
         metadata: {
-          kind: IMPLEMENTATION_STEPS_APPROVAL_KIND,
+          kind: EXEC_STEPS_APPROVAL_KIND,
           planId: approvedPlan.planId,
           stepsArtifactId: steps.artifactId,
         },
@@ -3933,7 +3922,7 @@ export function completeTaskAgentStageManually(
   const run = runRes.data;
 
   let statusRes: Result<void> = success(undefined);
-  if (input.stage === TASK_AGENT_STAGE.IMPLEMENTATION) {
+  if (input.stage === TASK_AGENT_STAGE.EXEC) {
     statusRes =
       isTaskDelivering({ task: snapshot.task, thread: snapshot.thread }) ||
       isTaskDelivered(snapshot.task)

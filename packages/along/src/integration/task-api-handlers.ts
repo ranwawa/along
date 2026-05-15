@@ -5,12 +5,12 @@ import { failure, success } from '../core/result';
 import { requestTaskAgentCancellation } from '../domain/task-agent-run-lifecycle';
 import type { TaskAttachmentUploadInput } from '../domain/task-attachments';
 import {
-  areImplementationStepsApproved,
-  findImplementationStepsArtifact,
-} from '../domain/task-implementation-steps';
+  areExecStepsApproved,
+  findExecStepsArtifact,
+} from '../domain/task-exec-steps';
 import {
   approveCurrentTaskPlan,
-  approveTaskImplementationSteps,
+  approveTaskExecSteps,
   cancelTaskAgentRun,
   closeTask,
   completeDeliveredTask,
@@ -46,7 +46,7 @@ import {
   readTaskWorkspaceModeField,
   resolveTaskCwd,
   scheduleDeliveryIfNeeded,
-  scheduleImplementationIfNeeded,
+  scheduleExecIfNeeded,
   schedulePlannerIfNeeded,
   type UnknownRecord,
 } from './task-api-utils';
@@ -312,7 +312,7 @@ export async function handleTaskPlannerRequest(
   return jsonResponse({ taskId, scheduled: true }, 202);
 }
 
-export async function handleTaskImplementationRequest(
+export async function handleTaskExecRequest(
   req: Request,
   taskId: string,
   context: TaskApiContext,
@@ -328,21 +328,21 @@ export async function handleTaskImplementationRequest(
   if (!snapshotRes.data.thread.approvedPlanId) {
     return errorResponse('当前 Task 没有已批准方案，不能开始实现', 409);
   }
-  const confirmRes = confirmImplementationStepsIfNeeded(
+  const confirmRes = confirmExecStepsIfNeeded(
     taskId,
     snapshotRes.data,
     bodyRes.data,
   );
   if (!confirmRes.success) return errorResponse(confirmRes.error, 409);
 
-  const scheduledRes = scheduleImplementationIfNeeded(bodyRes.data, context, {
+  const scheduledRes = scheduleExecIfNeeded(bodyRes.data, context, {
     taskId,
     reason: 'manual',
   });
-  return scheduledResponse(taskId, scheduledRes, 'Implementation 调度器未启用');
+  return scheduledResponse(taskId, scheduledRes, 'Exec 调度器未启用');
 }
 
-function confirmImplementationStepsIfNeeded(
+function confirmExecStepsIfNeeded(
   taskId: string,
   snapshot: TaskPlanningSnapshot,
   payload: UnknownRecord,
@@ -352,17 +352,16 @@ function confirmImplementationStepsIfNeeded(
   );
   if (!approvedPlan) return failure('当前 Task 没有已批准方案，不能开始实现');
 
-  const steps = findImplementationStepsArtifact(snapshot, approvedPlan);
-  const stepsApproved = areImplementationStepsApproved(snapshot, approvedPlan);
-  const wantsConfirm =
-    readBooleanField(payload, 'confirmImplementationSteps') === true;
+  const steps = findExecStepsArtifact(snapshot, approvedPlan);
+  const stepsApproved = areExecStepsApproved(snapshot, approvedPlan);
+  const wantsConfirm = readBooleanField(payload, 'confirmExecSteps') === true;
 
   if (!steps && wantsConfirm)
     return failure('当前 Task 还没有可确认的实施步骤');
   if (!steps || stepsApproved) return success(undefined);
   if (!wantsConfirm) return failure('实施步骤已产出，需人工确认后才能开始编码');
 
-  const approveStepsRes = approveTaskImplementationSteps(taskId);
+  const approveStepsRes = approveTaskExecSteps(taskId);
   if (!approveStepsRes.success) return failure(approveStepsRes.error);
   return success(undefined);
 }
@@ -404,7 +403,7 @@ export async function handleTaskManualCompleteRequest(
 
   const stage = readTaskAgentStageField(bodyRes.data, 'stage');
   if (!stage) {
-    return errorResponse('stage 必须是 planning/implementation/delivery', 400);
+    return errorResponse('stage 必须是 planning/exec/delivery', 400);
   }
 
   const completeRes = completeTaskAgentStageManually({

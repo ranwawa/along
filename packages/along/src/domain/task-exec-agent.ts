@@ -1,13 +1,10 @@
-import { buildImplementationPrompt } from '../agents/task-implementation';
+import { buildExecPrompt } from '../agents/task-exec';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import { runTaskAgentTurn } from './task-agent-runtime';
-import { runAutoCommitLoop } from './task-implementation-auto-commit-loop';
-import { runImplementationStepsTurn } from './task-implementation-step-runner';
-import {
-  areImplementationStepsApproved,
-  findImplementationStepsArtifact,
-} from './task-implementation-steps';
+import { runAutoCommitLoop } from './task-exec-auto-commit-loop';
+import { runExecStepsTurn } from './task-exec-step-runner';
+import { areExecStepsApproved, findExecStepsArtifact } from './task-exec-steps';
 import {
   LIFECYCLE,
   PLAN_STATUS,
@@ -24,7 +21,7 @@ import {
   type TaskWorktreeCommandRunner,
 } from './task-worktree';
 
-export interface RunTaskImplementationAgentInput {
+export interface RunTaskExecAgentInput {
   taskId: string;
   agentId?: string;
   cwd: string;
@@ -34,20 +31,20 @@ export interface RunTaskImplementationAgentInput {
   readDefaultBranch?: (repoPath: string) => Promise<Result<string>>;
 }
 
-export interface RunTaskImplementationAgentOutput {
+export interface RunTaskExecAgentOutput {
   snapshot: TaskPlanningSnapshot;
   approvedPlan: TaskPlanRevisionRecord;
   assistantText: string;
   commitShas: string[];
 }
 
-interface PreparedImplementationRun {
+interface PreparedExecRun {
   snapshot: TaskPlanningSnapshot;
   approvedPlan: TaskPlanRevisionRecord;
   worktree: PrepareTaskWorktreeOutput;
 }
 
-interface ApprovedImplementationContext {
+interface ApprovedExecContext {
   snapshot: TaskPlanningSnapshot;
   approvedPlan: TaskPlanRevisionRecord;
 }
@@ -83,8 +80,8 @@ function rollbackToPlanningApproved<T>(taskId: string, result: Result<T>) {
   return rollbackRes.success ? result : failure<T>(rollbackRes.error);
 }
 
-async function runImplementationTurn(input: {
-  taskInput: RunTaskImplementationAgentInput;
+async function runExecTurn(input: {
+  taskInput: RunTaskExecAgentInput;
   snapshot: TaskPlanningSnapshot;
   approvedPlan: TaskPlanRevisionRecord;
   worktree: PrepareTaskWorktreeOutput;
@@ -94,7 +91,7 @@ async function runImplementationTurn(input: {
     taskId: input.taskInput.taskId,
     threadId: input.snapshot.thread.threadId,
     agentId: input.agentId,
-    prompt: buildImplementationPrompt(
+    prompt: buildExecPrompt(
       input.snapshot,
       input.approvedPlan,
       input.worktree.worktreePath,
@@ -114,16 +111,16 @@ async function runImplementationTurn(input: {
   });
 }
 
-async function prepareImplementationRun(
-  input: RunTaskImplementationAgentInput,
+async function prepareExecRun(
+  input: RunTaskExecAgentInput,
   commandRunner: TaskWorktreeCommandRunner,
-): Promise<Result<PreparedImplementationRun>> {
-  const contextRes = readApprovedImplementationContext(input.taskId);
+): Promise<Result<PreparedExecRun>> {
+  const contextRes = readApprovedExecContext(input.taskId);
   if (!contextRes.success) return failure(contextRes.error);
   const { snapshot, approvedPlan } = contextRes.data;
 
-  if (!areImplementationStepsApproved(snapshot, approvedPlan)) {
-    const steps = findImplementationStepsArtifact(snapshot, approvedPlan);
+  if (!areExecStepsApproved(snapshot, approvedPlan)) {
+    const steps = findExecStepsArtifact(snapshot, approvedPlan);
     return failure(
       steps
         ? '实施步骤已产出，等待人工确认后才能开始编码'
@@ -141,16 +138,14 @@ async function prepareImplementationRun(
 
   const startedRes = transitionTaskWorkflow({
     taskId: input.taskId,
-    event: { type: 'implementation.started' },
+    event: { type: 'exec.started' },
   });
   if (!startedRes.success) return failure(startedRes.error);
 
   return success({ snapshot, approvedPlan, worktree: worktreeRes.data });
 }
 
-function readApprovedImplementationContext(
-  taskId: string,
-): Result<ApprovedImplementationContext> {
+function readApprovedExecContext(taskId: string): Result<ApprovedExecContext> {
   const snapshotRes = readTaskPlanningSnapshot(taskId);
   if (!snapshotRes.success) return failure(snapshotRes.error);
   const snapshot = snapshotRes.data;
@@ -171,16 +166,16 @@ function readApprovedImplementationContext(
   return success({ snapshot, approvedPlan });
 }
 
-async function runInitialImplementationStepsIfNeeded(
-  input: RunTaskImplementationAgentInput,
-  context: ApprovedImplementationContext,
+async function runInitialExecStepsIfNeeded(
+  input: RunTaskExecAgentInput,
+  context: ApprovedExecContext,
   agentId: string,
-): Promise<Result<RunTaskImplementationAgentOutput | null>> {
-  if (findImplementationStepsArtifact(context.snapshot, context.approvedPlan)) {
+): Promise<Result<RunTaskExecAgentOutput | null>> {
+  if (findExecStepsArtifact(context.snapshot, context.approvedPlan)) {
     return success(null);
   }
 
-  const stepsResult = await runImplementationStepsTurn({
+  const stepsResult = await runExecStepsTurn({
     taskInput: input,
     snapshot: context.snapshot,
     approvedPlan: context.approvedPlan,
@@ -200,18 +195,15 @@ async function runInitialImplementationStepsIfNeeded(
   });
 }
 
-async function runConfirmedImplementation(input: {
-  taskInput: RunTaskImplementationAgentInput;
+async function runConfirmedExec(input: {
+  taskInput: RunTaskExecAgentInput;
   agentId: string;
   commandRunner: TaskWorktreeCommandRunner;
-}): Promise<Result<RunTaskImplementationAgentOutput>> {
-  const prepared = await prepareImplementationRun(
-    input.taskInput,
-    input.commandRunner,
-  );
+}): Promise<Result<RunTaskExecAgentOutput>> {
+  const prepared = await prepareExecRun(input.taskInput, input.commandRunner);
   if (!prepared.success) return prepared;
 
-  const result = await runImplementationTurn({
+  const result = await runExecTurn({
     taskInput: input.taskInput,
     snapshot: prepared.data.snapshot,
     approvedPlan: prepared.data.approvedPlan,
@@ -225,7 +217,7 @@ async function runConfirmedImplementation(input: {
   if (result.data.run.status === 'cancelled') {
     return rollbackToPlanningApproved(
       input.taskInput.taskId,
-      failure('Implementation Agent Run 已取消'),
+      failure('Exec Agent Run 已取消'),
     );
   }
 
@@ -239,15 +231,15 @@ async function runConfirmedImplementation(input: {
   });
 }
 
-export async function runTaskImplementationAgent(
-  input: RunTaskImplementationAgentInput,
-): Promise<Result<RunTaskImplementationAgentOutput>> {
+export async function runTaskExecAgent(
+  input: RunTaskExecAgentInput,
+): Promise<Result<RunTaskExecAgentOutput>> {
   const commandRunner = input.commandRunner || defaultTaskWorktreeCommandRunner;
-  const context = readApprovedImplementationContext(input.taskId);
+  const context = readApprovedExecContext(input.taskId);
   if (!context.success) return context;
 
   const agentId = input.agentId || 'implementer';
-  const stepsResult = await runInitialImplementationStepsIfNeeded(
+  const stepsResult = await runInitialExecStepsIfNeeded(
     input,
     context.data,
     agentId,
@@ -255,7 +247,7 @@ export async function runTaskImplementationAgent(
   if (!stepsResult.success) return stepsResult;
   if (stepsResult.data) return success(stepsResult.data);
 
-  return runConfirmedImplementation({
+  return runConfirmedExec({
     taskInput: input,
     agentId,
     commandRunner,

@@ -9,7 +9,7 @@ import type {
   CompleteTaskResponse,
   DeliveryRunResponse,
   DraftTaskInput,
-  ImplementationRunResponse,
+  ExecRunResponse,
   PlannerRunResponse,
   RepositoryOption,
 } from './api';
@@ -17,7 +17,7 @@ import type {
 export type SimpleActionResponse =
   | ApproveTaskPlanResponse
   | PlannerRunResponse
-  | ImplementationRunResponse
+  | ExecRunResponse
   | DeliveryRunResponse
   | CompleteTaskResponse
   | CloseTaskResponse;

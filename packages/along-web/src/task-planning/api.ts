@@ -27,7 +27,7 @@ export interface PlannerRunResponse {
   scheduled: boolean;
 }
 
-export interface ImplementationRunResponse {
+export interface ExecRunResponse {
   taskId: string;
   scheduled: boolean;
 }

@@ -23,7 +23,7 @@ function makeTask(): TaskPlanningSnapshot['task'] {
     body: '把辅助信息放到弹框里。',
     source: 'test',
     status: 'implementing',
-    currentWorkflowKind: 'implementation',
+    currentWorkflowKind: 'exec',
     commitShas: [],
     executionMode: 'manual',
     workspaceMode: 'worktree',
@@ -36,7 +36,7 @@ function makeThread(): TaskPlanningSnapshot['thread'] {
   return {
     threadId: 'thread-1',
     taskId: 'task-1',
-    purpose: 'implementation',
+    purpose: 'exec',
     status: 'implementing',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:05:00.000Z',
@@ -85,7 +85,7 @@ function makeSnapshot(
     ],
     agentStages: [],
     flow: {
-      currentStageId: 'implementation',
+      currentStageId: 'exec',
       conclusion: '实现阶段正在执行。',
       severity: 'normal',
       blockers: [],
@@ -95,7 +95,7 @@ function makeSnapshot(
         {
           eventId: 'flow-event-1',
           type: 'agent_run_started',
-          stage: 'implementation',
+          stage: 'exec',
           title: '进入实现阶段',
           summary: 'Builder 开始实施。',
           occurredAt: '2026-01-01T00:03:00.000Z',
@@ -238,7 +238,7 @@ describe('TaskDetail layout', () => {
       makeSnapshot({
         agentStages: [
           {
-            stage: 'implementation',
+            stage: 'exec',
             agentId: 'implementer',
             label: '实现阶段',
             status: 'failed',
@@ -258,7 +258,7 @@ describe('TaskDetail layout', () => {
           },
         ],
         flow: {
-          currentStageId: 'implementation',
+          currentStageId: 'exec',
           conclusion: '实现阶段失败。',
           severity: 'blocked',
           blockers: [],
@@ -269,7 +269,7 @@ describe('TaskDetail layout', () => {
               label: '重试',
               description: '恢复失败会话并重试实现阶段',
               enabled: true,
-              stage: 'implementation',
+              stage: 'exec',
               variant: 'primary',
             },
           ],

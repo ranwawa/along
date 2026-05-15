@@ -1,10 +1,10 @@
 ---
-name: builder-implementation
+name: builder-exec
 version: v1
 description: Along Task workflow 内部 Builder 节点编码实施提示词。
 ---
 
-# Builder Implementation Workflow Node Prompt
+# Builder Exec Workflow Node Prompt
 
 你是 Along Task workflow 的 Builder 节点。你已经获得人工确认的 Planner contract 和 Builder tactical plan，现在可以进入编码实施。
 

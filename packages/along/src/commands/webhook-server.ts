@@ -9,7 +9,7 @@ import { Command } from 'commander';
 import { consola } from 'consola';
 import { config } from '../core/config';
 import { runTaskDelivery } from '../domain/task-delivery';
-import { runTaskImplementationAgent } from '../domain/task-implementation-agent';
+import { runTaskExecAgent } from '../domain/task-exec-agent';
 import { recoverInterruptedTaskAgentRuns } from '../domain/task-planning';
 import { runTaskPlanningAgent } from '../domain/task-planning-agent';
 import { runTaskTitleSummary } from '../domain/task-title-summary';
@@ -21,12 +21,12 @@ import {
   handleTaskApiRequest,
   isTaskApiPath,
   type ScheduledTaskDeliveryRun,
-  type ScheduledTaskImplementationRun,
+  type ScheduledTaskExecRun,
   type ScheduledTaskPlanningRun,
   type ScheduledTaskTitleSummaryRun,
 } from '../integration/task-api';
 import {
-  continueAutonomousTaskAfterImplementation,
+  continueAutonomousTaskAfterExec,
   continueAutonomousTaskAfterPlanning,
 } from '../integration/task-autonomous-continuation';
 import {
@@ -221,7 +221,7 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
         taskId: input.taskId,
         cwd: input.cwd,
         plannerAction: result.data.action,
-        scheduleImplementation: enqueueTaskImplementationRun,
+        scheduleExec: enqueueTaskExecRun,
       });
       if (!continuation.success) {
         logger.error(
@@ -232,33 +232,29 @@ function enqueueTaskPlanningRun(input: ScheduledTaskPlanningRun) {
   });
 }
 
-function enqueueTaskImplementationRun(input: ScheduledTaskImplementationRun) {
-  enqueueAgent(`Task ${input.taskId} implementation`, async () => {
+function enqueueTaskExecRun(input: ScheduledTaskExecRun) {
+  enqueueAgent(`Task ${input.taskId} exec`, async () => {
     await withTaskLock(input.taskId, async () => {
-      logger.info(
-        `[Task ${input.taskId}] implementation 开始: ${input.reason}`,
-      );
-      const result = await runTaskImplementationAgent(input);
+      logger.info(`[Task ${input.taskId}] exec 开始: ${input.reason}`);
+      const result = await runTaskExecAgent(input);
       if (!result.success) {
         if (isTaskAgentCancellationError(result.error)) {
-          logger.info(`[Task ${input.taskId}] implementation 已中断`);
+          logger.info(`[Task ${input.taskId}] exec 已中断`);
           return;
         }
-        logger.error(
-          `[Task ${input.taskId}] implementation 失败: ${result.error}`,
-        );
+        logger.error(`[Task ${input.taskId}] exec 失败: ${result.error}`);
         return;
       }
-      logger.info(`[Task ${input.taskId}] implementation 完成`);
-      const continuation = continueAutonomousTaskAfterImplementation({
+      logger.info(`[Task ${input.taskId}] exec 完成`);
+      const continuation = continueAutonomousTaskAfterExec({
         taskId: input.taskId,
         cwd: input.cwd,
-        scheduleImplementation: enqueueTaskImplementationRun,
+        scheduleExec: enqueueTaskExecRun,
         scheduleDelivery: enqueueTaskDeliveryRun,
       });
       if (!continuation.success) {
         logger.error(
-          `[Task ${input.taskId}] autonomous implementation 推进失败: ${continuation.error}`,
+          `[Task ${input.taskId}] autonomous exec 推进失败: ${continuation.error}`,
         );
       }
     });
@@ -363,7 +359,7 @@ async function main() {
           resolveRepoPath: (owner, repo) => registry.resolve(owner, repo),
           resolveRepositoryForPath,
           schedulePlanner: enqueueTaskPlanningRun,
-          scheduleImplementation: enqueueTaskImplementationRun,
+          scheduleExec: enqueueTaskExecRun,
           scheduleDelivery: enqueueTaskDeliveryRun,
           scheduleTitleSummary: runScheduledTaskTitleSummary,
         });

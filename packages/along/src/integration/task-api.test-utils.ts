@@ -15,7 +15,7 @@ export const TEST_TASK_LIFECYCLE = {
 } as const;
 
 export const TEST_WORKFLOW_KIND = {
-  IMPLEMENTATION: 'implementation',
+  EXEC: 'exec',
   PLANNING: 'planning',
 } as const;
 
@@ -33,7 +33,7 @@ export const TEST_PLAN_STATUS = {
 } as const;
 
 export type PlanningMocks = {
-  approveTaskImplementationSteps: PlanningMock;
+  approveTaskExecSteps: PlanningMock;
   approveCurrentTaskPlan: PlanningMock;
   cancelTaskAgentRun: PlanningMock;
   closeTask: PlanningMock;
@@ -84,7 +84,7 @@ export function resetPlanningMocks(planningMocks: PlanningMocks) {
   mockTaskAgentCancellation(planningMocks);
   mockPlanApproval(planningMocks);
   mockTaskClose(planningMocks);
-  mockImplementationStepsApproval(planningMocks);
+  mockExecStepsApproval(planningMocks);
   mockManualComplete(planningMocks);
   mockDeliveredComplete(planningMocks);
 }
@@ -111,8 +111,8 @@ function mockTaskAgentCancellation(planningMocks: PlanningMocks) {
   });
 }
 
-function mockImplementationStepsApproval(planningMocks: PlanningMocks) {
-  planningMocks.approveTaskImplementationSteps.mockReturnValue({
+function mockExecStepsApproval(planningMocks: PlanningMocks) {
+  planningMocks.approveTaskExecSteps.mockReturnValue({
     success: true,
     data: {
       artifactId: 'art-steps-approval',
@@ -120,9 +120,9 @@ function mockImplementationStepsApproval(planningMocks: PlanningMocks) {
       threadId: 'thread-1',
       type: 'approval',
       role: 'user',
-      body: 'Approved Implementation Steps for Plan v1',
+      body: 'Approved Exec Steps for Plan v1',
       metadata: {
-        kind: 'implementation_steps_approval',
+        kind: 'exec_steps_approval',
         planId: 'plan-1',
         stepsArtifactId: 'art-steps',
       },

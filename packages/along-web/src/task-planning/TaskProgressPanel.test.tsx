@@ -44,7 +44,7 @@ function makeSnapshot(
     agentSessionEvents: [],
     agentStages: [],
     flow: {
-      currentStageId: 'implementation',
+      currentStageId: 'exec',
       conclusion: '实现阶段正在执行。',
       severity: 'normal',
       stages: [],

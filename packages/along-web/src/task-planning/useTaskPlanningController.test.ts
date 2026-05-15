@@ -7,10 +7,9 @@ function makeActionReader(enabledIds: TaskFlowActionId[]) {
 }
 
 describe('getFlowFlags', () => {
-  it('当只有确认实施步骤操作可用时，期望允许触发 implementation API', () => {
+  it('当只有确认实施步骤操作可用时，期望允许触发 exec API', () => {
     expect(
-      getFlowFlags(makeActionReader(['confirm_implementation_steps']))
-        .canImplement,
+      getFlowFlags(makeActionReader(['confirm_exec_steps'])).canImplement,
     ).toBe(true);
   });
 });

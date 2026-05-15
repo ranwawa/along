@@ -10,7 +10,7 @@ import {
 } from './task-api.test-utils';
 
 const planningMocks: PlanningMocks = vi.hoisted(() => ({
-  approveTaskImplementationSteps: vi.fn(),
+  approveTaskExecSteps: vi.fn(),
   approveCurrentTaskPlan: vi.fn(),
   cancelTaskAgentRun: vi.fn(),
   closeTask: vi.fn(),
@@ -48,7 +48,7 @@ vi.mock('../domain/task-planning', () => ({
   },
   TASK_AGENT_STAGE: {
     PLANNING: 'planning',
-    IMPLEMENTATION: 'implementation',
+    EXEC: 'exec',
     DELIVERY: 'delivery',
   },
   LIFECYCLE: {
@@ -58,10 +58,10 @@ vi.mock('../domain/task-planning', () => ({
     READY: 'ready',
   },
   WORKFLOW_KIND: {
-    IMPLEMENTATION: 'implementation',
+    EXEC: 'exec',
     PLANNING: 'planning',
   },
-  approveTaskImplementationSteps: planningMocks.approveTaskImplementationSteps,
+  approveTaskExecSteps: planningMocks.approveTaskExecSteps,
   approveCurrentTaskPlan: planningMocks.approveCurrentTaskPlan,
   cancelTaskAgentRun: planningMocks.cancelTaskAgentRun,
   closeTask: planningMocks.closeTask,
@@ -465,7 +465,7 @@ it('当批准 Task Plan 时，期望不再调度 planner', async () => {
 it('当人工标记实现阶段已处理时，期望返回更新后的 snapshot', async () => {
   const response = await handleTaskApiRequest(
     jsonRequest('/api/tasks/task-1/manual-complete', {
-      stage: 'implementation',
+      stage: 'exec',
       message: '已在 Runtime 中完成验证。',
     }),
     new URL('http://localhost/api/tasks/task-1/manual-complete'),
@@ -480,7 +480,7 @@ it('当人工标记实现阶段已处理时，期望返回更新后的 snapshot'
   expect(payload.taskId).toBe('task-1');
   expect(planningMocks.completeTaskAgentStageManually).toHaveBeenCalledWith({
     taskId: 'task-1',
-    stage: 'implementation',
+    stage: 'exec',
     message: '已在 Runtime 中完成验证。',
     prUrl: undefined,
     prNumber: undefined,

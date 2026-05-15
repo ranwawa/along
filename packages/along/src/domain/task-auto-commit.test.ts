@@ -24,7 +24,7 @@ const mockTaskConstants = vi.hoisted(() => ({
     PLANNING: 'planning',
   },
   WORKFLOW_KIND: {
-    IMPLEMENTATION: 'implementation',
+    EXEC: 'exec',
   },
 }));
 
@@ -141,7 +141,7 @@ describe('task-auto-commit', () => {
     });
     expect(planningMocks.transitionTaskWorkflow).toHaveBeenCalledWith({
       taskId: 'task-1',
-      event: { type: 'implementation.completed' },
+      event: { type: 'exec.completed' },
     });
   });
 

@@ -4,10 +4,9 @@ import type {
   TaskPlanRevisionRecord,
 } from './task-planning';
 
-export const IMPLEMENTATION_STEPS_KIND = 'implementation_steps';
+export const EXEC_STEPS_KIND = 'exec_steps';
 export const BUILDER_TACTICAL_PLAN_ROLE = 'builder_tactical_plan';
-export const IMPLEMENTATION_STEPS_APPROVAL_KIND =
-  'implementation_steps_approval';
+export const EXEC_STEPS_APPROVAL_KIND = 'exec_steps_approval';
 
 function matchesPlan(
   artifact: TaskArtifactRecord,
@@ -16,7 +15,7 @@ function matchesPlan(
   return artifact.metadata.planId === approvedPlan.planId;
 }
 
-export function findImplementationStepsArtifact(
+export function findExecStepsArtifact(
   snapshot: Pick<TaskPlanningSnapshot, 'artifacts'>,
   approvedPlan: TaskPlanRevisionRecord,
 ): TaskArtifactRecord | undefined {
@@ -24,13 +23,13 @@ export function findImplementationStepsArtifact(
     .filter(
       (artifact) =>
         artifact.type === 'agent_result' &&
-        artifact.metadata.kind === IMPLEMENTATION_STEPS_KIND &&
+        artifact.metadata.kind === EXEC_STEPS_KIND &&
         matchesPlan(artifact, approvedPlan),
     )
     .at(-1);
 }
 
-export function findImplementationStepsApprovalArtifact(
+export function findExecStepsApprovalArtifact(
   snapshot: Pick<TaskPlanningSnapshot, 'artifacts'>,
   approvedPlan: TaskPlanRevisionRecord,
 ): TaskArtifactRecord | undefined {
@@ -38,21 +37,18 @@ export function findImplementationStepsApprovalArtifact(
     .filter(
       (artifact) =>
         artifact.type === 'approval' &&
-        artifact.metadata.kind === IMPLEMENTATION_STEPS_APPROVAL_KIND &&
+        artifact.metadata.kind === EXEC_STEPS_APPROVAL_KIND &&
         matchesPlan(artifact, approvedPlan),
     )
     .at(-1);
 }
 
-export function areImplementationStepsApproved(
+export function areExecStepsApproved(
   snapshot: Pick<TaskPlanningSnapshot, 'artifacts'>,
   approvedPlan: TaskPlanRevisionRecord,
 ): boolean {
-  const steps = findImplementationStepsArtifact(snapshot, approvedPlan);
-  const approval = findImplementationStepsApprovalArtifact(
-    snapshot,
-    approvedPlan,
-  );
+  const steps = findExecStepsArtifact(snapshot, approvedPlan);
+  const approval = findExecStepsApprovalArtifact(snapshot, approvedPlan);
   return Boolean(
     steps && approval && approval.metadata.stepsArtifactId === steps.artifactId,
   );
