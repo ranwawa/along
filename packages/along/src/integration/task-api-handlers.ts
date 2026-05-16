@@ -72,7 +72,6 @@ export async function handleTaskCreateRequest(
   );
   if (!createRes.success)
     return errorResponse(createRes.error, HTTP_BAD_REQUEST);
-
   scheduleTitleSummary(context, {
     taskId: createRes.data.task.taskId,
     body: taskBody,
