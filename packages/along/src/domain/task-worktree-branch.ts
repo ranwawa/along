@@ -3,6 +3,7 @@ import type { TaskWorktreeCommandRunner } from './task-worktree-types';
 const BRANCH_SLUG_MAX_LENGTH = 36;
 const BRANCH_TASK_ID_SUFFIX_LENGTH = 8;
 const BRANCH_MAX_RETRY_COUNT = 20;
+const BASE36_RADIX = 36;
 
 function slugifyTitle(title: string): string {
   const slug = title
@@ -62,5 +63,5 @@ export async function generateTaskBranchName(
     if (!(await branchExists(runner, repoPath, candidate))) return candidate;
   }
 
-  return `${base}-${Date.now().toString(36)}`;
+  return `${base}-${Date.now().toString(BASE36_RADIX)}`;
 }

@@ -12,6 +12,9 @@ const LABELS = {
   openaiCompatible: 'openai-compatible',
   anthropic: 'anthropic',
   custom: 'custom',
+  colId: 'ID',
+  colKind: 'Kind',
+  colBaseUrl: 'Base URL',
 } as const;
 
 function ProviderRow({
@@ -76,9 +79,9 @@ export function ProviderRows({
       onAdd={onAdd}
     >
       <div className="hidden md:grid grid-cols-[150px_170px_minmax(0,1fr)_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
-        <span>ID</span>
-        <span>Kind</span>
-        <span>Base URL</span>
+        <span>{LABELS.colId}</span>
+        <span>{LABELS.colKind}</span>
+        <span>{LABELS.colBaseUrl}</span>
         <span />
       </div>
       <div className="divide-y divide-white/5">

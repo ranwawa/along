@@ -18,6 +18,11 @@ const LABELS = {
   showToken: '查看 token 明文',
   hide: '隐藏',
   show: '查看',
+  colId: 'ID',
+  colProvider: 'Provider',
+  colModelName: 'Model Name',
+  colToken: 'Token',
+  colTokenEnv: 'Token Env',
 } as const;
 
 function TokenInput({
@@ -160,11 +165,11 @@ export function ModelRows({
       onAdd={onAdd}
     >
       <div className="hidden md:grid grid-cols-[150px_170px_minmax(0,1fr)_minmax(0,1fr)_180px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
-        <span>ID</span>
-        <span>Provider</span>
-        <span>Model Name</span>
-        <span>Token</span>
-        <span>Token Env</span>
+        <span>{LABELS.colId}</span>
+        <span>{LABELS.colProvider}</span>
+        <span>{LABELS.colModelName}</span>
+        <span>{LABELS.colToken}</span>
+        <span>{LABELS.colTokenEnv}</span>
         <span />
       </div>
       <div className="divide-y divide-white/5">

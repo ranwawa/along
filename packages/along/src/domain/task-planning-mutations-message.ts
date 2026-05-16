@@ -17,6 +17,7 @@ import {
   mapTask,
   type TaskFeedbackRoundRow,
   type TaskItemRow,
+  type TaskThreadRow,
 } from './task-planning-db';
 import { generateId, parseStringArray } from './task-planning-db-utils';
 import { hasDeliveryResult } from './task-planning-flow';
@@ -97,15 +98,6 @@ function appendToRound(
   };
 }
 
-type ThreadRow = {
-  task_id: string;
-  thread_id: string;
-  current_plan_id: string | null;
-  open_round_id: string | null;
-  purpose: string;
-  status: string;
-};
-
 type PreparedAttachments =
   ReturnType<typeof prepareTaskImageAttachments> extends {
     success: true;
@@ -115,7 +107,7 @@ type PreparedAttachments =
     : never;
 
 function insertMessageArtifact(
-  thread: ThreadRow,
+  thread: TaskThreadRow,
   body: string,
   input: SubmitTaskMessageInput,
   preparedAttachments: PreparedAttachments,
@@ -153,7 +145,7 @@ function insertMessageArtifact(
 
 function handleNoPlanThread(
   db: Database,
-  thread: ThreadRow,
+  thread: TaskThreadRow,
   now: string,
 ): { artifact: null; round: null } {
   if (thread.purpose === THREAD_PURPOSE.CHAT) {
@@ -174,7 +166,7 @@ function handleNoPlanThread(
 
 function handlePlanThread(
   db: Database,
-  thread: ThreadRow,
+  thread: TaskThreadRow,
   artifactId: string,
   now: string,
 ): TaskFeedbackRoundRecord {
@@ -205,7 +197,7 @@ function handlePlanThread(
 
 function runSubmitMessageTxn(
   db: Database,
-  thread: ThreadRow,
+  thread: TaskThreadRow,
   body: string,
   input: SubmitTaskMessageInput,
   preparedAttachments: PreparedAttachments,
@@ -226,48 +218,9 @@ function runSubmitMessageTxn(
   return { artifact, round };
 }
 
-function validateMessageInput(
-  db: ReturnType<typeof getDb> extends { success: true; data: infer D }
-    ? D
-    : never,
-  input: SubmitTaskMessageInput,
-  thread: ThreadRow,
-): Result<void> {
-  const taskRow = db
-    .prepare('SELECT * FROM task_items WHERE task_id = ?')
-    .get(input.taskId) as TaskItemRow | null;
-  if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
-  const task = mapTask(taskRow);
-  if (task.lifecycle === LIFECYCLE.DONE)
-    return failure('Task 已关闭，不能继续讨论');
-  if (thread.status === THREAD_STATUS.APPROVED && !hasDeliveryResult(task))
-    return failure('当前 Planning 已批准，不能继续提交反馈');
-  return success(undefined);
-}
-
-function prepareMessageAttachments(
-  db: ReturnType<typeof getDb> extends { success: true; data: infer D }
-    ? D
-    : never,
-  input: SubmitTaskMessageInput,
-  thread: ThreadRow,
-) {
-  const taskRow = db
-    .prepare('SELECT * FROM task_items WHERE task_id = ?')
-    .get(input.taskId) as TaskItemRow | null;
-  return prepareTaskImageAttachments({
-    task: {
-      taskId: thread.task_id,
-      repoOwner: taskRow?.repo_owner || undefined,
-      repoName: taskRow?.repo_name || undefined,
-    },
-    uploads: input.attachments,
-  });
-}
-
 function execSubmitMessageTxn(
   db: Database,
-  thread: ThreadRow,
+  thread: TaskThreadRow,
   body: string,
   input: SubmitTaskMessageInput,
   preparedAttachments: PreparedAttachments,
@@ -295,7 +248,7 @@ function execSubmitMessageTxn(
 
 function runSubmitMessage(
   db: Database,
-  thread: ThreadRow,
+  thread: TaskThreadRow,
   body: string,
   input: SubmitTaskMessageInput,
   preparedAttachments: PreparedAttachments,
@@ -339,10 +292,24 @@ export function submitTaskMessage(input: SubmitTaskMessageInput): Result<{
   if (!thread)
     return failure(`Task 不存在或缺少 active thread: ${input.taskId}`);
 
-  const validRes = validateMessageInput(db, input, thread);
-  if (!validRes.success) return validRes;
+  const taskRow = db
+    .prepare('SELECT * FROM task_items WHERE task_id = ?')
+    .get(input.taskId) as TaskItemRow | null;
+  if (!taskRow) return failure(`Task 不存在: ${input.taskId}`);
+  const task = mapTask(taskRow);
+  if (task.lifecycle === LIFECYCLE.DONE)
+    return failure('Task 已关闭，不能继续讨论');
+  if (thread.status === THREAD_STATUS.APPROVED && !hasDeliveryResult(task))
+    return failure('当前 Planning 已批准，不能继续提交反馈');
 
-  const preparedAttachmentsRes = prepareMessageAttachments(db, input, thread);
+  const preparedAttachmentsRes = prepareTaskImageAttachments({
+    task: {
+      taskId: thread.task_id,
+      repoOwner: taskRow.repo_owner || undefined,
+      repoName: taskRow.repo_name || undefined,
+    },
+    uploads: input.attachments,
+  });
   if (!preparedAttachmentsRes.success) return preparedAttachmentsRes;
   return runSubmitMessage(db, thread, body, input, preparedAttachmentsRes.data);
 }

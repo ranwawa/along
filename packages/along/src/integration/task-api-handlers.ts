@@ -59,7 +59,6 @@ export async function handleTaskCreateRequest(
 ): Promise<Response> {
   const bodyRes = await readTaskRequestPayload(req);
   if (!bodyRes.success) return errorResponse(bodyRes.error, HTTP_BAD_REQUEST);
-
   const taskBody =
     readStringField(bodyRes.data.payload, 'body') ||
     (bodyRes.data.attachments.length > 0 ? '（用户上传了图片）' : undefined);

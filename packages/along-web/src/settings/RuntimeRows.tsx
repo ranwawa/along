@@ -7,7 +7,13 @@ import {
   Section,
 } from './registryTableParts';
 
-const LABELS = { noRuntime: '暂无 Runtime', notSet: '未设置' } as const;
+const LABELS = {
+  noRuntime: '暂无 Runtime',
+  notSet: '未设置',
+  colId: 'ID',
+  colKind: 'Kind',
+  colModel: 'Model',
+} as const;
 
 function RuntimeRow({
   runtime,
@@ -74,9 +80,9 @@ export function RuntimeRows({
       onAdd={onAdd}
     >
       <div className="hidden md:grid grid-cols-[150px_120px_minmax(0,1fr)_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
-        <span>ID</span>
-        <span>Kind</span>
-        <span>Model</span>
+        <span>{LABELS.colId}</span>
+        <span>{LABELS.colKind}</span>
+        <span>{LABELS.colModel}</span>
         <span />
       </div>
       <div className="divide-y divide-white/5">

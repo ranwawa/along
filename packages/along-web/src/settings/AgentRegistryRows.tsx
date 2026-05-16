@@ -11,6 +11,10 @@ const LABELS = {
   noAgent: '暂无 Agent',
   selectRuntime: '选择 Runtime',
   useRuntimeDefault: '使用 Runtime 默认',
+  colId: 'ID',
+  colRuntime: 'Runtime',
+  colModel: 'Model',
+  colPersonality: 'Personality',
 } as const;
 
 export function AgentRegistryRows({
@@ -34,10 +38,10 @@ export function AgentRegistryRows({
       onAdd={onAdd}
     >
       <div className="hidden md:grid grid-cols-[150px_170px_minmax(0,1fr)_160px_84px] gap-3 px-4 py-2 border-b border-border-color text-xs font-semibold text-text-muted">
-        <span>ID</span>
-        <span>Runtime</span>
-        <span>Model</span>
-        <span>Personality</span>
+        <span>{LABELS.colId}</span>
+        <span>{LABELS.colRuntime}</span>
+        <span>{LABELS.colModel}</span>
+        <span>{LABELS.colPersonality}</span>
         <span />
       </div>
       <div className="divide-y divide-white/5">
