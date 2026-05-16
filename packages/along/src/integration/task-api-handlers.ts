@@ -79,20 +79,22 @@ export async function handleTaskCreateRequest(
       ? { attachmentCount: bodyRes.data.attachments.length }
       : {}),
   });
+  return scheduleAndRespond(bodyRes.data.payload, context, createRes.data);
+}
 
-  const scheduledRes = schedulePlannerIfNeeded(bodyRes.data.payload, context, {
-    taskId: createRes.data.task.taskId,
+function scheduleAndRespond(
+  payload: UnknownRecord,
+  context: TaskApiContext,
+  snapshot: TaskPlanningSnapshot,
+): Response {
+  const scheduledRes = schedulePlannerIfNeeded(payload, context, {
+    taskId: snapshot.task.taskId,
     reason: 'task_created',
   });
   if (!scheduledRes.success)
     return errorResponse(scheduledRes.error, HTTP_BAD_REQUEST);
-
   return jsonResponse(
-    {
-      taskId: createRes.data.task.taskId,
-      scheduled: scheduledRes.data,
-      snapshot: createRes.data,
-    },
+    { taskId: snapshot.task.taskId, scheduled: scheduledRes.data, snapshot },
     scheduledRes.data ? HTTP_ACCEPTED : HTTP_CREATED,
   );
 }
