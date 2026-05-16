@@ -401,7 +401,7 @@ export async function runTaskDelivery(
     }
     const workflowDeliveredRes = transitionTaskWorkflow({
       taskId: input.taskId,
-      event: { type: 'exec.verified' },
+      event: { type: 'task.accepted' },
     });
     if (!workflowDeliveredRes.success) {
       return failDeliveryRun(
@@ -515,7 +515,7 @@ export async function runTaskDelivery(
     }
     const workflowDeliveredRes = transitionTaskWorkflow({
       taskId: input.taskId,
-      event: { type: 'exec.verified' },
+      event: { type: 'task.accepted' },
     });
     if (!workflowDeliveredRes.success) {
       return failDeliveryRun(

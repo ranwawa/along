@@ -101,7 +101,7 @@ export function continueAutonomousTaskAfterExec(
   }
   if (
     snapshot.task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
-    snapshot.task.lifecycle === LIFECYCLE.ACTIVE
+    snapshot.task.lifecycle === LIFECYCLE.WAITING
   ) {
     return continueAfterExecCompleted(input, snapshot);
   }

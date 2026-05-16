@@ -14,6 +14,7 @@ import {
   transitionTaskWorkflow,
   WORKFLOW_KIND,
 } from './task-planning';
+import { runVerificationLoop } from './task-verification-loop';
 import {
   defaultTaskWorktreeCommandRunner,
   type PrepareTaskWorktreeOutput,
@@ -195,6 +196,35 @@ async function runInitialExecStepsIfNeeded(
   });
 }
 
+async function commitAndVerify(input: {
+  taskInput: RunTaskExecAgentInput;
+  prepared: PreparedExecRun;
+  agentId: string;
+  commandRunner: TaskWorktreeCommandRunner;
+  assistantText: string;
+}): Promise<Result<RunTaskExecAgentOutput>> {
+  const commitResult = await runAutoCommitLoop({
+    taskInput: input.taskInput,
+    approvedPlan: input.prepared.approvedPlan,
+    worktree: input.prepared.worktree,
+    agentId: input.agentId,
+    commandRunner: input.commandRunner,
+    assistantText: input.assistantText,
+  });
+  if (!commitResult.success) return commitResult;
+
+  return runVerificationLoop({
+    taskInput: input.taskInput,
+    snapshot: commitResult.data.snapshot,
+    approvedPlan: input.prepared.approvedPlan,
+    worktree: input.prepared.worktree,
+    agentId: input.agentId,
+    commandRunner: input.commandRunner,
+    assistantText: commitResult.data.assistantText,
+    commitShas: commitResult.data.commitShas,
+  });
+}
+
 async function runConfirmedExec(input: {
   taskInput: RunTaskExecAgentInput;
   agentId: string;
@@ -221,10 +251,9 @@ async function runConfirmedExec(input: {
     );
   }
 
-  return runAutoCommitLoop({
+  return commitAndVerify({
     taskInput: input.taskInput,
-    approvedPlan: prepared.data.approvedPlan,
-    worktree: prepared.data.worktree,
+    prepared: prepared.data,
     agentId: input.agentId,
     commandRunner: input.commandRunner,
     assistantText: result.data.assistantText,
