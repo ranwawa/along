@@ -1,12 +1,9 @@
 import { consola } from 'consola';
+import { getErrorMessage } from '../core/common';
 import { runTaskTitleSummary } from '../domain/task-title-summary';
 import type { TaskApiContext } from './task-api';
 
 const logger = consola.withTag('task-api');
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function scheduleTitleSummary(
   context: TaskApiContext,

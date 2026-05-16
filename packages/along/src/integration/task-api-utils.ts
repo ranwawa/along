@@ -1,27 +1,17 @@
-// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy task API utilities are kept together outside this migration.
-// biome-ignore-all lint/style/noMagicNumbers: legacy task API title truncation is outside this migration.
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import type { TaskAttachmentUploadInput } from '../domain/task-attachments';
 import {
-  readTaskAgentBinding,
-  readTaskPlanningSnapshot,
   TASK_AGENT_STAGE,
   TASK_EXECUTION_MODE,
   TASK_RUNTIME_EXECUTION_MODE,
   TASK_WORKSPACE_MODE,
   type TaskAgentStage,
   type TaskExecutionMode,
-  type TaskPlanningSnapshot,
   type TaskRuntimeExecutionMode,
   type TaskWorkspaceMode,
 } from '../domain/task-planning';
-import type {
-  ScheduledTaskDeliveryRun,
-  ScheduledTaskExecRun,
-  ScheduledTaskPlanningRun,
-  TaskApiContext,
-} from './task-api';
+import { HTTP_BAD_REQUEST, HTTP_OK } from './http-status';
 
 export type UnknownRecord = Record<string, unknown>;
 
@@ -39,14 +29,17 @@ function isRecord(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function jsonResponse(payload: unknown, status = 200): Response {
+export function jsonResponse(payload: unknown, status = HTTP_OK): Response {
   return new Response(JSON.stringify(payload), {
     status,
     headers: JSON_HEADERS,
   });
 }
 
-export function errorResponse(error: string, status = 400): Response {
+export function errorResponse(
+  error: string,
+  status = HTTP_BAD_REQUEST,
+): Response {
   return jsonResponse({ error }, status);
 }
 
@@ -97,7 +90,7 @@ export async function readTaskRequestPayload(
   return success({ payload: jsonRes.data, attachments: [] });
 }
 
-async function readMultipartTaskRequest(
+export async function readMultipartTaskRequest(
   req: Request,
 ): Promise<Result<ParsedTaskRequest>> {
   try {
@@ -210,157 +203,4 @@ export function readPositiveInt(
   if (!value) return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
-
-export function deriveTitle(body: string): string {
-  const normalized = body.replace(/\s+/g, ' ').trim();
-  return [...(normalized || 'Untitled Task')].slice(0, 15).join('');
-}
-
-export function resolveTaskCwd(
-  payload: UnknownRecord,
-  context: TaskApiContext,
-  taskId?: string,
-): Result<string> {
-  const explicitCwd = readStringField(payload, 'cwd');
-  if (explicitCwd) return success(explicitCwd);
-
-  const repoPathRes = resolveRepoPathFromPayload(payload, context);
-  if (repoPathRes) return repoPathRes;
-
-  if (taskId) {
-    const savedCwdRes = resolveTaskSavedCwd(payload, taskId);
-    if (!savedCwdRes.success || savedCwdRes.data) return savedCwdRes;
-  }
-
-  return success(context.defaultCwd);
-}
-
-function resolveRepoPathFromPayload(
-  payload: UnknownRecord,
-  context: TaskApiContext,
-): Result<string> | null {
-  const owner = readStringField(payload, 'owner');
-  const repo = readStringField(payload, 'repo');
-  if (!owner || !repo || !context.resolveRepoPath) return null;
-  const repoPath = context.resolveRepoPath(owner, repo);
-  if (!repoPath) return failure(`仓库 ${owner}/${repo} 未在本地工作区中注册`);
-  return success(repoPath);
-}
-
-function resolveTaskSavedCwd(
-  payload: UnknownRecord,
-  taskId: string,
-): Result<string | undefined> {
-  const snapshotRes = readTaskPlanningSnapshot(taskId);
-  if (!snapshotRes.success) return snapshotRes;
-  const snapshot = snapshotRes.data;
-  if (!snapshot) return failure(`Task 不存在: ${taskId}`);
-  if (snapshot.task.cwd) return success(snapshot.task.cwd);
-  return resolveTaskBindingCwd(payload, snapshot);
-}
-
-function resolveTaskBindingCwd(
-  payload: UnknownRecord,
-  snapshot: TaskPlanningSnapshot,
-): Result<string | undefined> {
-  const bindingRes = readTaskAgentBinding(
-    snapshot.thread.threadId,
-    readStringField(payload, 'agentId') || 'planner',
-    'codex',
-  );
-  if (!bindingRes.success) return bindingRes;
-  return success(bindingRes.data?.cwd);
-}
-
-export function schedulePlannerIfNeeded(
-  payload: UnknownRecord,
-  context: TaskApiContext,
-  input: Omit<
-    ScheduledTaskPlanningRun,
-    'cwd' | 'agentId' | 'modelId' | 'personalityVersion'
-  >,
-): Result<boolean> {
-  const autoRun = readBooleanField(payload, 'autoRun');
-  if (autoRun === false || !context.schedulePlanner) return success(false);
-
-  const cwdRes = resolveTaskCwd(payload, context, input.taskId);
-  if (!cwdRes.success) return cwdRes;
-
-  context.schedulePlanner({
-    ...input,
-    cwd: cwdRes.data,
-    ...readRunnerOptions(payload),
-  });
-  return success(true);
-}
-
-export function scheduleExecIfNeeded(
-  payload: UnknownRecord,
-  context: TaskApiContext,
-  input: Omit<
-    ScheduledTaskExecRun,
-    'cwd' | 'agentId' | 'modelId' | 'personalityVersion'
-  >,
-): Result<boolean> {
-  if (!context.scheduleExec) return success(false);
-
-  const cwdRes = resolveTaskCwd(payload, context, input.taskId);
-  if (!cwdRes.success) return cwdRes;
-
-  context.scheduleExec({
-    ...input,
-    cwd: cwdRes.data,
-    ...readRunnerOptions(payload),
-  });
-  return success(true);
-}
-
-function readRunnerOptions(payload: UnknownRecord) {
-  const runtimeExecutionMode = readStringField(payload, 'runtimeExecutionMode');
-  return {
-    agentId: readStringField(payload, 'agentId'),
-    modelId: readStringField(payload, 'modelId'),
-    personalityVersion: readStringField(payload, 'personalityVersion'),
-    runtimeExecutionMode: isTaskRuntimeExecutionMode(runtimeExecutionMode)
-      ? runtimeExecutionMode
-      : undefined,
-  };
-}
-
-function isTaskRuntimeExecutionMode(
-  value: string | undefined,
-): value is TaskRuntimeExecutionMode {
-  return (
-    value === TASK_RUNTIME_EXECUTION_MODE.AUTO ||
-    value === TASK_RUNTIME_EXECUTION_MODE.CHAT ||
-    value === TASK_RUNTIME_EXECUTION_MODE.PLAN ||
-    value === TASK_RUNTIME_EXECUTION_MODE.EXEC
-  );
-}
-
-export function scheduleDeliveryIfNeeded(
-  payload: UnknownRecord,
-  context: TaskApiContext,
-  input: ScheduledTaskDeliveryRun,
-): Result<boolean> {
-  if (!context.scheduleDelivery) return success(false);
-
-  const cwdRes = resolveTaskCwd(payload, context, input.taskId);
-  if (!cwdRes.success) return cwdRes;
-
-  context.scheduleDelivery({ ...input, cwd: cwdRes.data });
-  return success(true);
-}
-
-export function getTaskRepositoryFields(
-  payload: UnknownRecord,
-  context: TaskApiContext,
-  cwd: string,
-): Pick<TaskPlanningSnapshot['task'], 'repoOwner' | 'repoName'> {
-  const repoOwner = readStringField(payload, 'owner');
-  const repoName = readStringField(payload, 'repo');
-  if (repoOwner && repoName) return { repoOwner, repoName };
-
-  return context.resolveRepositoryForPath?.(cwd) || {};
 }

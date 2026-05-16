@@ -1,5 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: task planning panels use existing inline labels.
-// biome-ignore-all lint/style/noMagicNumbers: task planning layout uses fixed UI thresholds.
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import type {
   TaskAgentRunRecord,
@@ -8,6 +6,15 @@ import type {
   TaskPlanningSnapshot,
 } from '../types';
 import { formatTime } from './format';
+
+const LABELS = {
+  noSessionInfo: 'Agent 仍在执行，但当前暂无可展示会话信息。',
+  quietHintSuffix: 'Agent 仍处于运行状态。',
+  recentUpdatePrefix: 'Codex 实时输出，最近更新',
+  noOutput: '暂无 Codex 实时输出',
+  agentStartedWaiting: 'Agent 已开始运行，正在等待第一条 Codex 实时输出。',
+  noOutputDot: '暂无 Codex 实时输出。',
+} as const;
 
 const RECENT_SESSION_LIMIT = 40;
 const MILLISECONDS_PER_SECOND = 1000;
@@ -64,10 +71,10 @@ function getRelativeSeconds(value: string, nowMs: number): number | null {
 function formatRelativeTime(value: string, nowMs: number): string {
   const seconds = getRelativeSeconds(value, nowMs);
   if (seconds === null) return formatTime(value);
-  if (seconds < 60) return `${Math.max(1, seconds)} 秒前`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟前`;
-  return `${Math.floor(minutes / 60)} 小时前`;
+  if (seconds < SECONDS_PER_MINUTE) return `${Math.max(1, seconds)} 秒前`;
+  const minutes = Math.floor(seconds / SECONDS_PER_MINUTE);
+  if (minutes < SECONDS_PER_MINUTE) return `${minutes} 分钟前`;
+  return `${Math.floor(minutes / SECONDS_PER_MINUTE)} 小时前`;
 }
 
 function buildSessionQuietHint(input: {
@@ -77,14 +84,14 @@ function buildSessionQuietHint(input: {
 }): string | null {
   if (!input.runningRun) return null;
   if (!input.latestEvent) {
-    return 'Agent 仍在执行，但当前暂无可展示会话信息。';
+    return LABELS.noSessionInfo;
   }
   const seconds = getRelativeSeconds(input.latestEvent.createdAt, input.nowMs);
   if (seconds === null || seconds < SESSION_QUIET_SECONDS) return null;
   return `最近一条会话在 ${formatRelativeTime(
     input.latestEvent.createdAt,
     input.nowMs,
-  )}，Agent 仍处于运行状态。`;
+  )}，${LABELS.quietHintSuffix}`;
 }
 
 function getSessionSourceLabel(source: TaskAgentSessionEventSource): string {
@@ -166,11 +173,11 @@ function SessionTailHeader({
         </div>
         <div className="mt-1 text-xs text-text-muted">
           {latestEvent
-            ? `Codex 实时输出，最近更新 ${formatRelativeTime(
+            ? `${LABELS.recentUpdatePrefix} ${formatRelativeTime(
                 latestEvent.createdAt,
                 nowMs,
               )}`
-            : '暂无 Codex 实时输出'}
+            : LABELS.noOutput}
         </div>
       </div>
       <span className="text-xs text-text-muted">
@@ -254,9 +261,7 @@ function SessionTail({
       )}
       {visibleEvents.length === 0 ? (
         <div className="rounded-md border border-border-color bg-black/25 px-3 py-3 text-sm text-text-muted">
-          {runningRun
-            ? 'Agent 已开始运行，正在等待第一条 Codex 实时输出。'
-            : '暂无 Codex 实时输出。'}
+          {runningRun ? LABELS.agentStartedWaiting : LABELS.noOutputDot}
         </div>
       ) : (
         <SessionEventList events={visibleEvents} scrollRef={scrollRef} />

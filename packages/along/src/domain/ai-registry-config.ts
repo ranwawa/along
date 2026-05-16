@@ -1,4 +1,3 @@
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: registry validation keeps cross-entity invariants together.
 import { z } from 'zod';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
@@ -158,24 +157,24 @@ function validateModelReference(
     : failure(`${label} 引用了未知 Model: ${modelId}`);
 }
 
-function validateRegistryReferences(
-  registry: RegistryConfig,
-): Result<RegistryConfig> {
-  const uniqueChecks = [
+function validateUniqueIds(registry: RegistryConfig): Result<void> {
+  const checks = [
     ensureUniqueIds('Provider', registry.providers),
     ensureUniqueIds('Model', registry.models),
     ensureUniqueIds('Runtime', registry.runtimes),
     ensureUniqueIds('Agent', registry.agents),
     ensureUniqueIds('Profile', registry.profiles),
   ];
-  for (const check of uniqueChecks) if (!check.success) return check;
+  for (const check of checks) if (!check.success) return check;
+  return success(undefined);
+}
 
+function validateModelProviderRefs(registry: RegistryConfig): Result<void> {
   for (const model of registry.models) {
     const provider = findById(registry.providers, model.providerId);
     if (!provider)
       return failure(`Model 引用了未知 Provider: ${model.providerId}`);
   }
-
   for (const runtime of registry.runtimes) {
     const modelRes = validateModelReference(
       registry,
@@ -184,7 +183,10 @@ function validateRegistryReferences(
     );
     if (!modelRes.success) return modelRes;
   }
+  return success(undefined);
+}
 
+function validateCrossReferences(registry: RegistryConfig): Result<void> {
   for (const agent of registry.agents) {
     const runtime = findById(registry.runtimes, agent.runtimeId);
     if (!runtime)
@@ -196,7 +198,6 @@ function validateRegistryReferences(
     );
     if (!modelRes.success) return modelRes;
   }
-
   for (const profile of registry.profiles) {
     const modelRes = validateModelReference(
       registry,
@@ -214,7 +215,18 @@ function validateRegistryReferences(
       return failure(`Profile ${profile.id} maxTokens 超过模型输出上限`);
     }
   }
+  return success(undefined);
+}
 
+function validateRegistryReferences(
+  registry: RegistryConfig,
+): Result<RegistryConfig> {
+  const uniqueRes = validateUniqueIds(registry);
+  if (!uniqueRes.success) return uniqueRes;
+  const providerRes = validateModelProviderRefs(registry);
+  if (!providerRes.success) return providerRes;
+  const crossRes = validateCrossReferences(registry);
+  if (!crossRes.success) return crossRes;
   return success(registry);
 }
 

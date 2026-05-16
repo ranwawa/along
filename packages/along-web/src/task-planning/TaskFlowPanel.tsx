@@ -1,4 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: existing task flow panel uses inline labels.
 import { useEffect, useState } from 'react';
 import { Sheet, SheetContent } from '../components/ui/sheet';
 import type {
@@ -9,6 +8,11 @@ import type {
 import { formatTime } from './format';
 import { MarkdownContent } from './MarkdownContent';
 import { FlowStages } from './TaskFlowStageCard';
+
+const LABELS = {
+  flowHistory: '历史流转',
+  noEvents: '暂无历史事件。',
+} as const;
 
 const CURRENT_PLAN_DIALOG_WIDTH = {
   defaultWidth: 320,
@@ -125,11 +129,11 @@ export function FlowHistory({
       open={defaultOpen || undefined}
     >
       <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-text-secondary">
-        历史流转
+        {LABELS.flowHistory}
       </summary>
       <div className="px-4 pb-4 flex flex-col gap-2">
         {flow.events.length === 0 ? (
-          <div className="text-sm text-text-muted">暂无历史事件。</div>
+          <div className="text-sm text-text-muted">{LABELS.noEvents}</div>
         ) : (
           flow.events.map((event) => (
             <div

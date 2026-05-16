@@ -1,5 +1,3 @@
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy runner tests use large shared mock setup.
-// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy runner test file predates current file-size rule.
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

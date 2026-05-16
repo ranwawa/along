@@ -1,4 +1,3 @@
-// biome-ignore-all lint/style/noMagicNumbers: tests use task seq values directly for readability.
 import { describe, expect, it } from 'vitest';
 import type { TaskPlanningSnapshot, TaskStatus } from '../types';
 import { mergeSnapshotIntoList, sortTaskSnapshotsBySeqDesc } from './api';

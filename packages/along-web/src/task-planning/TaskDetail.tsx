@@ -1,5 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: existing dashboard view uses inline labels throughout.
-// biome-ignore-all lint/style/noMagicNumbers: existing dashboard layout uses numeric UI thresholds.
 import {
   type FormEvent,
   type RefObject,
@@ -27,6 +25,15 @@ import { TaskFailureBanner } from './TaskFailureBanner';
 import { TaskFlowPanel } from './TaskFlowPanel';
 import { TaskRecordsPanel } from './TaskRecords';
 
+const LABELS = {
+  emptyState: '请选择任务，或点击新任务。',
+  inputPlaceholder: '输入任务目标或问题',
+  noRepoPlaceholder: '请先选择仓库',
+  createTask: '创建任务',
+} as const;
+
+const SCROLL_THRESHOLD = 96;
+
 function NewTaskComposer({
   draft,
   selectedRepository,
@@ -51,9 +58,11 @@ function NewTaskComposer({
       executionMode={draft.executionMode}
       runtimeExecutionMode={draft.runtimeExecutionMode}
       workspaceMode={draft.workspaceMode}
-      placeholder={selectedRepository ? '输入任务目标或问题' : '请先选择仓库'}
+      placeholder={
+        selectedRepository ? LABELS.inputPlaceholder : LABELS.noRepoPlaceholder
+      }
       submitDisabled={!selectedRepository || !hasDraft || Boolean(busyAction)}
-      submitTitle="创建任务"
+      submitTitle={LABELS.createTask}
       onAttachmentsChange={onDraftAttachmentsChange}
       onBodyChange={(value) => onDraftChange('body', value)}
       onExecutionModeChange={(value) => onDraftChange('executionMode', value)}
@@ -101,7 +110,8 @@ function useLatestScroll(detailKey: string, activityCount: number) {
   const shouldFollowLatestRef = useRef(true);
   const onScroll = (element: HTMLDivElement) => {
     shouldFollowLatestRef.current =
-      element.scrollHeight - element.scrollTop - element.clientHeight < 96;
+      element.scrollHeight - element.scrollTop - element.clientHeight <
+      SCROLL_THRESHOLD;
   };
 
   useLayoutEffect(() => {
@@ -153,7 +163,7 @@ export function TaskDetail(props: TaskDetailProps) {
 function EmptyTaskDetail() {
   return (
     <div className="flex-1 min-h-[320px] flex items-center justify-center text-text-muted text-sm">
-      请选择任务，或点击新任务。
+      {LABELS.emptyState}
     </div>
   );
 }

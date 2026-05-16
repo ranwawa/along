@@ -1,5 +1,3 @@
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy planning tests use a large in-memory database mock.
-// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: legacy planning test file predates current file-size rule.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Row = Record<string, string | number | null>;

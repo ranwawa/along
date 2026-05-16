@@ -1,5 +1,3 @@
-// biome-ignore-all lint/suspicious/noExplicitAny: test mocks intentionally use compact generic helpers.
-// biome-ignore-all lint/style/noMagicNumbers: test fixture values are literal examples.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock fs 和 path 的依赖，避免真实文件系统操作

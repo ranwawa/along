@@ -1,4 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: existing task planning views use inline Chinese labels.
 import { LoaderCircle, RotateCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import type { TaskFlowAction, TaskPlanningSnapshot } from '../types';
@@ -6,6 +5,11 @@ import {
   getLatestFailedAgentStage,
   getTaskFailureSummary,
 } from './taskAgentFailure';
+
+const LABELS = {
+  agentFailed: 'Agent 运行失败',
+  retrying: '重试中',
+} as const;
 
 const RETRY_FAILED_STAGE_ACTION_ID = 'resume_failed_stage';
 
@@ -42,7 +46,7 @@ export function TaskFailureBanner({
     <section className="rounded-lg border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="font-semibold">Agent 运行失败</div>
+          <div className="font-semibold">{LABELS.agentFailed}</div>
           <div className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-rose-100/90">
             {summary}
           </div>
@@ -64,7 +68,7 @@ export function TaskFailureBanner({
             ) : (
               <RotateCw aria-hidden="true" className="h-4 w-4" />
             )}
-            {retrying ? '重试中' : retryAction.label}
+            {retrying ? LABELS.retrying : retryAction.label}
           </Button>
         )}
       </div>

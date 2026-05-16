@@ -1,5 +1,3 @@
-// biome-ignore-all lint/suspicious/noExplicitAny: legacy worktree command errors and session payloads remain untyped.
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: legacy worktree setup functions are outside this migration.
 /**
  * worktree-init.ts - Worktree 初始化核心逻辑
  * 供 run.ts 直接调用
@@ -9,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 import { consola } from 'consola';
-import { failure, getGit, git, success } from '../core/common';
+import { failure, getErrorMessage, getGit, git, success } from '../core/common';
 
 const logger = consola.withTag('worktree-init');
 
@@ -33,42 +31,32 @@ export async function getDefaultBranch(
   return success('master');
 }
 
-export async function setupWorktree(
-  worktreePath: string,
-  repoPath?: string,
-): Promise<Result<null>> {
-  if (fs.existsSync(worktreePath)) {
-    if (fs.existsSync(path.join(worktreePath, '.along/issue-mark')))
+function clearExistingPath(worktreePath: string): Result<null> {
+  if (!fs.existsSync(worktreePath)) return success(null);
+  if (fs.existsSync(path.join(worktreePath, '.along/issue-mark')))
+    return success(null);
+  // planning 阶段创建的软链需要先清理再创建真正的 worktree
+  try {
+    const stat = fs.lstatSync(worktreePath);
+    if (stat.isSymbolicLink()) {
+      fs.unlinkSync(worktreePath);
+      logger.info('已清理 planning 阶段的软链工作目录');
       return success(null);
-    // planning 阶段创建的软链需要先清理再创建真正的 worktree
-    try {
-      const stat = fs.lstatSync(worktreePath);
-      if (stat.isSymbolicLink()) {
-        fs.unlinkSync(worktreePath);
-        logger.info('已清理 planning 阶段的软链工作目录');
-      } else {
-        return failure(
-          `工作目录存在但非本工具创建，请手动检查: ${worktreePath}`,
-        );
-      }
-    } catch {
-      return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
     }
-  }
+  } catch {}
+  return failure(`工作目录存在但非本工具创建，请手动检查: ${worktreePath}`);
+}
 
-  const defaultBranchRes = await getDefaultBranch(repoPath);
-  if (!defaultBranchRes.success) return defaultBranchRes;
-  const defaultBranch = defaultBranchRes.data;
-
-  logger.info(`检测到远程默认分支: ${defaultBranch}`);
-
-  const g = repoPath ? getGit(repoPath) : git;
-
+async function fetchAndCreateWorktree(
+  g: ReturnType<typeof getGit>,
+  worktreePath: string,
+  defaultBranch: string,
+): Promise<Result<null>> {
   logger.info('获取远程最新代码...');
   try {
     await g.fetch('origin', defaultBranch);
-  } catch (e: any) {
-    return failure(`fetch 远程分支失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`fetch 远程分支失败: ${getErrorMessage(error)}`);
   }
   console.log(chalk.green('✓'), '获取远程最新代码完成');
 
@@ -77,7 +65,6 @@ export async function setupWorktree(
     try {
       await g.raw(['worktree', 'prune']);
     } catch (_e) {}
-
     await g.raw([
       'worktree',
       'add',
@@ -86,12 +73,28 @@ export async function setupWorktree(
       worktreePath,
       `origin/${defaultBranch}`,
     ]);
-  } catch (e: any) {
-    return failure(`创建 worktree 失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`创建 worktree 失败: ${getErrorMessage(error)}`);
   }
   console.log(chalk.green('✓'), '创建 worktree 完成');
-
   return success(null);
+}
+
+export async function setupWorktree(
+  worktreePath: string,
+  repoPath?: string,
+): Promise<Result<null>> {
+  const clearRes = clearExistingPath(worktreePath);
+  if (!clearRes.success) return clearRes;
+
+  const defaultBranchRes = await getDefaultBranch(repoPath);
+  if (!defaultBranchRes.success) return defaultBranchRes;
+  const defaultBranch = defaultBranchRes.data;
+
+  logger.info(`检测到远程默认分支: ${defaultBranch}`);
+
+  const g = repoPath ? getGit(repoPath) : git;
+  return fetchAndCreateWorktree(g, worktreePath, defaultBranch);
 }
 
 export function setupPlanningWorkspace(
@@ -110,8 +113,8 @@ export function setupPlanningWorkspace(
 
   try {
     fs.symlinkSync(repoRoot, worktreePath, 'dir');
-  } catch (e: any) {
-    return failure(`创建 planning 工作目录软链失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`创建 planning 工作目录软链失败: ${getErrorMessage(error)}`);
   }
   logger.info('已创建 planning 工作目录（软链到主仓库）');
   return success(null);
@@ -132,15 +135,17 @@ function removeTargetPath(targetPath: string): Result<void> {
       fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 3 });
     }
     return success(undefined);
-  } catch (rmError: any) {
-    logger.warn(`删除目标失败，尝试强制移除: ${rmError.message}`);
+  } catch (rmError: unknown) {
+    logger.warn(`删除目标失败，尝试强制移除: ${getErrorMessage(rmError)}`);
     const backupPath = `${targetPath}.backup-${Date.now()}`;
     try {
       fs.renameSync(targetPath, backupPath);
       fs.rmSync(backupPath, { recursive: true, force: true });
       return success(undefined);
-    } catch (renameError: any) {
-      return failure(`无法清理目标路径 ${targetPath}: ${renameError.message}`);
+    } catch (renameError: unknown) {
+      return failure(
+        `无法清理目标路径 ${targetPath}: ${getErrorMessage(renameError)}`,
+      );
     }
   }
 }

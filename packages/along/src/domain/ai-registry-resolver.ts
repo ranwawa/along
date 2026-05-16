@@ -1,4 +1,3 @@
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: resolver functions intentionally keep precedence chains explicit.
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
 import {
@@ -117,6 +116,14 @@ function resolveProviderModelToken(input: {
   });
 }
 
+function resolveAgentModelId(
+  input: ResolveAgentRuntimeInput,
+  agent: AgentConfig,
+  runtime: RuntimeConfig,
+): string | undefined {
+  return input.modelId || agent.modelId || runtime.modelId;
+}
+
 export function resolveAgentRuntimeConfig(
   input: ResolveAgentRuntimeInput,
 ): Result<ResolvedAgentRuntimeConfig> {
@@ -128,7 +135,7 @@ export function resolveAgentRuntimeConfig(
 
   const modelRes = resolveModel(
     input.registry,
-    input.modelId || agentRes.data.modelId || runtimeRes.data.modelId,
+    resolveAgentModelId(input, agentRes.data, runtimeRes.data),
     `Agent ${input.agentId}`,
   );
   if (!modelRes.success) return modelRes;
@@ -143,15 +150,21 @@ export function resolveAgentRuntimeConfig(
     agentId: agentRes.data.id,
     runtimeId: runtimeRes.data.id,
     runtimeKind: runtimeRes.data.kind,
-    providerId: resolvedRes.data.providerId,
-    providerKind: resolvedRes.data.providerKind,
-    baseUrl: resolvedRes.data.baseUrl,
+    ...resolvedRes.data,
     model: modelRes.data.model,
     modelId: modelRes.data.id,
-    token: resolvedRes.data.token,
     tokenEnv: modelRes.data.tokenEnv,
     personalityVersion: agentRes.data.personalityVersion,
   });
+}
+
+function buildProfileParameters(
+  profile: ProfileConfig,
+): ResolvedProfileLlmConfig['parameters'] {
+  return {
+    ...profile.parameters,
+    outputFormat: profile.parameters?.outputFormat || 'text',
+  };
 }
 
 export function resolveProfileLlmConfig(
@@ -180,17 +193,11 @@ export function resolveProfileLlmConfig(
 
   return success({
     profileId: profile.id,
-    providerId: resolvedRes.data.providerId,
-    providerKind: resolvedRes.data.providerKind,
-    baseUrl: resolvedRes.data.baseUrl,
+    ...resolvedRes.data,
     model: modelRes.data.model,
-    token: resolvedRes.data.token,
     tokenEnv: modelRes.data.tokenEnv,
     systemPrompt: profile.systemPrompt,
     userTemplate: profile.userTemplate,
-    parameters: {
-      ...profile.parameters,
-      outputFormat: profile.parameters?.outputFormat || 'text',
-    },
+    parameters: buildProfileParameters(profile),
   });
 }

@@ -1,4 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: settings table uses compact inline labels.
 import { Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '../components/ui/button';
@@ -6,6 +5,8 @@ import {
   EmptyRows as UiEmptyRows,
   Section as UiSection,
 } from '../components/ui/section';
+
+const LABELS = { delete: '删除' } as const;
 
 export function optional(value: string): string | undefined {
   return value.trim() || undefined;
@@ -47,7 +48,7 @@ export function DeleteButton({
       className="gap-1.5"
     >
       <Trash2 aria-hidden="true" className="h-4 w-4" />
-      删除
+      {LABELS.delete}
     </Button>
   );
 }

@@ -1,5 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: existing task flow cards use inline Chinese labels.
-
 import { Eye, LoaderCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import type {
@@ -8,6 +6,15 @@ import type {
   TaskPlanRevisionRecord,
 } from '../types';
 import { getFlowActionClass, getFlowStageDotClass } from './flowFormat';
+
+const LABELS = {
+  availableActions: '可执行操作',
+  noDetails: '当前状态暂无更多详情。',
+  noActions: '当前状态暂无可执行操作。',
+  processing: '处理中',
+  viewPlan: (version: number) => `查看计划 v${version}`,
+  disabledReasonSep: '：',
+} as const;
 
 export function getStageActionScope(
   actions: TaskFlowAction[],
@@ -211,7 +218,7 @@ function FlowStageDetails({
           className="mt-3 gap-1.5"
         >
           <Eye aria-hidden="true" className="h-4 w-4" />
-          查看计划 v{currentPlan.version}
+          {LABELS.viewPlan(currentPlan.version)}
         </Button>
       )}
       <FlowStageActionList
@@ -234,7 +241,7 @@ function FlowStageDetailText({ stage }: { stage: TaskFlowStage }) {
           ))}
         </ul>
       ) : (
-        <div className="text-xs text-text-muted">当前状态暂无更多详情。</div>
+        <div className="text-xs text-text-muted">{LABELS.noDetails}</div>
       )}
     </>
   );
@@ -252,7 +259,7 @@ function FlowStageActionList({
   return (
     <>
       <div className="mt-3 text-xs font-semibold text-text-secondary">
-        可执行操作
+        {LABELS.availableActions}
       </div>
       {actions.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-2">
@@ -266,9 +273,7 @@ function FlowStageActionList({
           ))}
         </div>
       ) : (
-        <div className="mt-2 text-xs text-text-muted">
-          当前状态暂无可执行操作。
-        </div>
+        <div className="mt-2 text-xs text-text-muted">{LABELS.noActions}</div>
       )}
     </>
   );
@@ -283,7 +288,10 @@ function FlowDisabledReasonList({ actions }: { actions: TaskFlowAction[] }) {
           key={action.id}
           className="rounded-md border border-border-color bg-black/20 px-3 py-2 text-xs leading-5 text-text-muted"
         >
-          <span className="text-text-secondary">{action.label}</span>：
+          <span className="text-text-secondary">
+            {action.label}
+            {LABELS.disabledReasonSep}
+          </span>
           {action.disabledReason}
         </div>
       ))}
@@ -315,7 +323,7 @@ function FlowActionButton({
           className="h-4 w-4 animate-spin motion-reduce:animate-none"
         />
       )}
-      {busy ? '处理中' : action.label}
+      {busy ? LABELS.processing : action.label}
     </Button>
   );
 }

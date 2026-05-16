@@ -1,4 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: existing settings view uses inline UI copy.
 import { RefreshCw, Save } from 'lucide-react';
 import { Alert } from './components/ui/alert';
 import { Button } from './components/ui/button';
@@ -7,6 +6,16 @@ import {
   type SettingsState,
   useSettingsController,
 } from './settings/useSettingsController';
+
+const LABELS = {
+  refreshing: '刷新中',
+  refresh: '刷新',
+  saving: '保存中',
+  save: '保存',
+  saved: '已保存',
+  globalSettings: 'Global Settings',
+  configPath: '~/.along/config.json',
+} as const;
 
 function SettingsHeader({
   state,
@@ -20,9 +29,11 @@ function SettingsHeader({
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
       <div className="min-w-0">
-        <h2 className="text-lg md:text-xl font-semibold">Global Settings</h2>
+        <h2 className="text-lg md:text-xl font-semibold">
+          {LABELS.globalSettings}
+        </h2>
         <div className="text-xs text-text-muted truncate mt-1">
-          {state.configPath || '~/.along/config.json'}
+          {state.configPath || LABELS.configPath}
         </div>
       </div>
       <div className="flex gap-2 shrink-0">
@@ -36,7 +47,7 @@ function SettingsHeader({
             aria-hidden="true"
             className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`}
           />
-          {state.loading ? '刷新中' : '刷新'}
+          {state.loading ? LABELS.refreshing : LABELS.refresh}
         </Button>
         <Button
           type="button"
@@ -46,7 +57,7 @@ function SettingsHeader({
           className="gap-1.5"
         >
           <Save aria-hidden="true" className="h-4 w-4" />
-          {state.saving ? '保存中' : '保存'}
+          {state.saving ? LABELS.saving : LABELS.save}
         </Button>
       </div>
     </div>
@@ -57,7 +68,11 @@ function SettingsAlerts({ state }: { state: SettingsState }) {
   return (
     <>
       {state.error && <Alert variant="error">{state.error}</Alert>}
-      {state.savedAt && <Alert variant="success">已保存 {state.savedAt}</Alert>}
+      {state.savedAt && (
+        <Alert variant="success">
+          {LABELS.saved} {state.savedAt}
+        </Alert>
+      )}
     </>
   );
 }

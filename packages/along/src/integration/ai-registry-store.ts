@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { getErrorMessage } from '../core/common';
 import { config } from '../core/config';
 import type { Result } from '../core/result';
 import { failure, success } from '../core/result';
@@ -8,10 +9,6 @@ import {
 } from '../domain/ai-registry-config';
 
 let cachedRegistry: RegistryConfig | null = null;
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function readRegistryConfig(): Result<RegistryConfig> {
   if (cachedRegistry) return success(cachedRegistry);

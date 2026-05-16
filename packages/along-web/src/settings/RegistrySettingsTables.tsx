@@ -1,4 +1,3 @@
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: registry sections are clearer in one composition.
 import type {
   AgentConfig,
   ModelConfig,

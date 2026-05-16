@@ -1,4 +1,3 @@
-// biome-ignore-all lint/style/noMagicNumbers: tests assert HTTP status codes and binary fixtures directly.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handleTaskApiRequest, isTaskApiPath } from './task-api';
 import {

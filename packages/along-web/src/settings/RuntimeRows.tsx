@@ -1,6 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: settings table uses compact inline labels.
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: table rendering is kept together for readability.
-
 import { Input, Select } from '../components/ui/input';
 import type { RegistryConfig, RuntimeConfig } from '../types';
 import {
@@ -9,6 +6,52 @@ import {
   optional,
   Section,
 } from './registryTableParts';
+
+const LABELS = { noRuntime: '暂无 Runtime', notSet: '未设置' } as const;
+
+function RuntimeRow({
+  runtime,
+  registry,
+  disabled,
+  onUpdate,
+  onRemove,
+}: {
+  runtime: RuntimeConfig;
+  registry: RegistryConfig;
+  disabled: boolean;
+  onUpdate: (id: string, patch: Partial<RuntimeConfig>) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[150px_120px_minmax(0,1fr)_84px] gap-3 p-4 items-center">
+      <Input
+        type="text"
+        value={runtime.id}
+        onChange={(event) => onUpdate(runtime.id, { id: event.target.value })}
+      />
+      <Input
+        type="text"
+        value={runtime.kind}
+        readOnly
+        className="text-text-muted"
+      />
+      <Select
+        value={runtime.modelId || ''}
+        onChange={(event) =>
+          onUpdate(runtime.id, { modelId: optional(event.target.value) })
+        }
+      >
+        <option value="">{LABELS.notSet}</option>
+        {registry.models.map((model) => (
+          <option key={model.id} value={model.id}>
+            {model.id}
+          </option>
+        ))}
+      </Select>
+      <DeleteButton disabled={disabled} onClick={() => onRemove(runtime.id)} />
+    </div>
+  );
+}
 
 export function RuntimeRows({
   registry,
@@ -37,45 +80,18 @@ export function RuntimeRows({
         <span />
       </div>
       <div className="divide-y divide-white/5">
-        {registry.runtimes.length === 0 && <EmptyRows label="暂无 Runtime" />}
+        {registry.runtimes.length === 0 && (
+          <EmptyRows label={LABELS.noRuntime} />
+        )}
         {registry.runtimes.map((runtime) => (
-          <div
+          <RuntimeRow
             key={runtime.id}
-            className="grid grid-cols-1 md:grid-cols-[150px_120px_minmax(0,1fr)_84px] gap-3 p-4 items-center"
-          >
-            <Input
-              type="text"
-              value={runtime.id}
-              onChange={(event) =>
-                onUpdate(runtime.id, { id: event.target.value })
-              }
-            />
-            <Input
-              type="text"
-              value={runtime.kind}
-              readOnly
-              className="text-text-muted"
-            />
-            <Select
-              value={runtime.modelId || ''}
-              onChange={(event) =>
-                onUpdate(runtime.id, {
-                  modelId: optional(event.target.value),
-                })
-              }
-            >
-              <option value="">未设置</option>
-              {registry.models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.id}
-                </option>
-              ))}
-            </Select>
-            <DeleteButton
-              disabled={disabled}
-              onClick={() => onRemove(runtime.id)}
-            />
-          </div>
+            runtime={runtime}
+            registry={registry}
+            disabled={disabled}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+          />
         ))}
       </div>
     </Section>

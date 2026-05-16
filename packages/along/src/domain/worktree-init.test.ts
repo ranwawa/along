@@ -1,4 +1,3 @@
-// biome-ignore-all lint/suspicious/noExplicitAny: test mocks intentionally use compact generic helpers.
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

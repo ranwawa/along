@@ -1,15 +1,12 @@
 import { Database } from 'bun:sqlite';
 import path from 'node:path';
+import { getErrorMessage } from './common';
 import { config } from './config';
 import { initSchema } from './db-schema';
 import type { Result } from './result';
 import { failure, success } from './result';
 
 let _db: Database | null = null;
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function getDb(): Result<Database> {
   if (_db) return success(_db);

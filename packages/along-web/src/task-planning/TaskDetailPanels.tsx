@@ -1,5 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: task planning panels use existing inline labels.
-// biome-ignore-all lint/style/noMagicNumbers: task planning layout uses fixed UI thresholds.
 import {
   Activity,
   History,
@@ -15,6 +13,29 @@ import { FlowHistory } from './TaskFlowPanel';
 import { TaskProgressEventsView } from './TaskProgressPanel';
 import { TaskSessionTailView } from './TaskSessionTailView';
 
+const LABELS = {
+  panelTitle: '任务面板',
+  progress: '实时进展',
+  tail: 'Agent 会话 Tail',
+  metadata: '任务元信息',
+  history: '历史流转',
+  modeAutonomous: '自动模式',
+  modeManual: '人工确认',
+  fieldId: 'ID',
+  fieldSeq: 'Seq',
+  fieldType: 'Type',
+  fieldThread: 'Thread',
+  fieldPlanStatus: 'Plan Status',
+  fieldWorkflow: 'Workflow',
+  fieldSource: 'Source',
+  fieldMode: 'Mode',
+  fieldStatus: 'Status',
+  fieldBranch: 'Branch',
+  fieldWorktree: 'Worktree',
+  fieldPr: 'PR',
+  fieldUpdated: 'Updated',
+} as const;
+
 export type TaskDetailDialogKind = 'progress' | 'tail' | 'metadata' | 'history';
 
 const TASK_DETAIL_ACTIONS: {
@@ -22,17 +43,21 @@ const TASK_DETAIL_ACTIONS: {
   label: string;
   icon: LucideIcon;
 }[] = [
-  { kind: 'progress', label: '实时进展', icon: Activity },
-  { kind: 'tail', label: 'Agent 会话 Tail', icon: TerminalSquare },
-  { kind: 'metadata', label: '任务元信息', icon: Info },
-  { kind: 'history', label: '历史流转', icon: History },
+  { kind: 'progress', label: LABELS.progress, icon: Activity },
+  { kind: 'tail', label: LABELS.tail, icon: TerminalSquare },
+  { kind: 'metadata', label: LABELS.metadata, icon: Info },
+  { kind: 'history', label: LABELS.history, icon: History },
 ];
 
+const DIALOG_DEFAULT_WIDTH = 320;
+const DIALOG_MIN_WIDTH = 280;
+const DIALOG_MAX_WIDTH = 560;
+
 const TASK_DETAIL_DIALOG_WIDTH = {
-  defaultWidth: 320,
-  minWidth: 280,
-  maxWidth: 560,
-  minMainWidth: 280,
+  defaultWidth: DIALOG_DEFAULT_WIDTH,
+  minWidth: DIALOG_MIN_WIDTH,
+  maxWidth: DIALOG_MAX_WIDTH,
+  minMainWidth: DIALOG_MIN_WIDTH,
 };
 
 function getTaskDialogTitle(kind: TaskDetailDialogKind): string {
@@ -49,37 +74,39 @@ function TaskInfoRows({
   statusLabel: string;
 }) {
   const executionMode =
-    selected.task.executionMode === 'autonomous' ? '自动模式' : '人工确认';
+    selected.task.executionMode === 'autonomous'
+      ? LABELS.modeAutonomous
+      : LABELS.modeManual;
   return (
     <div className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-2 px-4 pb-4 text-sm">
-      <span className="text-text-muted">ID</span>
+      <span className="text-text-muted">{LABELS.fieldId}</span>
       <span className="truncate">{selected.task.taskId}</span>
       {selected.task.seq != null && (
         <>
-          <span className="text-text-muted">Seq</span>
-          <span>#{selected.task.seq}</span>
+          <span className="text-text-muted">{LABELS.fieldSeq}</span>
+          <span>{`#${selected.task.seq}`}</span>
         </>
       )}
       {selected.task.type && (
         <>
-          <span className="text-text-muted">Type</span>
+          <span className="text-text-muted">{LABELS.fieldType}</span>
           <span>{selected.task.type}</span>
         </>
       )}
-      <span className="text-text-muted">Thread</span>
+      <span className="text-text-muted">{LABELS.fieldThread}</span>
       <span className="truncate">{selected.thread.threadId}</span>
-      <span className="text-text-muted">Plan Status</span>
+      <span className="text-text-muted">{LABELS.fieldPlanStatus}</span>
       <span>{getThreadStatusLabel(selected.thread.status)}</span>
-      <span className="text-text-muted">Workflow</span>
+      <span className="text-text-muted">{LABELS.fieldWorkflow}</span>
       <span>{selected.task.currentWorkflowKind}</span>
-      <span className="text-text-muted">Source</span>
+      <span className="text-text-muted">{LABELS.fieldSource}</span>
       <span>{selected.task.source}</span>
-      <span className="text-text-muted">Mode</span>
+      <span className="text-text-muted">{LABELS.fieldMode}</span>
       <span>{executionMode}</span>
-      <span className="text-text-muted">Status</span>
+      <span className="text-text-muted">{LABELS.fieldStatus}</span>
       <span>{statusLabel}</span>
       <TaskInfoOptionalRows selected={selected} />
-      <span className="text-text-muted">Updated</span>
+      <span className="text-text-muted">{LABELS.fieldUpdated}</span>
       <span>{formatTime(selected.task.updatedAt)}</span>
     </div>
   );
@@ -94,13 +121,13 @@ function TaskInfoOptionalRows({
     <>
       {selected.task.branchName && (
         <>
-          <span className="text-text-muted">Branch</span>
+          <span className="text-text-muted">{LABELS.fieldBranch}</span>
           <span className="truncate">{selected.task.branchName}</span>
         </>
       )}
       {selected.task.worktreePath && (
         <>
-          <span className="text-text-muted">Worktree</span>
+          <span className="text-text-muted">{LABELS.fieldWorktree}</span>
           <span className="truncate" title={selected.task.worktreePath}>
             {selected.task.worktreePath}
           </span>
@@ -108,14 +135,14 @@ function TaskInfoOptionalRows({
       )}
       {selected.task.prUrl && (
         <>
-          <span className="text-text-muted">PR</span>
+          <span className="text-text-muted">{LABELS.fieldPr}</span>
           <a
             href={selected.task.prUrl}
             target="_blank"
             rel="noreferrer"
             className="truncate text-brand hover:text-brand-hover"
           >
-            #{selected.task.prNumber || selected.task.prUrl}
+            {`#${selected.task.prNumber || selected.task.prUrl}`}
           </a>
         </>
       )}
@@ -132,7 +159,7 @@ export function TaskDetailHeader({
     <div className="sticky top-0 z-20 border-b border-border-color bg-bg-secondary/95 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.18)] backdrop-blur md:px-6">
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm font-semibold text-text-secondary">
-          任务面板
+          {LABELS.panelTitle}
         </div>
         <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
           {TASK_DETAIL_ACTIONS.map((action) => {

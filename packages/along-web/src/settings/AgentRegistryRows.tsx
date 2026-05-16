@@ -1,6 +1,3 @@
-// biome-ignore-all lint/style/noJsxLiterals: settings table uses compact inline labels.
-// biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: table rendering is kept together for readability.
-
 import { Input, Select } from '../components/ui/input';
 import type { AgentConfig, RegistryConfig } from '../types';
 import {
@@ -9,6 +6,12 @@ import {
   optional,
   Section,
 } from './registryTableParts';
+
+const LABELS = {
+  noAgent: '暂无 Agent',
+  selectRuntime: '选择 Runtime',
+  useRuntimeDefault: '使用 Runtime 默认',
+} as const;
 
 export function AgentRegistryRows({
   registry,
@@ -38,7 +41,7 @@ export function AgentRegistryRows({
         <span />
       </div>
       <div className="divide-y divide-white/5">
-        {registry.agents.length === 0 && <EmptyRows label="暂无 Agent" />}
+        {registry.agents.length === 0 && <EmptyRows label={LABELS.noAgent} />}
         {registry.agents.map((agent) => (
           <AgentRow
             key={agent.id}
@@ -80,7 +83,7 @@ function AgentRow({
           onUpdate(agent.id, { runtimeId: event.target.value })
         }
       >
-        <option value="">选择 Runtime</option>
+        <option value="">{LABELS.selectRuntime}</option>
         {registry.runtimes.map((item) => (
           <option key={item.id} value={item.id}>
             {item.id}
@@ -93,7 +96,7 @@ function AgentRow({
           onUpdate(agent.id, { modelId: optional(event.target.value) })
         }
       >
-        <option value="">使用 Runtime 默认</option>
+        <option value="">{LABELS.useRuntimeDefault}</option>
         {registry.models.map((model) => (
           <option key={model.id} value={model.id}>
             {model.id}

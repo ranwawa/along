@@ -1,5 +1,3 @@
-// biome-ignore-all lint/nursery/noExcessiveLinesPerFile: worktree orchestration keeps git preparation branches together.
-// biome-ignore-all lint/style/noMagicNumbers: branch naming limits are legacy behavior.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,18 +10,25 @@ import {
   updateTaskDelivery,
   updateTaskRepository,
 } from './task-planning';
+import { generateTaskBranchName } from './task-worktree-branch';
+import {
+  createTaskWorktree,
+  ensureDefaultBranchReady,
+  isGitWorktree,
+  syncDefaultBranch,
+  type TaskWorktreeContext,
+} from './task-worktree-ops';
+
+export type {
+  TaskWorktreeCommandOptions,
+  TaskWorktreeCommandRunner,
+} from './task-worktree-types';
+
+import type {
+  TaskWorktreeCommandOptions,
+  TaskWorktreeCommandRunner,
+} from './task-worktree-types';
 import { getDefaultBranch } from './worktree-init';
-
-export interface TaskWorktreeCommandOptions {
-  cwd: string;
-  env?: NodeJS.ProcessEnv;
-}
-
-export type TaskWorktreeCommandRunner = (
-  command: string,
-  args: string[],
-  options: TaskWorktreeCommandOptions,
-) => Promise<Result<string>>;
 
 export interface PrepareTaskWorktreeInput {
   snapshot: TaskPlanningSnapshot;
@@ -66,20 +71,6 @@ export async function defaultTaskWorktreeCommandRunner(
   return success(
     typeof result.stdout === 'string' ? result.stdout.trimEnd() : '',
   );
-}
-
-function slugifyTitle(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/_/g, '-')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 36)
-    .replace(/^-|-$/g, '');
-  return slug || 'task';
 }
 
 async function runGit(
@@ -139,65 +130,6 @@ export async function ensureTaskRepository(
   if (!updateRes.success) return updateRes;
 
   return success({ ...parsed, inferred: true });
-}
-
-async function branchExists(
-  runner: TaskWorktreeCommandRunner,
-  repoPath: string,
-  branchName: string,
-): Promise<boolean> {
-  const result = await runGit(runner, repoPath, [
-    'rev-parse',
-    '--verify',
-    '--quiet',
-    `refs/heads/${branchName}`,
-  ]);
-  return result.success;
-}
-
-export async function generateTaskBranchName(
-  runner: TaskWorktreeCommandRunner,
-  repoPath: string,
-  taskId: string,
-  title: string,
-  seq?: number,
-  type?: string,
-): Promise<string> {
-  const prefix = type || 'feat';
-  const slug = slugifyTitle(title);
-  const suffix =
-    seq != null ? `-${seq}` : `-${taskId.replace(/^task_/, '').slice(0, 8)}`;
-  const base = `${prefix}/${slug}${suffix}`;
-  if (!(await branchExists(runner, repoPath, base))) return base;
-
-  for (let index = 2; index <= 20; index += 1) {
-    const candidate = `${base}-${index}`;
-    if (!(await branchExists(runner, repoPath, candidate))) return candidate;
-  }
-
-  return `${base}-${Date.now().toString(36)}`;
-}
-
-async function isGitWorktree(
-  runner: TaskWorktreeCommandRunner,
-  worktreePath: string,
-): Promise<boolean> {
-  if (!fs.existsSync(worktreePath)) return false;
-  const result = await runGit(runner, worktreePath, [
-    'rev-parse',
-    '--is-inside-work-tree',
-  ]);
-  return result.success && result.data.trim() === 'true';
-}
-
-interface TaskWorktreeContext {
-  runner: TaskWorktreeCommandRunner;
-  snapshot: TaskPlanningSnapshot;
-  repoPath: string;
-  worktreePath: string;
-  branchName: string;
-  defaultBranch: string;
-  workspaceMode: 'worktree' | 'default_branch';
 }
 
 function getTaskDataDir(
@@ -261,79 +193,6 @@ async function resolveTaskWorktreeContext(
     defaultBranch: defaultBranchRes.data,
     workspaceMode: input.snapshot.task.workspaceMode,
   });
-}
-
-async function syncDefaultBranch(context: TaskWorktreeContext) {
-  if (context.workspaceMode === TASK_WORKSPACE_MODE.WORKTREE) {
-    fs.mkdirSync(path.dirname(context.worktreePath), { recursive: true });
-  }
-  const fetchRes = await runGit(context.runner, context.repoPath, [
-    'fetch',
-    'origin',
-    context.defaultBranch,
-  ]);
-  if (!fetchRes.success) {
-    return failure(`同步远端默认分支失败: ${fetchRes.error}`);
-  }
-  if (context.workspaceMode === TASK_WORKSPACE_MODE.WORKTREE) {
-    await runGit(context.runner, context.repoPath, ['worktree', 'prune']);
-  }
-  return success(null);
-}
-
-async function ensureDefaultBranchReady(context: TaskWorktreeContext) {
-  const statusRes = await runGit(context.runner, context.repoPath, [
-    'status',
-    '--porcelain',
-  ]);
-  if (!statusRes.success) {
-    return failure(`读取默认分支工作区状态失败: ${statusRes.error}`);
-  }
-  const changedFiles = statusRes.data
-    .split('\n')
-    .map((file) => file.trim())
-    .filter(Boolean);
-  if (changedFiles.length > 0) {
-    return failure(
-      `默认分支工作区存在未提交变更，不能直接执行 Task: ${changedFiles.join(
-        ', ',
-      )}`,
-    );
-  }
-
-  const switchRes = await runGit(context.runner, context.repoPath, [
-    'switch',
-    context.defaultBranch,
-  ]);
-  if (!switchRes.success) {
-    return failure(`切换默认分支失败: ${switchRes.error}`);
-  }
-
-  const ffRes = await runGit(context.runner, context.repoPath, [
-    'merge',
-    '--ff-only',
-    `origin/${context.defaultBranch}`,
-  ]);
-  return ffRes.success
-    ? success(null)
-    : failure(`同步默认分支失败: ${ffRes.error}`);
-}
-
-async function createTaskWorktree(context: TaskWorktreeContext) {
-  const addArgs = context.snapshot.task.branchName
-    ? ['worktree', 'add', context.worktreePath, context.branchName]
-    : [
-        'worktree',
-        'add',
-        '-B',
-        context.branchName,
-        context.worktreePath,
-        `origin/${context.defaultBranch}`,
-      ];
-  const addRes = await runGit(context.runner, context.repoPath, addArgs);
-  return addRes.success
-    ? success(null)
-    : failure(`创建 Task worktree 失败: ${addRes.error}`);
 }
 
 async function ensureTaskWorktreeReady(context: TaskWorktreeContext) {

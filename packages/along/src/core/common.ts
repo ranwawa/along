@@ -1,5 +1,3 @@
-// biome-ignore-all lint/suspicious/noExplicitAny: legacy shared helper keeps external error shapes untyped.
-// biome-ignore-all lint/style/noMagicNumbers: legacy time formatting constants are outside this migration.
 import { createRequire } from 'node:module';
 import { consola } from 'consola';
 import { config } from './config';
@@ -28,6 +26,10 @@ import { failure, success } from './result';
 
 export { failure, success };
 
+export function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 let cachedIsRepo: boolean | null = null;
 
 // 检查目录是否在 git 仓库中
@@ -39,8 +41,8 @@ export async function checkGitRepo(): Promise<Result<boolean>> {
     if (!isRepo) return failure('当前目录不是 git 仓库');
     cachedIsRepo = true;
     return success(true);
-  } catch (e: any) {
-    return failure(`检查 git 仓库失败: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(`检查 git 仓库失败: ${getErrorMessage(error)}`);
   }
 }
 
@@ -51,18 +53,24 @@ export async function get_repo_root(): Promise<string> {
 }
 
 // 计算运行时间
+const MILLISECONDS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
+
 export function calculate_runtime(startTime: string): string {
   const start = new Date(startTime).getTime();
   if (Number.isNaN(start)) return '未知';
 
-  const diffSeconds = Math.floor((Date.now() - start) / 1000);
+  const diffSeconds = Math.floor(
+    (Date.now() - start) / MILLISECONDS_PER_SECOND,
+  );
 
-  if (diffSeconds < 60) {
+  if (diffSeconds < SECONDS_PER_MINUTE) {
     return `${diffSeconds}s`;
-  } else if (diffSeconds < 3600) {
-    return `${Math.floor(diffSeconds / 60)}m`;
+  } else if (diffSeconds < SECONDS_PER_HOUR) {
+    return `${Math.floor(diffSeconds / SECONDS_PER_MINUTE)}m`;
   } else {
-    return `${Math.floor(diffSeconds / 3600)}h${Math.floor((diffSeconds % 3600) / 60)}m`;
+    return `${Math.floor(diffSeconds / SECONDS_PER_HOUR)}h${Math.floor((diffSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE)}m`;
   }
 }
 
@@ -98,8 +106,10 @@ export async function readRepoInfo(): Promise<
     if (!match) return failure(`无法解析远程仓库地址: ${remote}`);
     cachedRepoInfo = { owner: match[1], repo: match[2].trim() };
     return success(cachedRepoInfo);
-  } catch (e: any) {
-    return failure(`无法获取 git 远程仓库 origin 信息: ${e.message}`);
+  } catch (error: unknown) {
+    return failure(
+      `无法获取 git 远程仓库 origin 信息: ${getErrorMessage(error)}`,
+    );
   }
 }
 
@@ -122,7 +132,9 @@ export function ensureRuntimePermissions(worktreePath: string) {
     commonLogger.info(
       `已自动授权 ${runtime.name} 访问 ${config.USER_ALONG_DIR}/`,
     );
-  } catch (e: any) {
-    commonLogger.warn(`自动授权 ${runtime.name} 失败: ${e.message}`);
+  } catch (error: unknown) {
+    commonLogger.warn(
+      `自动授权 ${runtime.name} 失败: ${getErrorMessage(error)}`,
+    );
   }
 }
