@@ -21,6 +21,10 @@ import { runTaskAgentTurn } from './agent-runtime';
 import { runAutoCommitLoop } from './exec-auto-commit-loop';
 import { runExecStepsTurn } from './exec-step-runner';
 import { areExecStepsApproved, findExecStepsArtifact } from './exec-steps';
+import {
+  loadProductionContract,
+  type ProductionContract,
+} from './verification-gate';
 import { runVerificationLoop } from './verification-loop';
 
 export interface RunTaskExecAgentInput {
@@ -44,6 +48,7 @@ interface PreparedExecRun {
   snapshot: TaskPlanningSnapshot;
   approvedPlan: TaskPlanRevisionRecord;
   worktree: PrepareTaskWorktreeOutput;
+  productionContract: ProductionContract;
 }
 
 interface ApprovedExecContext {
@@ -113,6 +118,17 @@ async function runExecTurn(input: {
   });
 }
 
+async function loadRequiredProductionContract(
+  worktree: PrepareTaskWorktreeOutput,
+  commandRunner: TaskWorktreeCommandRunner,
+): Promise<Result<ProductionContract>> {
+  return loadProductionContract(
+    worktree.worktreePath,
+    worktree.defaultBranch,
+    commandRunner,
+  );
+}
+
 async function prepareExecRun(
   input: RunTaskExecAgentInput,
   commandRunner: TaskWorktreeCommandRunner,
@@ -138,13 +154,24 @@ async function prepareExecRun(
   });
   if (!worktreeRes.success) return failure(worktreeRes.error);
 
+  const contractRes = await loadRequiredProductionContract(
+    worktreeRes.data,
+    commandRunner,
+  );
+  if (!contractRes.success) return failure(contractRes.error);
+
   const startedRes = transitionTaskWorkflow({
     taskId: input.taskId,
     event: { type: 'exec.started' },
   });
   if (!startedRes.success) return failure(startedRes.error);
 
-  return success({ snapshot, approvedPlan, worktree: worktreeRes.data });
+  return success({
+    snapshot,
+    approvedPlan,
+    worktree: worktreeRes.data,
+    productionContract: contractRes.data,
+  });
 }
 
 function readApprovedExecContext(taskId: string): Result<ApprovedExecContext> {
@@ -223,6 +250,7 @@ async function commitAndVerify(input: {
     commandRunner: input.commandRunner,
     assistantText: commitResult.data.assistantText,
     commitShas: commitResult.data.commitShas,
+    productionContract: input.prepared.productionContract,
   });
 }
 

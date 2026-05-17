@@ -20,6 +20,7 @@ import type {
 } from './exec-agent';
 import {
   loadProductionContract,
+  type ProductionContract,
   runVerificationGate,
   type VerificationGateOutput,
 } from './verification-gate';
@@ -33,6 +34,7 @@ export interface RunVerificationLoopInput {
   commandRunner: TaskWorktreeCommandRunner;
   assistantText: string;
   commitShas: string[];
+  productionContract?: ProductionContract;
 }
 
 function recordVerificationResult(
@@ -135,18 +137,22 @@ async function attemptFix(
 export async function runVerificationLoop(
   input: RunVerificationLoopInput,
 ): Promise<Result<RunTaskExecAgentOutput>> {
-  const contract = await loadProductionContract(
-    input.worktree.worktreePath,
-    input.worktree.defaultBranch,
-    input.commandRunner,
-  );
+  const contractRes = input.productionContract
+    ? success(input.productionContract)
+    : await loadProductionContract(
+        input.worktree.worktreePath,
+        input.worktree.defaultBranch,
+        input.commandRunner,
+      );
+  if (!contractRes.success) return failure(contractRes.error);
+  const contract = contractRes.data;
   const maxFixAttempts = contract.verify.maxFixAttempts;
 
   for (let attempt = 0; attempt <= maxFixAttempts; attempt += 1) {
     const gateOutput = await runVerificationGate({
       worktreePath: input.worktree.worktreePath,
       commandRunner: input.commandRunner,
-      commands: contract.verify.commands,
+      commands: [...contract.verify.setup, ...contract.verify.required],
       timeoutMs: contract.verify.timeoutMs,
     });
     recordVerificationResult(input, gateOutput, attempt, maxFixAttempts);

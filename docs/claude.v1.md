@@ -8,7 +8,7 @@
 
 ### 生产契约
 
-提供默认契约（biome + typescript + vitest + build），所有业务项目尽量统一。特殊情况才在 `.along/production-contract.json` 中自定义。
+不提供默认验证命令。项目必须在默认分支显式提供 `.along/production-contract.json`，否则 exec 启动前直接失败。公共契约只定义 schema、执行顺序和执行策略；项目质量语义由各项目自己实现。
 
 ### 防自证
 
@@ -41,17 +41,25 @@ Exec Agent (自检: 增量 lint/test)
 
 ---
 
-## 默认生产契约
+## 生产契约格式
 
 ```json
 {
   "version": 1,
   "verify": {
-    "commands": [
-      { "name": "lint", "command": "bunx", "args": ["biome", "check", "."] },
-      { "name": "typecheck", "command": "bunx", "args": ["tsc", "--noEmit"] },
-      { "name": "test", "command": "bun", "args": ["run", "test"] },
-      { "name": "build", "command": "bun", "args": ["run", "build"] }
+    "setup": [
+      {
+        "name": "install",
+        "command": "bun",
+        "args": ["install", "--frozen-lockfile"]
+      }
+    ],
+    "required": [
+      {
+        "name": "quality",
+        "command": "bun",
+        "args": ["run", "quality:full"]
+      }
     ],
     "maxFixAttempts": 2,
     "timeoutMs": 300000
@@ -59,7 +67,7 @@ Exec Agent (自检: 增量 lint/test)
 }
 ```
 
-项目可在 `.along/production-contract.json` 中覆盖。缺失时使用默认值。
+`verify.setup` 必须显式声明，可为空数组；`verify.required` 必须至少包含一个验证命令。`maxFixAttempts` 和 `timeoutMs` 可省略，由 Along 使用执行策略默认值补齐。
 
 ---
 

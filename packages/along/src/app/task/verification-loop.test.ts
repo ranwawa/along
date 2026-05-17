@@ -99,7 +99,14 @@ const failedGateOutput = {
 const defaultContract = {
   version: 1,
   verify: {
-    commands: [
+    setup: [
+      {
+        name: 'install',
+        command: 'bun',
+        args: ['install', '--frozen-lockfile'],
+      },
+    ],
+    required: [
       { name: 'lint', command: 'bunx', args: ['biome', 'check', '.'] },
     ],
     maxFixAttempts: 2,
@@ -110,9 +117,10 @@ const defaultContract = {
 describe('runVerificationLoop', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    verificationGateMock.loadProductionContract.mockResolvedValue(
-      defaultContract,
-    );
+    verificationGateMock.loadProductionContract.mockResolvedValue({
+      success: true,
+      data: defaultContract,
+    });
     planningMocks.readTaskPlanningSnapshot.mockReturnValue({
       success: true,
       data: baseInput.snapshot,
@@ -127,6 +135,18 @@ describe('runVerificationLoop', () => {
     const result = await runVerificationLoop(baseInput as never);
 
     expect(result.success).toBe(true);
+    expect(verificationGateMock.runVerificationGate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commands: [
+          {
+            name: 'install',
+            command: 'bun',
+            args: ['install', '--frozen-lockfile'],
+          },
+          { name: 'lint', command: 'bunx', args: ['biome', 'check', '.'] },
+        ],
+      }),
+    );
     expect(planningMocks.transitionTaskWorkflow).toHaveBeenCalledWith({
       taskId: 'task-1',
       event: { type: 'exec.verified' },
@@ -211,5 +231,17 @@ describe('runVerificationLoop', () => {
         metadata: expect.objectContaining({ kind: 'verification_report' }),
       }),
     );
+  });
+
+  it('当生产验证契约缺失时，直接失败且不运行验证命令', async () => {
+    verificationGateMock.loadProductionContract.mockResolvedValue({
+      success: false,
+      error: '缺少生产验证契约 .along/production-contract.json',
+    });
+
+    const result = await runVerificationLoop(baseInput as never);
+
+    expect(result.success).toBe(false);
+    expect(verificationGateMock.runVerificationGate).not.toHaveBeenCalled();
   });
 });
