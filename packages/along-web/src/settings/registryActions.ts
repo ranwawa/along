@@ -6,6 +6,7 @@ import type {
   RegistryConfig,
   RuntimeConfig,
 } from '../types';
+import { attachKey } from './stableKey';
 import type { SettingsState } from './useSettingsController';
 
 type SetSettingsState = Dispatch<SetStateAction<SettingsState>>;
@@ -49,12 +50,8 @@ function createAgent(id: string, registry: RegistryConfig): AgentConfig {
   return { id, runtimeId: registry.runtimes[0]?.id || 'codex' };
 }
 
-function updateList<T extends { id: string }>(
-  items: T[],
-  id: string,
-  patch: Partial<T>,
-) {
-  return items.map((item) => (item.id === id ? { ...item, ...patch } : item));
+function updateListByIndex<T>(items: T[], index: number, patch: Partial<T>) {
+  return items.map((item, i) => (i === index ? { ...item, ...patch } : item));
 }
 
 function updateRegistry(
@@ -76,11 +73,11 @@ function addItem<T extends { id: string }>(
     prefix,
     items.map((item) => item.id),
   );
-  return [...items, create(id)];
+  return [...items, attachKey(create(id))];
 }
 
-function removeItem<T extends { id: string }>(items: T[], id: string) {
-  return items.filter((item) => item.id !== id);
+function removeByIndex<T>(items: T[], index: number) {
+  return items.filter((_, i) => i !== index);
 }
 
 function providerActions(setState: SetSettingsState) {
@@ -90,15 +87,15 @@ function providerActions(setState: SetSettingsState) {
         ...registry,
         providers: addItem(registry.providers, 'provider', createProvider),
       })),
-    updateProvider: (id: string, patch: Partial<ProviderConfig>) =>
+    updateProvider: (index: number, patch: Partial<ProviderConfig>) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        providers: updateList(registry.providers, id, patch),
+        providers: updateListByIndex(registry.providers, index, patch),
       })),
-    removeProvider: (id: string) =>
+    removeProvider: (index: number) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        providers: removeItem(registry.providers, id),
+        providers: removeByIndex(registry.providers, index),
       })),
   };
 }
@@ -112,15 +109,15 @@ function modelActions(setState: SetSettingsState) {
           createModel(id, registry),
         ),
       })),
-    updateModel: (id: string, patch: Partial<ModelConfig>) =>
+    updateModel: (index: number, patch: Partial<ModelConfig>) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        models: updateList(registry.models, id, patch),
+        models: updateListByIndex(registry.models, index, patch),
       })),
-    removeModel: (id: string) =>
+    removeModel: (index: number) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        models: removeItem(registry.models, id),
+        models: removeByIndex(registry.models, index),
       })),
   };
 }
@@ -134,15 +131,15 @@ function runtimeActions(setState: SetSettingsState) {
           createRuntime(id, registry),
         ),
       })),
-    updateRuntime: (id: string, patch: Partial<RuntimeConfig>) =>
+    updateRuntime: (index: number, patch: Partial<RuntimeConfig>) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        runtimes: updateList(registry.runtimes, id, patch),
+        runtimes: updateListByIndex(registry.runtimes, index, patch),
       })),
-    removeRuntime: (id: string) =>
+    removeRuntime: (index: number) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        runtimes: removeItem(registry.runtimes, id),
+        runtimes: removeByIndex(registry.runtimes, index),
       })),
   };
 }
@@ -156,15 +153,15 @@ function agentActions(setState: SetSettingsState) {
           createAgent(id, registry),
         ),
       })),
-    updateAgent: (id: string, patch: Partial<AgentConfig>) =>
+    updateAgent: (index: number, patch: Partial<AgentConfig>) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        agents: updateList(registry.agents, id, patch),
+        agents: updateListByIndex(registry.agents, index, patch),
       })),
-    removeAgent: (id: string) =>
+    removeAgent: (index: number) =>
       updateRegistry(setState, (registry) => ({
         ...registry,
-        agents: removeItem(registry.agents, id),
+        agents: removeByIndex(registry.agents, index),
       })),
   };
 }

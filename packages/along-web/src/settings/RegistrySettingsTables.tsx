@@ -12,17 +12,17 @@ import { RuntimeRows } from './RuntimeRows';
 
 interface RegistryActions {
   addProvider: () => void;
-  updateProvider: (id: string, patch: Partial<ProviderConfig>) => void;
-  removeProvider: (id: string) => void;
+  updateProvider: (index: number, patch: Partial<ProviderConfig>) => void;
+  removeProvider: (index: number) => void;
   addModel: () => void;
-  updateModel: (id: string, patch: Partial<ModelConfig>) => void;
-  removeModel: (id: string) => void;
+  updateModel: (index: number, patch: Partial<ModelConfig>) => void;
+  removeModel: (index: number) => void;
   addRuntime: () => void;
-  updateRuntime: (id: string, patch: Partial<RuntimeConfig>) => void;
-  removeRuntime: (id: string) => void;
+  updateRuntime: (index: number, patch: Partial<RuntimeConfig>) => void;
+  removeRuntime: (index: number) => void;
   addAgent: () => void;
-  updateAgent: (id: string, patch: Partial<AgentConfig>) => void;
-  removeAgent: (id: string) => void;
+  updateAgent: (index: number, patch: Partial<AgentConfig>) => void;
+  removeAgent: (index: number) => void;
 }
 
 export function RegistrySettingsTables({

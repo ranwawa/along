@@ -1,4 +1,4 @@
-import { RefreshCw, Save } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Save } from 'lucide-react';
 import { Alert } from './components/ui/alert';
 import { Button } from './components/ui/button';
 import { RegistrySettingsTables } from './settings/RegistrySettingsTables';
@@ -77,12 +77,23 @@ function SettingsAlerts({ state }: { state: SettingsState }) {
   );
 }
 
-export function SettingsView() {
+export function SettingsView({ onBack }: { onBack: () => void }) {
   const settings = useSettingsController();
   const registry = settings.state.registry;
   return (
     <div className="flex-1 min-h-0 border-t border-border-color overflow-auto bg-bg-secondary">
       <div className="max-w-6xl mx-auto p-4 md:p-6 flex flex-col gap-5">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            aria-label="返回"
+            onClick={onBack}
+            size="icon"
+            className="h-8 w-8"
+          >
+            <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+          </Button>
+        </div>
         <SettingsHeader
           state={settings.state}
           loadConfig={settings.loadConfig}

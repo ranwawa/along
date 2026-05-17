@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { RegistryConfig } from '../types';
 import { useRegistryActions } from './registryActions';
+import { attachKeys, stripKeys } from './stableKey';
 
 interface ConfigApiError {
   error?: string;
@@ -56,6 +57,27 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
+function keyRegistry(registry: RegistryConfig): RegistryConfig {
+  return {
+    ...registry,
+    providers: attachKeys(registry.providers),
+    models: attachKeys(registry.models),
+    runtimes: attachKeys(registry.runtimes),
+    agents: attachKeys(registry.agents),
+    profiles: attachKeys(registry.profiles),
+  };
+}
+
+function stripRegistry(registry: RegistryConfig): RegistryConfig {
+  return {
+    providers: stripKeys(registry.providers),
+    models: stripKeys(registry.models),
+    runtimes: stripKeys(registry.runtimes),
+    agents: stripKeys(registry.agents),
+    profiles: stripKeys(registry.profiles),
+  };
+}
+
 function useSettingsData() {
   const [state, setState] = useState<SettingsState>(initialSettingsState);
   const loadConfig = useCallback(async () => {
@@ -66,7 +88,7 @@ function useSettingsData() {
       );
       setState((previous) => ({
         ...previous,
-        registry: result,
+        registry: keyRegistry(result),
         loading: false,
       }));
     } catch (err: unknown) {
@@ -91,7 +113,7 @@ function useSaveConfig(state: SettingsState, setState: SetSettingsState) {
       const result = await putSettingsConfig(state);
       setState((previous) => ({
         ...previous,
-        registry: result,
+        registry: keyRegistry(result),
         saving: false,
         savedAt: new Date().toLocaleTimeString('zh-CN'),
       }));
@@ -110,7 +132,7 @@ async function putSettingsConfig(state: SettingsState) {
   const response = await fetch('/api/registry', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(registry),
+    body: JSON.stringify(stripRegistry(registry)),
   });
   return readJsonResponse<RegistryConfig>(response);
 }

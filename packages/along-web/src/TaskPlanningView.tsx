@@ -1,4 +1,4 @@
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from './components/ui/button';
 import { TaskDetail } from './task-planning/TaskDetail';
@@ -34,8 +34,10 @@ function SidebarToggleButton({
 
 function CollapsedSidebar({
   onToggleCollapsed,
+  onNavigateSettings,
 }: {
   onToggleCollapsed: () => void;
+  onNavigateSettings: () => void;
 }) {
   return (
     <div className="min-h-0 xl:h-full border-b xl:border-b-0 xl:border-r border-border-color flex xl:flex-col items-center justify-end xl:justify-start gap-2 bg-bg-glass p-2">
@@ -45,26 +47,40 @@ function CollapsedSidebar({
         className="h-9 w-9"
         icon="open"
       />
+      <Button
+        type="button"
+        aria-label="设置"
+        onClick={onNavigateSettings}
+        size="icon"
+        className="h-9 w-9"
+      >
+        <Settings aria-hidden="true" className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
 
-function TaskPlanningSidebar({
-  collapsed,
+function ExpandedSidebar({
   onToggleCollapsed,
+  onNavigateSettings,
   taskPlanning,
 }: {
-  collapsed: boolean;
   onToggleCollapsed: () => void;
+  onNavigateSettings: () => void;
   taskPlanning: TaskPlanningController;
 }) {
-  if (collapsed) {
-    return <CollapsedSidebar onToggleCollapsed={onToggleCollapsed} />;
-  }
-
   return (
     <div className="min-h-[360px] xl:min-h-0 xl:h-full border-b xl:border-b-0 xl:border-r border-border-color flex flex-col bg-bg-glass">
-      <div className="shrink-0 px-4 pt-3 flex justify-end">
+      <div className="shrink-0 px-4 pt-3 flex justify-between">
+        <Button
+          type="button"
+          aria-label="设置"
+          onClick={onNavigateSettings}
+          size="icon"
+          className="h-8 w-8"
+        >
+          <Settings aria-hidden="true" className="h-4 w-4" />
+        </Button>
         <SidebarToggleButton
           ariaLabel="折叠左侧栏"
           onClick={onToggleCollapsed}
@@ -86,6 +102,35 @@ function TaskPlanningSidebar({
         onDelete={taskPlanning.deleteTask}
       />
     </div>
+  );
+}
+
+function TaskPlanningSidebar({
+  collapsed,
+  onToggleCollapsed,
+  taskPlanning,
+  onNavigateSettings,
+}: {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  taskPlanning: TaskPlanningController;
+  onNavigateSettings: () => void;
+}) {
+  if (collapsed) {
+    return (
+      <CollapsedSidebar
+        onToggleCollapsed={onToggleCollapsed}
+        onNavigateSettings={onNavigateSettings}
+      />
+    );
+  }
+
+  return (
+    <ExpandedSidebar
+      onToggleCollapsed={onToggleCollapsed}
+      onNavigateSettings={onNavigateSettings}
+      taskPlanning={taskPlanning}
+    />
   );
 }
 
@@ -126,7 +171,11 @@ function TaskPlanningMain({
   );
 }
 
-export function TaskPlanningView() {
+export function TaskPlanningView({
+  onNavigateSettings,
+}: {
+  onNavigateSettings: () => void;
+}) {
   const taskPlanning = useTaskPlanningController();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -142,6 +191,7 @@ export function TaskPlanningView() {
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         taskPlanning={taskPlanning}
+        onNavigateSettings={onNavigateSettings}
       />
       <TaskPlanningMain taskPlanning={taskPlanning} />
     </div>

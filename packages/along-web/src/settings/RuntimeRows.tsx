@@ -6,6 +6,7 @@ import {
   optional,
   Section,
 } from './registryTableParts';
+import { getKey } from './stableKey';
 
 const LABELS = {
   noRuntime: '暂无 Runtime',
@@ -17,23 +18,25 @@ const LABELS = {
 
 function RuntimeRow({
   runtime,
+  index,
   registry,
   disabled,
   onUpdate,
   onRemove,
 }: {
   runtime: RuntimeConfig;
+  index: number;
   registry: RegistryConfig;
   disabled: boolean;
-  onUpdate: (id: string, patch: Partial<RuntimeConfig>) => void;
-  onRemove: (id: string) => void;
+  onUpdate: (index: number, patch: Partial<RuntimeConfig>) => void;
+  onRemove: (index: number) => void;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-[150px_120px_minmax(0,1fr)_84px] gap-3 p-4 items-center">
       <Input
         type="text"
         value={runtime.id}
-        onChange={(event) => onUpdate(runtime.id, { id: event.target.value })}
+        onChange={(event) => onUpdate(index, { id: event.target.value })}
       />
       <Input
         type="text"
@@ -44,7 +47,7 @@ function RuntimeRow({
       <Select
         value={runtime.modelId || ''}
         onChange={(event) =>
-          onUpdate(runtime.id, { modelId: optional(event.target.value) })
+          onUpdate(index, { modelId: optional(event.target.value) })
         }
       >
         <option value="">{LABELS.notSet}</option>
@@ -54,7 +57,7 @@ function RuntimeRow({
           </option>
         ))}
       </Select>
-      <DeleteButton disabled={disabled} onClick={() => onRemove(runtime.id)} />
+      <DeleteButton disabled={disabled} onClick={() => onRemove(index)} />
     </div>
   );
 }
@@ -69,8 +72,8 @@ export function RuntimeRows({
   registry: RegistryConfig;
   disabled: boolean;
   onAdd: () => void;
-  onUpdate: (id: string, patch: Partial<RuntimeConfig>) => void;
-  onRemove: (id: string) => void;
+  onUpdate: (index: number, patch: Partial<RuntimeConfig>) => void;
+  onRemove: (index: number) => void;
 }) {
   return (
     <Section
@@ -89,10 +92,11 @@ export function RuntimeRows({
         {registry.runtimes.length === 0 && (
           <EmptyRows label={LABELS.noRuntime} />
         )}
-        {registry.runtimes.map((runtime) => (
+        {registry.runtimes.map((runtime, index) => (
           <RuntimeRow
-            key={runtime.id}
+            key={getKey(runtime)}
             runtime={runtime}
+            index={index}
             registry={registry}
             disabled={disabled}
             onUpdate={onUpdate}

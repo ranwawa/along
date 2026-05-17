@@ -6,6 +6,7 @@ import {
   optional,
   Section,
 } from './registryTableParts';
+import { getKey } from './stableKey';
 
 const LABELS = {
   noAgent: '暂无 Agent',
@@ -27,8 +28,8 @@ export function AgentRegistryRows({
   registry: RegistryConfig;
   disabled: boolean;
   onAdd: () => void;
-  onUpdate: (id: string, patch: Partial<AgentConfig>) => void;
-  onRemove: (id: string) => void;
+  onUpdate: (index: number, patch: Partial<AgentConfig>) => void;
+  onRemove: (index: number) => void;
 }) {
   return (
     <Section
@@ -46,10 +47,11 @@ export function AgentRegistryRows({
       </div>
       <div className="divide-y divide-white/5">
         {registry.agents.length === 0 && <EmptyRows label={LABELS.noAgent} />}
-        {registry.agents.map((agent) => (
+        {registry.agents.map((agent, index) => (
           <AgentRow
-            key={agent.id}
+            key={getKey(agent)}
             agent={agent}
+            index={index}
             registry={registry}
             disabled={disabled}
             onUpdate={onUpdate}
@@ -63,29 +65,29 @@ export function AgentRegistryRows({
 
 function AgentRow({
   agent,
+  index,
   registry,
   disabled,
   onUpdate,
   onRemove,
 }: {
   agent: AgentConfig;
+  index: number;
   registry: RegistryConfig;
   disabled: boolean;
-  onUpdate: (id: string, patch: Partial<AgentConfig>) => void;
-  onRemove: (id: string) => void;
+  onUpdate: (index: number, patch: Partial<AgentConfig>) => void;
+  onRemove: (index: number) => void;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-[150px_170px_minmax(0,1fr)_160px_84px] gap-3 p-4 items-center">
       <Input
         type="text"
         value={agent.id}
-        onChange={(event) => onUpdate(agent.id, { id: event.target.value })}
+        onChange={(event) => onUpdate(index, { id: event.target.value })}
       />
       <Select
         value={agent.runtimeId}
-        onChange={(event) =>
-          onUpdate(agent.id, { runtimeId: event.target.value })
-        }
+        onChange={(event) => onUpdate(index, { runtimeId: event.target.value })}
       >
         <option value="">{LABELS.selectRuntime}</option>
         {registry.runtimes.map((item) => (
@@ -97,7 +99,7 @@ function AgentRow({
       <Select
         value={agent.modelId || ''}
         onChange={(event) =>
-          onUpdate(agent.id, { modelId: optional(event.target.value) })
+          onUpdate(index, { modelId: optional(event.target.value) })
         }
       >
         <option value="">{LABELS.useRuntimeDefault}</option>
@@ -111,13 +113,13 @@ function AgentRow({
         type="text"
         value={agent.personalityVersion || ''}
         onChange={(event) =>
-          onUpdate(agent.id, {
+          onUpdate(index, {
             personalityVersion: optional(event.target.value),
           })
         }
         placeholder="version"
       />
-      <DeleteButton disabled={disabled} onClick={() => onRemove(agent.id)} />
+      <DeleteButton disabled={disabled} onClick={() => onRemove(index)} />
     </div>
   );
 }
