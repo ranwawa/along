@@ -201,13 +201,7 @@ async function ensureTaskWorktreeReady(context: TaskWorktreeContext) {
   }
 
   if (await isGitWorktree(context.runner, context.worktreePath)) {
-    const switchRes = await runGit(context.runner, context.worktreePath, [
-      'switch',
-      context.branchName,
-    ]);
-    return switchRes.success
-      ? success(null)
-      : failure(`切换 Task worktree 分支失败: ${switchRes.error}`);
+    return success(null);
   }
 
   if (fs.existsSync(context.worktreePath)) {
@@ -233,14 +227,21 @@ export async function prepareTaskWorktree(
   if (!contextRes.success) return contextRes;
   const context = contextRes.data;
 
+  if (context.workspaceMode !== TASK_WORKSPACE_MODE.DEFAULT_BRANCH) {
+    const updateRes = recordTaskWorktree(context);
+    if (!updateRes.success) return updateRes;
+  }
+
   const syncRes = await syncDefaultBranch(context);
   if (!syncRes.success) return syncRes;
 
   const worktreeRes = await ensureTaskWorktreeReady(context);
   if (!worktreeRes.success) return worktreeRes;
 
-  const updateRes = recordTaskWorktree(context);
-  if (!updateRes.success) return updateRes;
+  if (context.workspaceMode === TASK_WORKSPACE_MODE.DEFAULT_BRANCH) {
+    const updateRes = recordTaskWorktree(context);
+    if (!updateRes.success) return updateRes;
+  }
 
   return success({
     worktreePath: context.worktreePath,
