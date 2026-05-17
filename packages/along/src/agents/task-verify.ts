@@ -1,8 +1,7 @@
 import type {
   TaskPlanningSnapshot,
   TaskPlanRevisionRecord,
-} from '../domain/task-planning';
-import type { VerificationStepResult } from '../domain/task-verification-gate';
+} from '@ranwawa/along-contracts/task';
 import {
   loadWorkflowNodePrompt,
   renderAgentMarkdownTemplate,
@@ -11,6 +10,13 @@ import {
 const VERIFICATION_FIX_PROMPT_ID = 'verification-fix';
 const PLAN_BODY_LIMIT = 4000;
 const TASK_BODY_LIMIT = 2000;
+
+interface VerificationStepResult {
+  name: string;
+  passed: boolean;
+  output: string;
+  durationMs: number;
+}
 
 function truncateText(value: string, maxLength: number): string {
   const text = value.trim();

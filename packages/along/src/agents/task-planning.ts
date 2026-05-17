@@ -1,5 +1,5 @@
+import type { TaskPlanningSnapshot } from '@ranwawa/along-contracts/task';
 import { z } from 'zod';
-import type { TaskPlanningSnapshot } from '../domain/task-planning';
 import { renderAgentMarkdownTemplate } from './workflow-node-prompt-loader';
 
 export const PLANNER_CONTRACT_KIND = 'planner_contract';

@@ -46,14 +46,14 @@ v1 采用两层验证：
   - Delivery 成功创建 PR 后只记录交付结果；是否 `task.accepted` 仍由验收/完成动作决定，不能把“创建 PR”直接等同于“任务已验收”。
 
 - 确定性验证 gate：
-  - 新增 `task-verification-gate.ts`，只负责按 contract 执行命令。
+  - 新增 `verification-gate.ts`，只负责按 contract 执行命令。
   - 每个 step 记录 name、command、args、cwd、exitCode、durationMs、stdout/stderr 摘要。
   - 默认 fail-fast：任一 required step 失败即停止后续 required step。
   - 命令执行前后检查 git 工作区；Verify 命令导致工作区变脏时失败。
   - 输出必须做长度截断和 secret redaction，避免 token、密码或大日志写入 artifact。
 
 - 验证循环：
-  - 新增 `task-verification-loop.ts`，负责 verify -> fix -> re-commit -> re-verify。
+  - 新增 `verification-loop.ts`，负责 verify -> fix -> re-commit -> re-verify。
   - 初次 Verify 失败后，最多允许 Executor 修复 `maxFixAttempts=2` 轮。
   - Fix agent 只能修复 verification report 指出的失败，不允许扩大原需求。
   - 每轮修复后必须重新 auto-commit，并重新运行全量 Verify。
@@ -80,11 +80,11 @@ v1 采用两层验证：
 - Prompt 与文件入口：
   - 修改 `src/agents/workflow-node-prompts/executor-exec.md`，增加 Executor 自检要求。
   - 新增 `src/agents/workflow-node-prompts/verification-fix.md`，用于 Verify 失败后的定向修复。
-  - 新增 `src/domain/task-verification-gate.ts`，实现确定性验证命令执行。
-  - 新增 `src/domain/task-verification-loop.ts`，实现验证、自修、重新提交和重验循环。
-  - 修改 `src/domain/task-exec-agent.ts`，在 auto-commit 成功后接入 Verify。
-  - 修改 `src/integration/task-autonomous-continuation.ts`，只在 verified/WAITING 后调度 Delivery。
-  - 修改 `src/domain/task-delivery.ts`，移除 Delivery 对 `exec.verified` 的职责。
+  - 新增 `src/app/task/verification-gate.ts`，实现确定性验证命令执行。
+  - 新增 `src/app/task/verification-loop.ts`，实现验证、自修、重新提交和重验循环。
+  - 修改 `src/app/task/exec-agent.ts`，在 auto-commit 成功后接入 Verify。
+  - 修改 `src/app/scheduler/task-autonomous-continuation.ts`，只在 verified/WAITING 后调度 Delivery。
+  - 修改 `src/app/delivery/index.ts`，移除 Delivery 对 `exec.verified` 的职责。
 
 - UI/API：
   - `TaskAgentStage` 增加 `verify`。
@@ -99,7 +99,7 @@ v1 采用两层验证：
 
 - 保留“两层验证”设计：Executor 增量自检 + 独立 Verifier 全量 gate。
 - 明确当前流程 bug：`verifying/ACTIVE` 会误触发 autonomous Delivery，而 Delivery guard 又要求 `WAITING`。
-- 采用确定性 `task-verification-gate.ts` 和循环型 `task-verification-loop.ts` 的拆分。
+- 采用确定性 `verification-gate.ts` 和循环型 `verification-loop.ts` 的拆分。
 - 增加 `verification-fix.md`，让修复 prompt 只围绕验证失败证据。
 - 测试中明确覆盖 autonomous guard 从 ACTIVE 改为 WAITING 的行为。
 

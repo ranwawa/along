@@ -253,11 +253,11 @@ Session 完成时向 task 状态机发送事件：
 
 ## 涉及的关键文件
 
-- `packages/along/src/domain/task-workflow-state.ts` — 核心 reducer，完全重写
-- `packages/along/src/domain/task-planning.ts` — 移除 inferWorkflowState，状态读取改为从持久化的 workflow state 直接获取
-- `packages/along/src/domain/task-display-state.ts` — 适配新状态值
+- `packages/along/src/domain/workflow/state.ts` — 核心 reducer，完全重写
+- `packages/along/src/app/planning/index.ts` — 移除 inferWorkflowState，状态读取改为从持久化的 workflow state 直接获取
+- `packages/along/src/domain/workflow/display-state.ts` — 适配新状态值
 - `packages/along-web/src/task-planning/flowActionRouter.ts` — 适配新 action 映射
-- `packages/along/src/domain/session-state-machine.ts` — 调整事件上报接口（小改）
+- `packages/along/src/app/planning/agent-run-events.ts` — 调整事件上报接口（小改）
 
 ## 验证方式
 

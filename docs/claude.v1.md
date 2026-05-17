@@ -67,14 +67,14 @@ Exec Agent (自检: 增量 lint/test)
 
 | 文件 | 操作 |
 |---|---|
-| `src/domain/task-verification-gate.ts` | 新建 — 执行验证命令 |
-| `src/domain/task-verification-gate.test.ts` | 新建 — 测试 |
-| `src/domain/task-verification-loop.ts` | 新建 — 验证重试循环 |
-| `src/domain/task-verification-loop.test.ts` | 新建 — 测试 |
+| `src/app/task/verification-gate.ts` | 新建 — 执行验证命令 |
+| `src/app/task/verification-gate.test.ts` | 新建 — 测试 |
+| `src/app/task/verification-loop.ts` | 新建 — 验证重试循环 |
+| `src/app/task/verification-loop.test.ts` | 新建 — 测试 |
 | `src/agents/task-verify.ts` | 新建 — verification-fix prompt builder |
 | `src/agents/workflow-node-prompts/verification-fix.md` | 新建 — fix prompt |
 | `src/agents/workflow-node-prompts/executor-exec.md` | 修改 — 增加自检要求 |
-| `src/domain/task-exec-agent.ts` | 修改 — 插入 runVerificationLoop |
-| `src/integration/task-autonomous-continuation.ts` | 修改 — guard 改为 WAITING |
-| `src/integration/task-autonomous-continuation.test.ts` | 修改 — 更新测试 |
-| `src/domain/task-delivery.ts` | 修改 — exec.verified → task.accepted |
+| `src/app/task/exec-agent.ts` | 修改 — 插入 runVerificationLoop |
+| `src/app/scheduler/task-autonomous-continuation.ts` | 修改 — guard 改为 WAITING |
+| `src/app/scheduler/task-autonomous-continuation.test.ts` | 修改 — 更新测试 |
+| `src/app/delivery/index.ts` | 修改 — exec.verified → task.accepted |

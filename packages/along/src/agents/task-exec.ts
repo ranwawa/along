@@ -1,8 +1,7 @@
-import type { TaskAutoCommitFailure } from '../domain/task-auto-commit-types';
 import type {
   TaskPlanningSnapshot,
   TaskPlanRevisionRecord,
-} from '../domain/task-planning';
+} from '@ranwawa/along-contracts/task';
 import {
   loadWorkflowNodePrompt,
   renderAgentMarkdownTemplate,
@@ -16,6 +15,15 @@ const ARTIFACT_CONTEXT_LIMIT = 2500;
 const EXECUTOR_EXEC_PROMPT_ID = 'executor-exec';
 const EXECUTOR_TACTICAL_PLAN_PROMPT_ID = 'executor-tactical-plan';
 const AUTO_COMMIT_FIX_PROMPT_ID = 'auto-commit-fix';
+
+interface TaskAutoCommitFailure {
+  success: false;
+  error: string;
+  command: string;
+  summary: string;
+  changedFiles: string[];
+  failureArtifactId?: string;
+}
 
 function truncateText(value: string, maxLength = DEFAULT_TEXT_LIMIT): string {
   const text = value.trim();

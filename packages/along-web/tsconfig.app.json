@@ -9,6 +9,10 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "paths": {
+      "@ranwawa/along-contracts": ["../along-contracts/src/index.ts"],
+      "@ranwawa/along-contracts/*": ["../along-contracts/src/*"]
+    },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",

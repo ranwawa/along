@@ -1,0 +1,15 @@
+{
+  "name": "@ranwawa/along-contracts",
+  "version": "0.0.1",
+  "description": "Shared Along API and DTO contracts",
+  "license": "ISC",
+  "author": "ranwawa <274544338@qq.com>",
+  "type": "module",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts",
+    "./task": "./src/task.ts",
+    "./workflow": "./src/workflow.ts"
+  }
+}

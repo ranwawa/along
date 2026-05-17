@@ -65,29 +65,29 @@ bun run quality:full
 ## Project Structure
 
 ```txt
-packages/along/src/integration/ai-registry-store.ts
+packages/along/src/adapters/config/registry-store.ts
   新增：读写 ~/.along/config.json，返回唯一的 RegistryConfig，不承载旧配置兼容。
 
-packages/along/src/integration/ai-registry-api.ts
+packages/along/src/server/http/ai-registry-api.ts
   新增：registry HTTP API。MVP 可只返回 registry 只读视图；可编辑 UI 作为后续范围。
 
-packages/along/src/domain/runtime-service.ts
+packages/along/src/app/task/runtime-service.ts
   新增：Agent runtime 分发入口，提供 RuntimeService.runAgentTurn。
 
-packages/along/src/domain/codex-runtime-runner.ts
+packages/along/src/app/runtimes/codex/runtime-runner.ts
   Codex runtime 实现，提供 CodexRuntimeRunner.runAgentTurn，保留现有 stream/session 生命周期逻辑。
 
-packages/along/src/domain/ai-registry-config.ts
+packages/along/src/domain/registry/config.ts
   新增：注册表类型、Zod schema 和引用校验。
 
-packages/along/src/domain/ai-registry-resolver.ts
+packages/along/src/domain/registry/resolver.ts
   新增：Agent runtime config 和 Profile LLM config 的解析逻辑。
 
-packages/along/src/domain/llm-service.ts
+packages/along/src/app/task/llm-service.ts
   新增：轻量 Profile 直连模型调用入口。
 
-packages/along/src/domain/*.{test,tsx,ts}
-  与新增 domain 模块同目录放置单元测试。
+packages/along/src/{ai-registry,codex,task}/*.{test,tsx,ts}
+  与新增模块同目录放置单元测试。
 
 packages/along-web/src/settings/*
   后续 settings UI 扩展位置，不属于第一批必须改动。
@@ -369,14 +369,14 @@ MVP should fail fast:
 
 Required tests:
 
-- `ai-registry-config.test.ts`
+- `ai-registry/config.test.ts`
   - 接受最小合法 registry。
   - 拒绝重复 id。
   - 拒绝未知引用。
   - 兼容旧 credentials/credentialId 配置并迁移到 Model token 字段。
   - 缺失必需集合或必需引用时返回清晰错误。
 
-- `ai-registry-resolver.test.ts`
+- `ai-registry/resolver.test.ts`
   - Agent model priority: task override > agent > runtime。
   - Agent/Profile 只从最终 Model 解析 token。
   - Profile 解析到 provider、model、提示文本和 parameters。
@@ -451,13 +451,13 @@ Never:
 
 | Component | Responsibility | Depends On |
 |---|---|---|
-| `ai-registry-config.ts` | 定义 `RegistryConfig` 等配置类型、Zod schema、结构校验、引用校验 | `core/result.ts` |
-| `ai-registry-store.ts` | 读写 `~/.along/config.json`，只返回新 registry 结构 | `core/config.ts`, `ai-registry-config.ts` |
-| `ai-registry-resolver.ts` | 解析 Agent runtime config 与 Profile LLM config，处理模型优先级和 Model token | `ai-registry-config.ts` |
-| `codex-runtime-runner.ts` | 承接现有 Codex runner 行为，暴露 `CodexRuntimeRunner.runAgentTurn` | 现有 `task-codex-runner.ts` 逻辑 |
-| `runtime-service.ts` | 根据解析后的 Runtime 调用 Codex runner，拒绝非 Codex runtime | `ai-registry-resolver.ts`, `codex-runtime-runner.ts` |
-| `llm-service.ts` | 执行 Profile 直连模型调用，MVP 支持 openai-compatible provider | `ai-registry-resolver.ts` |
-| `ai-registry-api.ts` | 提供 registry HTTP API，替换旧 config API 的 editor/taskAgents 语义 | `ai-registry-store.ts` |
+| `ai-registry/config.ts` | 定义 `RegistryConfig` 等配置类型、Zod schema、结构校验、引用校验 | `core/result.ts` |
+| `integration/ai-registry-store.ts` | 读写 `~/.along/config.json`，只返回新 registry 结构 | `core/config.ts`, `ai-registry/config.ts` |
+| `ai-registry/resolver.ts` | 解析 Agent runtime config 与 Profile LLM config，处理模型优先级和 Model token | `ai-registry/config.ts` |
+| `codex/runtime-runner.ts` | 承接现有 Codex runner 行为，暴露 `CodexRuntimeRunner.runAgentTurn` | 现有 `codex/runner.ts` 逻辑 |
+| `task/runtime-service.ts` | 根据解析后的 Runtime 调用 Codex runner，拒绝非 Codex runtime | `ai-registry/resolver.ts`, `codex/runtime-runner.ts` |
+| `task/llm-service.ts` | 执行 Profile 直连模型调用，MVP 支持 openai-compatible provider | `ai-registry/resolver.ts` |
+| `integration/ai-registry-api.ts` | 提供 registry HTTP API，替换旧 config API 的 editor/taskAgents 语义 | `integration/ai-registry-store.ts` |
 | Settings UI | UI 文案和类型统一使用 Runtime/Profile，不再使用 Editor | `ai-registry-api.ts` |
 
 ### Implementation Order
@@ -465,10 +465,10 @@ Never:
 1. Registry schema and validation
    - 先实现纯类型、schema 和引用校验。
    - 这是所有后续解析、API、运行入口的基础。
-   - 验证点：`ai-registry-config.test.ts` 覆盖合法最小配置、重复 id、未知引用和旧 credential 配置迁移。
+   - 验证点：`ai-registry/config.test.ts` 覆盖合法最小配置、重复 id、未知引用和旧 credential 配置迁移。
 
 2. Registry store
-   - 用 `ai-registry-store.ts` 替换旧全局配置读取语义。
+   - 用 `integration/ai-registry-store.ts` 替换旧全局配置读取语义。
    - 不保留 `taskAgents`、旧顶层 GitHub token role `agents` 或 `aiRuntime` 包裹层。
    - 验证点：读不到配置、非法 JSON、非法 registry 时返回中文错误；合法配置可写回格式化 JSON。
 
@@ -477,21 +477,21 @@ Never:
    - Agent 模型优先级为 `task override > agent.modelId > runtime.modelId`。
    - token 只从最终 Model 解析。
    - `tokenEnv` 缺失必须在解析阶段失败。
-   - 验证点：`ai-registry-resolver.test.ts` 覆盖优先级、token 解析、失败路径。
+   - 验证点：`ai-registry/resolver.test.ts` 覆盖优先级、token 解析、失败路径。
 
 4. Codex runtime runner boundary
-   - 将现有 `task-codex-runner.ts` 的对外入口收敛到 `CodexRuntimeRunner.runAgentTurn`。
+   - 将现有 `codex/runner.ts` 的对外入口收敛到 `CodexRuntimeRunner.runAgentTurn`。
    - 保留现有 stream、thread resume、artifact、progress、cancellation 行为。
    - 验证点：现有 Codex runner 相关测试继续通过，新的 runner facade 有最小覆盖。
 
 5. RuntimeService
-   - 用 `runtime-service.ts` 替换旧 `task-agent-runtime.ts` 的 editor 分发。
+   - 用 `task/runtime-service.ts` 替换旧 `task/agent-runtime.ts` 的 editor 分发。
    - 输入和调用方统一使用 runtime，不再暴露 editor 字段。
    - MVP 只允许 `codex`，非 Codex runtime 在配置校验阶段失败。
    - 验证点：`runtime-service.test.ts` 确认 Codex agent 调用 runner，非 Codex 不进入分发。
 
 6. LLMService
-   - 实现 `LLMService.runProfile`，以 Profile 执行轻量 direct LLM 调用。
+   - 在 `task/llm-service.ts` 实现 `LLMService.runProfile`，以 Profile 执行轻量 direct LLM 调用。
    - MVP 支持 openai-compatible HTTP 调用；不引入 SDK 依赖，除非后续单独批准。
    - 验证点：`llm-service.test.ts` 使用 mocked fetch 覆盖 baseUrl、model、token、parameters、JSON outputFormat。
 
@@ -508,16 +508,16 @@ Never:
 ### Dependency Flow
 
 ```txt
-ai-registry-config
-  -> ai-registry-store
-  -> ai-registry-resolver
-  -> runtime-service -> codex-runtime-runner
-  -> llm-service
-  -> ai-registry-api
+ai-registry/config
+  -> integration/ai-registry-store
+  -> ai-registry/resolver
+  -> task/runtime-service -> codex/runtime-runner
+  -> task/llm-service
+  -> integration/ai-registry-api
   -> settings UI
 ```
 
-`codex-runtime-runner` 可以和 `ai-registry-config` 并行整理 facade，但 `runtime-service` 必须等 resolver 稳定后再接入。
+`codex/runtime-runner` 可以和 `ai-registry/config` 并行整理 facade，但 `task/runtime-service` 必须等 resolver 稳定后再接入。
 
 ### Risks And Mitigations
 
@@ -532,8 +532,8 @@ ai-registry-config
 ### Parallel Work
 
 - 可并行：
-  - `ai-registry-config.ts` 与 `codex-runtime-runner.ts` facade 梳理。
-  - `llm-service.ts` 的 HTTP client 测试设计与 settings UI 类型梳理。
+  - `ai-registry/config.ts` 与 `codex/runtime-runner.ts` facade 梳理。
+  - `task/llm-service.ts` 的 HTTP client 测试设计与 settings UI 类型梳理。
 
 - 必须顺序：
   - resolver 必须在 schema 后实现。
@@ -544,11 +544,11 @@ ai-registry-config
 ### Verification Checkpoints
 
 1. Schema checkpoint
-   - Run: `bun --filter @ranwawa/along test -- ai-registry-config`
+   - Run: `bun --filter @ranwawa/along test -- config`
    - Expected: registry 结构和引用校验测试通过。
 
 2. Resolver checkpoint
-   - Run: `bun --filter @ranwawa/along test -- ai-registry-resolver`
+   - Run: `bun --filter @ranwawa/along test -- resolver`
    - Expected: Agent/Profile 解析和 tokenEnv 失败路径通过。
 
 3. Runtime checkpoint
@@ -576,38 +576,38 @@ ai-registry-config
 
 - [x] Task: Implement registry config schema and validation
   - Acceptance: `RegistryConfig`、实体配置类型、Zod schema、结构校验和引用校验可独立使用；非法配置返回中文 `Result.failure`。
-  - Verify: `bun --filter @ranwawa/along test -- ai-registry-config`
-  - Files: `packages/along/src/domain/ai-registry-config.ts`, `packages/along/src/domain/ai-registry-config.test.ts`
+  - Verify: `bun --filter @ranwawa/along test -- config`
+  - Files: `packages/along/src/domain/registry/config.ts`, `packages/along/src/domain/registry/config.test.ts`
 
 - [x] Task: Implement registry store
   - Acceptance: `ai-registry-store.ts` 能读取、校验、写入 `~/.along/config.json`；不存在配置、非法 JSON、非法 registry 都有明确错误。
   - Verify: `bun --filter @ranwawa/along test -- ai-registry-store`
-  - Files: `packages/along/src/integration/ai-registry-store.ts`, `packages/along/src/integration/ai-registry-store.test.ts`, `packages/along/src/domain/ai-registry-config.ts`
+  - Files: `packages/along/src/adapters/config/registry-store.ts`, `packages/along/src/adapters/config/registry-store.test.ts`, `packages/along/src/domain/registry/config.ts`
 
 - [x] Task: Implement registry resolver
   - Acceptance: Agent runtime 和 Profile LLM 两条解析路径可用；模型优先级符合 spec；token 只来自最终 Model；`tokenEnv` 缺失在解析阶段失败。
-  - Verify: `bun --filter @ranwawa/along test -- ai-registry-resolver`
-  - Files: `packages/along/src/domain/ai-registry-resolver.ts`, `packages/along/src/domain/ai-registry-resolver.test.ts`, `packages/along/src/domain/ai-registry-config.ts`
+  - Verify: `bun --filter @ranwawa/along test -- resolver`
+  - Files: `packages/along/src/domain/registry/resolver.ts`, `packages/along/src/domain/registry/resolver.test.ts`, `packages/along/src/domain/registry/config.ts`
 
 - [x] Task: Add Codex runtime runner facade
   - Acceptance: `CodexRuntimeRunner.runAgentTurn` 暴露稳定入口；现有 Codex stream、resume、artifact、progress、cancellation 行为保持不变。
   - Verify: `bun --filter @ranwawa/along test -- codex-runtime task-codex`
-  - Files: `packages/along/src/domain/codex-runtime-runner.ts`, `packages/along/src/domain/codex-runtime-runner.test.ts`, `packages/along/src/domain/task-codex-runner.ts`
+  - Files: `packages/along/src/app/runtimes/codex/runtime-runner.ts`, `packages/along/src/app/runtimes/codex/runner.test.ts`, `packages/along/src/app/runtimes/codex/runner.ts`
 
 - [x] Task: Replace agent runtime dispatch with RuntimeService
   - Acceptance: Agent 执行入口统一使用 RuntimeService；输入、解析、错误信息中不再使用 editor 语义；Codex agent 能调用 Codex runtime runner。
   - Verify: `bun --filter @ranwawa/along test -- runtime-service`
-  - Files: `packages/along/src/domain/runtime-service.ts`, `packages/along/src/domain/runtime-service.test.ts`, current callers of `packages/along/src/domain/task-agent-runtime.ts`
+  - Files: `packages/along/src/app/task/runtime-service.ts`, `packages/along/src/app/task/runtime-service.test.ts`, current callers of `packages/along/src/app/task/agent-runtime.ts`
 
 - [x] Task: Implement LLMService Profile path
   - Acceptance: `LLMService.runProfile` 能按 Profile 构造 openai-compatible HTTP 请求；传入 resolved token、model、parameters；JSON 输出失败返回可读错误。
   - Verify: `bun --filter @ranwawa/along test -- llm-service`
-  - Files: `packages/along/src/domain/llm-service.ts`, `packages/along/src/domain/llm-service.test.ts`, `packages/along/src/domain/ai-registry-resolver.ts`
+  - Files: `packages/along/src/app/task/llm-service.ts`, `packages/along/src/app/task/llm-service.test.ts`, `packages/along/src/domain/registry/resolver.ts`
 
 - [x] Task: Replace config API with registry API
   - Acceptance: HTTP API 返回/写入顶层 registry；响应字段统一为 providers、models、runtimes、agents、profiles；不再暴露 credentials/editors/taskAgents。
   - Verify: `bun --filter @ranwawa/along test -- ai-registry-api`
-  - Files: `packages/along/src/integration/ai-registry-api.ts`, `packages/along/src/integration/ai-registry-api.test.ts`, server route registration file
+  - Files: `packages/along/src/server/http/ai-registry-api.ts`, `packages/along/src/server/http/ai-registry-api.test.ts`, server route registration file
 
 - [x] Task: Update settings UI and shared frontend types
   - Acceptance: UI、类型和配置映射统一使用 Runtime/Profile；不再显示或提交 Editor/taskAgents 语义。
@@ -615,9 +615,9 @@ ai-registry-config
   - Files: `packages/along-web/src/types-config.ts`, `packages/along-web/src/settings/*`, `packages/along-web/src/SettingsView.tsx`, `packages/along-web/src/types.ts`
 
 - [x] Task: Remove obsolete config/runtime surfaces
-  - Acceptance: 删除或停用旧 `agent-config.ts`、`config-api.ts`、`task-agent-runtime.ts` 中旧语义；项目编译和测试不再依赖 `getTaskAgentConfig`、`editor`、`taskAgents`。
+  - Acceptance: 删除或停用旧 `agent-config.ts`、`config-api.ts`、`task/agent-runtime.ts` 中旧语义；项目编译和测试不再依赖 `getTaskAgentConfig`、`editor`、`taskAgents`。
   - Verify: `bun run test`
-  - Files: `packages/along/src/integration/agent-config.ts`, `packages/along/src/integration/config-api.ts`, `packages/along/src/domain/task-agent-runtime.ts`, affected imports
+  - Files: legacy config surfaces, `packages/along/src/app/task/agent-runtime.ts`, affected imports
 
 - [x] Task: Global naming and quality gate
   - Acceptance: Agent runtime 语义中无 `Editor/editor/taskAgents` 残留；所有相关测试、lint、变更质量门禁通过。

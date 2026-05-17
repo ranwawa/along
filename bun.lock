@@ -20,6 +20,7 @@
       },
       "dependencies": {
         "@openai/codex-sdk": "^0.128.0",
+        "@ranwawa/along-contracts": "workspace:*",
         "@ranwawa/along-web": "workspace:*",
         "chalk": "^5.6.2",
         "commander": "^14.0.3",
@@ -33,10 +34,15 @@
         "vitest": "^4.1.4",
       },
     },
+    "packages/along-contracts": {
+      "name": "@ranwawa/along-contracts",
+      "version": "0.0.1",
+    },
     "packages/along-web": {
       "name": "@ranwawa/along-web",
       "version": "0.0.1",
       "dependencies": {
+        "@ranwawa/along-contracts": "workspace:*",
         "lucide-react": "^1.14.0",
       },
       "devDependencies": {
@@ -202,6 +208,8 @@
     "@radix-ui/rect": ["@radix-ui/rect@1.1.1", "", {}, "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw=="],
 
     "@ranwawa/along": ["@ranwawa/along@workspace:packages/along"],
+
+    "@ranwawa/along-contracts": ["@ranwawa/along-contracts@workspace:packages/along-contracts"],
 
     "@ranwawa/along-web": ["@ranwawa/along-web@workspace:packages/along-web"],
 
