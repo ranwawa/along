@@ -10,7 +10,7 @@ import type {
   TaskItemRecord,
 } from './records';
 import type { TaskAgentStage, TaskAgentStageStatus } from './types';
-import { TASK_AGENT_STAGE } from './types';
+import { TASK_AGENT_ID, TASK_AGENT_STAGE } from './types';
 
 export * from './db-rows';
 export * from './db-utils';
@@ -21,9 +21,21 @@ const TASK_AGENT_STAGE_DEFINITIONS: Array<{
   agentId: string;
   label: string;
 }> = [
-  { stage: TASK_AGENT_STAGE.PLANNING, agentId: 'planner', label: '计划阶段' },
-  { stage: TASK_AGENT_STAGE.EXEC, agentId: 'implementer', label: '实现阶段' },
-  { stage: TASK_AGENT_STAGE.DELIVERY, agentId: 'delivery', label: '交付阶段' },
+  {
+    stage: TASK_AGENT_STAGE.PLANNING,
+    agentId: TASK_AGENT_ID.PLANNING,
+    label: '计划阶段',
+  },
+  {
+    stage: TASK_AGENT_STAGE.EXEC,
+    agentId: TASK_AGENT_ID.EXEC,
+    label: '实现阶段',
+  },
+  {
+    stage: TASK_AGENT_STAGE.DELIVERY,
+    agentId: TASK_AGENT_ID.DELIVERY,
+    label: '交付阶段',
+  },
 ];
 
 function buildStageRecord(

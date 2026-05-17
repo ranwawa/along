@@ -1,6 +1,7 @@
 import {
   readTaskAgentBinding,
   readTaskPlanningSnapshot,
+  TASK_AGENT_ID,
   TASK_RUNTIME_EXECUTION_MODE,
   type TaskPlanningSnapshot,
   type TaskRuntimeExecutionMode,
@@ -78,7 +79,7 @@ export function resolveTaskBindingCwd(
 ): Result<string | undefined> {
   const bindingRes = readTaskAgentBinding(
     snapshot.thread.threadId,
-    readStringField(payload, 'agentId') || 'planner',
+    readStringField(payload, 'agentId') || TASK_AGENT_ID.PLANNING,
     'codex',
   );
   if (!bindingRes.success) return bindingRes;

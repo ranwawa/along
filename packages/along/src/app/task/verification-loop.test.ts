@@ -58,7 +58,7 @@ const mockRunner: TaskWorktreeCommandRunner = async () => ({
 });
 
 const baseInput = {
-  taskInput: { taskId: 'task-1', cwd: '/repo', agentId: 'implementer' },
+  taskInput: { taskId: 'task-1', cwd: '/repo', agentId: 'exec' },
   snapshot: {
     task: { taskId: 'task-1', title: 'test', body: 'body' },
     thread: { threadId: 'thread-1' },
@@ -71,7 +71,7 @@ const baseInput = {
     defaultBranch: 'main',
     workspaceMode: 'worktree' as const,
   },
-  agentId: 'implementer',
+  agentId: 'exec',
   commandRunner: mockRunner,
   assistantText: 'done',
   commitShas: ['abc123'],

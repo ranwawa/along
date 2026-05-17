@@ -3,6 +3,7 @@ import {
   AGENT_RUN_STATUS,
   type AgentRunStatus,
   ARTIFACT_TYPE,
+  TASK_AGENT_ID,
   TASK_WORKSPACE_MODE,
   type TaskAgentRunRecord,
   type TaskArtifactRecord,
@@ -128,9 +129,9 @@ function buildAgentRunEvents(agentRuns: TaskAgentRunRecord[]): TaskFlowEvent[] {
   const events: TaskFlowEvent[] = [];
   for (const run of agentRuns) {
     const stage =
-      run.agentId === 'planner'
+      run.agentId === TASK_AGENT_ID.PLANNING
         ? 'plan_discussion'
-        : run.agentId === 'delivery'
+        : run.agentId === TASK_AGENT_ID.DELIVERY
           ? 'delivery'
           : 'exec';
     events.push({

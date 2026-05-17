@@ -99,7 +99,7 @@ function mockTaskAgentCancellation(planningMocks: PlanningMocks) {
         runId: 'run-1',
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         status: 'cancelled',
         inputArtifactIds: [],

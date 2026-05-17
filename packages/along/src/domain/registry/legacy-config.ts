@@ -8,6 +8,7 @@ import type {
 import {
   getString,
   isRecord,
+  LEGACY_AGENT_ID_MAP,
   migrateRegistryArrayConfig,
 } from './legacy-config-providers';
 
@@ -126,7 +127,11 @@ function migrateLegacyTaskAgents(input: {
         })
       : undefined;
 
-    input.agents.push({ id: agentId, runtimeId: 'codex', modelId });
+    input.agents.push({
+      id: LEGACY_AGENT_ID_MAP[agentId] || agentId,
+      runtimeId: 'codex',
+      modelId,
+    });
   }
 }
 

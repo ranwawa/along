@@ -11,6 +11,11 @@ vi.mock('./index', () => ({
   LIFECYCLE: {
     CANCELLED: 'cancelled',
   },
+  TASK_AGENT_ID: {
+    PLANNING: 'planning',
+    EXEC: 'exec',
+    DELIVERY: 'delivery',
+  },
   readTaskPlanningSnapshot: planningMocks.readTaskPlanningSnapshot,
   publishTaskPlanRevision: planningMocks.publishTaskPlanRevision,
   publishPlanningUpdate: planningMocks.publishPlanningUpdate,
@@ -100,7 +105,7 @@ describe('task-planning-agent', () => {
           runId: 'run-1',
           taskId: 'task-1',
           threadId: 'thread-1',
-          agentId: 'planner',
+          agentId: 'planning',
           runtimeId: 'codex',
           status: 'succeeded',
           inputArtifactIds: ['art-user'],
@@ -167,7 +172,7 @@ describe('task-planning-agent', () => {
       expect.objectContaining({
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         cwd: '/tmp/project',
         inputArtifactIds: ['art-user'],
         outputMetadata: expect.objectContaining({
@@ -181,7 +186,7 @@ describe('task-planning-agent', () => {
     );
     expect(planningMocks.publishTaskPlanRevision).toHaveBeenCalledWith({
       taskId: 'task-1',
-      agentId: 'planner',
+      agentId: 'planning',
       body: '## 方案\n\n先做 API。',
       type: undefined,
       metadata: {
@@ -235,7 +240,7 @@ describe('task-planning-agent', () => {
           runId: 'run-1',
           taskId: 'task-1',
           threadId: 'thread-1',
-          agentId: 'planner',
+          agentId: 'planning',
           runtimeId: 'codex',
           status: 'succeeded',
           inputArtifactIds: ['art-user'],
@@ -262,7 +267,7 @@ describe('task-planning-agent', () => {
     expect(result.success).toBe(true);
     expect(planningMocks.publishPlanningUpdate).toHaveBeenCalledWith({
       taskId: 'task-1',
-      agentId: 'planner',
+      agentId: 'planning',
       body: '需要确认默认执行仓库。',
       kind: 'planner_clarification',
     });
@@ -276,7 +281,7 @@ describe('task-planning-agent', () => {
           runId: 'run-1',
           taskId: 'task-1',
           threadId: 'thread-1',
-          agentId: 'planner',
+          agentId: 'planning',
           runtimeId: 'codex',
           status: 'succeeded',
           inputArtifactIds: ['art-user'],
@@ -303,7 +308,7 @@ describe('task-planning-agent', () => {
     expect(result.success).toBe(true);
     expect(planningMocks.publishTaskPlanRevision).toHaveBeenCalledWith({
       taskId: 'task-1',
-      agentId: 'planner',
+      agentId: 'planning',
       body: '按钮文案说的是“删除下方的演示数据”。',
       type: undefined,
       metadata: {

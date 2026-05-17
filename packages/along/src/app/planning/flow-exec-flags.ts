@@ -22,7 +22,6 @@ import {
   getStageByAgentStage,
 } from './flow-stages';
 import {
-  isPlanningApproved,
   isTaskCompleted,
   isTaskDelivered,
   isTaskImplemented,
@@ -90,7 +89,6 @@ function computeExecStepsFlags(
   return {
     canImplement: Boolean(
       input.thread.approvedPlanId &&
-        isPlanningApproved(input) &&
         execStage?.status !== AGENT_RUN_STATUS.RUNNING,
     ),
     needsConfirmation: Boolean(execSteps && !execStepsApproved),

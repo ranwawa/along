@@ -23,6 +23,7 @@ import {
   PLAN_STATUS,
   ROUND_RESOLUTION,
   ROUND_STATUS,
+  TASK_AGENT_ID,
   THREAD_STATUS,
   WORKFLOW_KIND,
 } from './types';
@@ -91,7 +92,7 @@ function insertPlanArtifact(
     role: ARTIFACT_ROLE.AGENT,
     body,
     metadata: {
-      agentId: input.agentId || 'planner',
+      agentId: input.agentId || TASK_AGENT_ID.PLANNING,
       version: nextVersion,
       basedOnPlanId: snapshot.currentPlan?.planId,
       roundId: snapshot.openRound?.roundId,
@@ -211,7 +212,7 @@ function runPublishUpdateTxn(
     role: ARTIFACT_ROLE.AGENT,
     body,
     metadata: {
-      agentId: input.agentId || 'planner',
+      agentId: input.agentId || TASK_AGENT_ID.PLANNING,
       roundId: snapshot.openRound?.roundId,
       basedOnPlanId: snapshot.currentPlan?.planId,
       kind:

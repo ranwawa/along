@@ -6,6 +6,7 @@ import {
   finishTaskAgentRun,
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
+  TASK_AGENT_ID,
   TASK_WORKSPACE_MODE,
   type TaskPlanningSnapshot,
   transitionTaskWorkflow,
@@ -104,7 +105,7 @@ async function finalizeDelivery(
   recordTaskAgentResult({
     taskId: ctx.input.taskId,
     threadId: ctx.snapshot.thread.threadId,
-    agentId: 'delivery',
+    agentId: TASK_AGENT_ID.DELIVERY,
     runtimeId: 'system',
     body: resultBody,
   });
@@ -177,7 +178,7 @@ async function setupDeliveryRun(
   const runRes = createTaskAgentRun({
     taskId: input.taskId,
     threadId: snapshot.thread.threadId,
-    agentId: 'delivery',
+    agentId: TASK_AGENT_ID.DELIVERY,
     runtimeId: 'system',
     inputArtifactIds: [
       approvedPlan.artifactId,

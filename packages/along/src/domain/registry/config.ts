@@ -181,11 +181,24 @@ function validateCrossReferences(registry: RegistryConfig): Result<void> {
   return success(undefined);
 }
 
+const REQUIRED_AGENT_IDS = ['planning', 'exec', 'delivery'] as const;
+
+function validateRequiredAgents(registry: RegistryConfig): Result<void> {
+  for (const id of REQUIRED_AGENT_IDS) {
+    if (!findById(registry.agents, id)) {
+      return failure(`Registry 缺少必需 Agent: ${id}`);
+    }
+  }
+  return success(undefined);
+}
+
 function validateRegistryReferences(
   registry: RegistryConfig,
 ): Result<RegistryConfig> {
   const uniqueRes = validateUniqueIds(registry);
   if (!uniqueRes.success) return uniqueRes;
+  const requiredRes = validateRequiredAgents(registry);
+  if (!requiredRes.success) return requiredRes;
   const providerRes = validateModelProviderRefs(registry);
   if (!providerRes.success) return providerRes;
   const crossRes = validateCrossReferences(registry);

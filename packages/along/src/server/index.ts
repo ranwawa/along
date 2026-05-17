@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { consola } from 'consola';
+import { readRegistryConfig } from '../adapters/config/registry-store';
 import { initLogRouter } from '../adapters/logging/log-router';
 import {
   buildRegistry,
@@ -71,9 +72,18 @@ function registerShutdownHandlers() {
   process.on('SIGINT', shutdown);
 }
 
+function validateAgentRegistry() {
+  const registryRes = readRegistryConfig();
+  if (!registryRes.success) {
+    logger.error(`Registry 配置加载失败: ${registryRes.error}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   config.ensureDataDirs();
   const { port, host } = parseCliOpts();
+  validateAgentRegistry();
   const registry = await initRegistry();
   logRecoveredRuns();
   Bun.serve({

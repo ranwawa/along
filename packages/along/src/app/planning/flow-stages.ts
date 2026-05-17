@@ -223,7 +223,7 @@ function getExecStageSummary(input: {
   artifacts: TaskArtifactRecord[];
 }): string {
   if (isTaskImplemented(input.task)) return '实现已完成';
-  if (!isPlanningApproved(input)) return '等待计划批准';
+  if (!input.thread.approvedPlanId) return '等待计划批准';
   const approvedPlan =
     input.currentPlan?.planId === input.thread.approvedPlanId
       ? input.currentPlan

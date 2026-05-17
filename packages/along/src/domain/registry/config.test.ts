@@ -28,7 +28,15 @@ function createRegistry(): RegistryConfig {
     ],
     agents: [
       {
-        id: 'planner',
+        id: 'planning',
+        runtimeId: 'codex-openai',
+      },
+      {
+        id: 'exec',
+        runtimeId: 'codex-openai',
+      },
+      {
+        id: 'delivery',
         runtimeId: 'codex-openai',
       },
     ],
@@ -68,7 +76,7 @@ describe('ai-registry/config', () => {
 
   it('拒绝未知引用', () => {
     const registry = createRegistry();
-    registry.agents[0] = { id: 'planner', runtimeId: 'missing' };
+    registry.agents[0] = { id: 'planning', runtimeId: 'missing' };
 
     const result = parseRegistryConfig(registry);
 
@@ -100,7 +108,11 @@ describe('ai-registry/config', () => {
       runtimes: [
         { id: 'codex-openai', kind: 'codex', modelId: 'legacy-model' },
       ],
-      agents: [{ id: 'planner', runtimeId: 'codex-openai' }],
+      agents: [
+        { id: 'planning', runtimeId: 'codex-openai' },
+        { id: 'exec', runtimeId: 'codex-openai' },
+        { id: 'delivery', runtimeId: 'codex-openai' },
+      ],
       profiles: [
         {
           id: 'task-title-summary',
@@ -135,6 +147,7 @@ describe('ai-registry/config', () => {
         '*': { editor: 'claude' },
         planner: { editor: 'codex', model: 'gpt-5.5' },
         implementer: { editor: 'codex', model: 'gpt-5.5' },
+        delivery: { editor: 'codex', model: 'gpt-5.5' },
       },
       providers: {
         deepseek: {
@@ -157,8 +170,9 @@ describe('ai-registry/config', () => {
       });
       expect(result.data.runtimes).toEqual([{ id: 'codex', kind: 'codex' }]);
       expect(result.data.agents).toEqual([
-        { id: 'planner', runtimeId: 'codex', modelId: 'gpt-5.5' },
-        { id: 'implementer', runtimeId: 'codex', modelId: 'gpt-5.5' },
+        { id: 'planning', runtimeId: 'codex', modelId: 'gpt-5.5' },
+        { id: 'exec', runtimeId: 'codex', modelId: 'gpt-5.5' },
+        { id: 'delivery', runtimeId: 'codex', modelId: 'gpt-5.5' },
       ]);
       expect(
         result.data.models.find((model) => model.id === 'gpt-5.5'),

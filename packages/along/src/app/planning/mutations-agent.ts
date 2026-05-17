@@ -21,6 +21,7 @@ import {
   ARTIFACT_ROLE,
   ARTIFACT_TYPE,
   LIFECYCLE,
+  TASK_AGENT_ID,
   TASK_AGENT_PROGRESS_PHASE,
   TASK_AGENT_STAGE,
 } from './types';
@@ -207,7 +208,7 @@ export function recordTaskExecFailure(
   const openRes = ensureTaskIsOpen(snapshot, '记录实现失败');
   if (!openRes.success) return openRes;
 
-  const agentId = input.agentId || 'implementer';
+  const agentId = input.agentId || TASK_AGENT_ID.EXEC;
   const runtimeId = input.runtimeId || 'codex';
   const flowRes = runExecFailureFlow(input, snapshot, agentId, runtimeId);
   if (!flowRes.success) return flowRes;

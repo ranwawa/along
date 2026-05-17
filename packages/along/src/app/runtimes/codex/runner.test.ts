@@ -88,7 +88,7 @@ describe('codex/runner', () => {
       success: true,
       data: {
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
@@ -99,7 +99,7 @@ describe('codex/runner', () => {
         runId: 'run-1',
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         status: 'running',
         inputArtifactIds: [],
@@ -113,7 +113,7 @@ describe('codex/runner', () => {
         runId: 'run-1',
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         status: 'succeeded',
         inputArtifactIds: [],
@@ -128,7 +128,7 @@ describe('codex/runner', () => {
         runId: 'run-1',
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         status: 'running',
         inputArtifactIds: [],
@@ -156,7 +156,7 @@ describe('codex/runner', () => {
         runId: 'run-1',
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         phase: 'starting',
         summary: 'Agent 已启动，正在创建 Codex thread。',
@@ -170,7 +170,7 @@ describe('codex/runner', () => {
         runId: 'run-1',
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         source: 'system',
         kind: 'progress',
@@ -211,7 +211,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '看图生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -257,7 +257,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       model: 'gpt-5.2',
@@ -294,7 +294,7 @@ describe('codex/runner', () => {
     });
     expect(planningMocks.updateTaskAgentRuntimeSession).toHaveBeenCalledWith(
       'thread-1',
-      'planner',
+      'planning',
       'codex',
       'codex-thread-1',
     );
@@ -380,7 +380,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -487,7 +487,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -529,7 +529,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -575,7 +575,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -636,7 +636,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -688,7 +688,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -708,7 +708,7 @@ describe('codex/runner', () => {
       success: true,
       data: {
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         runtimeSessionId: 'codex-thread-old',
         updatedAt: '2026-01-01T00:00:00.000Z',
@@ -728,7 +728,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '继续',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -756,7 +756,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'implementer',
+      agentId: 'exec',
       prompt: '继续实现',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -765,7 +765,7 @@ describe('codex/runner', () => {
     expect(result.success).toBe(false);
     expect(planningMocks.updateTaskAgentRuntimeSession).toHaveBeenCalledWith(
       'thread-1',
-      'implementer',
+      'exec',
       'codex',
       'codex-thread-failed',
     );
@@ -781,7 +781,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => {
@@ -817,7 +817,7 @@ describe('codex/runner', () => {
     const result = await runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,
@@ -860,7 +860,7 @@ describe('codex/runner', () => {
       const pending = runTaskCodexTurn({
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'implementer',
+        agentId: 'exec',
         prompt: '实现',
         cwd: '/tmp/project',
         createClient: () => client,
@@ -908,7 +908,7 @@ describe('codex/runner', () => {
                   runId: 'run-1',
                   taskId: 'task-1',
                   threadId: 'thread-1',
-                  agentId: 'planner',
+                  agentId: 'planning',
                   runtimeId: 'codex',
                   status: 'cancelled',
                   inputArtifactIds: [],
@@ -931,7 +931,7 @@ describe('codex/runner', () => {
     const pending = runTaskCodexTurn({
       taskId: 'task-1',
       threadId: 'thread-1',
-      agentId: 'planner',
+      agentId: 'planning',
       prompt: '生成计划',
       cwd: '/tmp/project',
       createClient: () => client,

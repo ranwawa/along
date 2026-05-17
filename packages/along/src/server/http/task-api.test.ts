@@ -50,6 +50,11 @@ vi.mock('../../app/planning', () => ({
     EXEC: 'exec',
     DELIVERY: 'delivery',
   },
+  TASK_AGENT_ID: {
+    PLANNING: 'planning',
+    EXEC: 'exec',
+    DELIVERY: 'delivery',
+  },
   LIFECYCLE: {
     CANCELLED: 'cancelled',
     COMPLETED: 'completed',

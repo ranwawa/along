@@ -20,6 +20,7 @@ import {
   publishPlanningUpdate,
   publishTaskPlanRevision,
   readTaskPlanningSnapshot,
+  TASK_AGENT_ID,
   type TaskPlanningSnapshot,
   type TaskRuntimeExecutionMode,
 } from './';
@@ -178,7 +179,7 @@ export async function runTaskPlanningAgent(
     return failure('Task 已关闭，不能运行 Planner');
   }
 
-  const agentId = input.agentId || 'planner';
+  const agentId = input.agentId || TASK_AGENT_ID.PLANNING;
   const result = await runPlannerAgentTurn({
     taskInput: input,
     snapshot,

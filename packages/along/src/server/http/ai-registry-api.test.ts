@@ -23,7 +23,11 @@ function createRegistry(): RegistryConfig {
       { id: 'model', providerId: 'openai', model: 'gpt-5.2', token: 'secret' },
     ],
     runtimes: [{ id: 'codex', kind: 'codex', modelId: 'model' }],
-    agents: [{ id: 'planner', runtimeId: 'codex' }],
+    agents: [
+      { id: 'planning', runtimeId: 'codex' },
+      { id: 'exec', runtimeId: 'codex' },
+      { id: 'delivery', runtimeId: 'codex' },
+    ],
     profiles: [],
   };
 }

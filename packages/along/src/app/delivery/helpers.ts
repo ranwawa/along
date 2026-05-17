@@ -6,6 +6,7 @@ import {
   LIFECYCLE,
   readTaskPlanningSnapshot,
   recordTaskAgentResult,
+  TASK_AGENT_ID,
   type TaskAgentRunRecord,
   type TaskPlanningSnapshot,
   transitionTaskWorkflow,
@@ -82,7 +83,7 @@ export function failDeliveryRun(
   recordTaskAgentResult({
     taskId: input.taskId,
     threadId: snapshot.thread.threadId,
-    agentId: 'delivery',
+    agentId: TASK_AGENT_ID.DELIVERY,
     runtimeId: 'system',
     body: `Delivery 失败：${message}`,
   });

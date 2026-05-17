@@ -1125,7 +1125,7 @@ describe('task-planning', () => {
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
@@ -1153,7 +1153,7 @@ describe('task-planning', () => {
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
@@ -1208,7 +1208,7 @@ describe('task-planning', () => {
       createTaskAgentRun({
         taskId,
         threadId: closed.success ? closed.data.thread.threadId : 'thread',
-        agentId: 'implementer',
+        agentId: 'exec',
         runtimeId: 'codex',
       }).success,
     ).toBe(false);
@@ -1262,7 +1262,7 @@ describe('task-planning', () => {
 
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       cwd: '/tmp/project',
     });
@@ -1272,7 +1272,7 @@ describe('task-planning', () => {
 
     const update = updateTaskAgentRuntimeSession(
       snapshot.data.thread.threadId,
-      'planner',
+      'planning',
       'codex',
       'session-1',
     );
@@ -1280,7 +1280,7 @@ describe('task-planning', () => {
 
     const nextBinding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
     });
     expect(nextBinding.success).toBe(true);
@@ -1297,7 +1297,7 @@ describe('task-planning', () => {
 
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
-      agentId: 'implementer',
+      agentId: 'exec',
       runtimeId: 'codex',
       cwd: '/tmp/project',
     });
@@ -1308,7 +1308,7 @@ describe('task-planning', () => {
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'implementer',
+      agentId: 'exec',
       runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
@@ -1324,7 +1324,7 @@ describe('task-planning', () => {
 
     const nextBinding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
-      agentId: 'implementer',
+      agentId: 'exec',
       runtimeId: 'codex',
       cwd: '/tmp/project',
     });
@@ -1343,7 +1343,7 @@ describe('task-planning', () => {
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
@@ -1359,7 +1359,7 @@ describe('task-planning', () => {
     const nextBinding = ensureTaskAgentBinding({
       taskId,
       threadId: 'thread-fork',
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       cwd: '/tmp/project',
     });
@@ -1377,7 +1377,7 @@ describe('task-planning', () => {
 
     const binding = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       cwd: '/tmp/project-a',
     });
@@ -1385,7 +1385,7 @@ describe('task-planning', () => {
 
     const update = updateTaskAgentRuntimeSession(
       snapshot.data.thread.threadId,
-      'planner',
+      'planning',
       'codex',
       'session-1',
     );
@@ -1393,7 +1393,7 @@ describe('task-planning', () => {
 
     const changed = ensureTaskAgentBinding({
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       cwd: '/tmp/project-b',
     });
@@ -1403,7 +1403,7 @@ describe('task-planning', () => {
 
     const stored = readTaskAgentBinding(
       snapshot.data.thread.threadId,
-      'planner',
+      'planning',
       'codex',
     );
     expect(stored.success).toBe(true);
@@ -1422,7 +1422,7 @@ describe('task-planning', () => {
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       runtimeSessionIdAtStart: 'session-1',
       inputArtifactIds: ['art-1'],
@@ -1454,7 +1454,7 @@ describe('task-planning', () => {
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
@@ -1464,7 +1464,7 @@ describe('task-planning', () => {
       runId: run.data.runId,
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       phase: TASK_AGENT_PROGRESS_PHASE.TOOL,
       summary: '正在执行工具或命令。',
@@ -1481,7 +1481,7 @@ describe('task-planning', () => {
     expect(refreshed.data.agentProgressEvents).toEqual([
       expect.objectContaining({
         runId: run.data.runId,
-        agentId: 'planner',
+        agentId: 'planning',
         runtimeId: 'codex',
         phase: 'tool',
         summary: '正在执行工具或命令。',
@@ -1500,7 +1500,7 @@ describe('task-planning', () => {
     const run = createTaskAgentRun({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
     });
     expect(run.success).toBe(true);
@@ -1510,7 +1510,7 @@ describe('task-planning', () => {
       runId: run.data.runId,
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       source: 'agent',
       kind: 'output',
@@ -1543,7 +1543,7 @@ describe('task-planning', () => {
     const result = recordTaskAgentResult({
       taskId,
       threadId: snapshot.data.thread.threadId,
-      agentId: 'planner',
+      agentId: 'planning',
       runtimeId: 'codex',
       runId: 'run-1',
       body: '{"action":"plan_revision","body":"Plan"}',

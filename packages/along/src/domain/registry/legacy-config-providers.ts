@@ -115,17 +115,25 @@ function migrateRegistryArrayRuntimes(items: unknown): RuntimeConfig[] {
     .filter((runtime) => runtime.id);
 }
 
+export const LEGACY_AGENT_ID_MAP: Record<string, string> = {
+  planner: 'planning',
+  implementer: 'exec',
+};
+
 function migrateRegistryArrayAgents(items: unknown): AgentConfig[] {
   if (!Array.isArray(items)) return [];
   return items
     .filter(isRecord)
-    .map((agent) => ({
-      id: getString(agent.id) || '',
-      runtimeId: getString(agent.runtimeId) || '',
-      name: getString(agent.name),
-      modelId: getString(agent.modelId),
-      personalityVersion: getString(agent.personalityVersion),
-    }))
+    .map((agent) => {
+      const rawId = getString(agent.id) || '';
+      return {
+        id: LEGACY_AGENT_ID_MAP[rawId] || rawId,
+        runtimeId: getString(agent.runtimeId) || '',
+        name: getString(agent.name),
+        modelId: getString(agent.modelId),
+        personalityVersion: getString(agent.personalityVersion),
+      };
+    })
     .filter((agent) => agent.id && agent.runtimeId);
 }
 

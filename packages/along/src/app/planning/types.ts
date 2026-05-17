@@ -150,6 +150,14 @@ export const TASK_AGENT_STAGE = {
 export type TaskAgentStage =
   (typeof TASK_AGENT_STAGE)[keyof typeof TASK_AGENT_STAGE];
 
+export const TASK_AGENT_ID = {
+  PLANNING: 'planning',
+  EXEC: 'exec',
+  DELIVERY: 'delivery',
+} as const;
+
+export type TaskAgentId = (typeof TASK_AGENT_ID)[keyof typeof TASK_AGENT_ID];
+
 export type TaskAgentStageStatus = 'idle' | AgentRunStatus;
 
 export type TaskAgentSessionEventSource =

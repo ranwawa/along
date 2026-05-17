@@ -40,7 +40,7 @@ function createRegistry(): RegistryConfig {
     ],
     agents: [
       {
-        id: 'planner',
+        id: 'planning',
         runtimeId: 'codex',
         modelId: 'model-agent',
         personalityVersion: 'v1',
@@ -71,7 +71,7 @@ describe('ai-registry/resolver', () => {
   it('解析 Agent runtime，使用 task override > agent > runtime 的模型优先级', () => {
     const result = resolveAgentRuntimeConfig({
       registry: createRegistry(),
-      agentId: 'planner',
+      agentId: 'planning',
       modelId: 'model-override',
     });
 
@@ -86,7 +86,7 @@ describe('ai-registry/resolver', () => {
   it('解析 Agent token，只使用最终模型配置', () => {
     const result = resolveAgentRuntimeConfig({
       registry: createRegistry(),
-      agentId: 'planner',
+      agentId: 'planning',
     });
 
     expect(result.success).toBe(true);

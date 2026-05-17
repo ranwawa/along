@@ -11,12 +11,17 @@ import {
 } from './mutations-workflow';
 import { readTaskPlanningSnapshot } from './read';
 import type { TaskPlanningSnapshot } from './records';
-import { AGENT_RUN_STATUS, LIFECYCLE, TASK_AGENT_STAGE } from './types';
+import {
+  AGENT_RUN_STATUS,
+  LIFECYCLE,
+  TASK_AGENT_ID,
+  TASK_AGENT_STAGE,
+} from './types';
 
 const STAGE_DEFINITIONS: Record<string, { agentId: string; label: string }> = {
-  planning: { agentId: 'planner', label: '计划阶段' },
-  exec: { agentId: 'implementer', label: '实现阶段' },
-  delivery: { agentId: 'delivery', label: '交付阶段' },
+  planning: { agentId: TASK_AGENT_ID.PLANNING, label: '计划阶段' },
+  exec: { agentId: TASK_AGENT_ID.EXEC, label: '实现阶段' },
+  delivery: { agentId: TASK_AGENT_ID.DELIVERY, label: '交付阶段' },
 };
 
 function failManualStageRun(runId: string, error: string): Result<never> {

@@ -12,6 +12,7 @@ import type {
 import {
   AGENT_RUN_STATUS,
   mapRun,
+  TASK_AGENT_ID,
   TASK_AGENT_PROGRESS_PHASE,
   type TaskAgentRunRecord,
   type TaskAgentRunRow,
@@ -183,7 +184,10 @@ function recoverSingleRun(
   });
   if (!finishRes.success) return finishRes;
 
-  if (row.agent_id === 'implementer' || row.agent_id === 'delivery') {
+  if (
+    row.agent_id === TASK_AGENT_ID.EXEC ||
+    row.agent_id === TASK_AGENT_ID.DELIVERY
+  ) {
     const resetRes = transitionTaskWorkflow({
       taskId: String(row.task_id),
       event: { type: 'recovery.interrupted' },

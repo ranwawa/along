@@ -36,7 +36,7 @@ export function hasDeliveryResult(
 
 export function isTaskDelivered(task: TaskItemRecord): boolean {
   return (
-    task.lifecycle === LIFECYCLE.ACTIVE &&
+    task.lifecycle === LIFECYCLE.WAITING &&
     task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
     hasDeliveryResult(task)
   );
@@ -44,9 +44,8 @@ export function isTaskDelivered(task: TaskItemRecord): boolean {
 
 export function isTaskImplemented(task: TaskItemRecord): boolean {
   return (
-    task.lifecycle === LIFECYCLE.ACTIVE &&
-    task.currentWorkflowKind === WORKFLOW_KIND.EXEC &&
-    !task.prUrl
+    task.lifecycle === LIFECYCLE.WAITING &&
+    task.currentWorkflowKind === WORKFLOW_KIND.EXEC
   );
 }
 

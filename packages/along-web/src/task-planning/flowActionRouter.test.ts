@@ -54,14 +54,14 @@ function makeSnapshot(stage: TaskAgentStage): TaskPlanningSnapshot {
     agentStages: [
       {
         stage,
-        agentId: stage === 'exec' ? 'implementer' : stage,
+        agentId: stage,
         label: stage,
         status: 'failed',
         latestRun: {
           runId: 'run-1',
           taskId: 'task-1',
           threadId: 'thread-1',
-          agentId: stage === 'exec' ? 'implementer' : stage,
+          agentId: stage,
           runtimeId: stage === 'delivery' ? 'system' : 'codex',
           status: 'failed',
           inputArtifactIds: [],

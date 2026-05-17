@@ -206,9 +206,33 @@ function execBestEffort(db: Database, statements: string[]) {
   }
 }
 
+const AGENT_ID_RENAMES: Array<{ table: string; column: string }> = [
+  { table: 'task_agent_runs', column: 'agent_id' },
+  { table: 'task_agent_bindings', column: 'agent_id' },
+  { table: 'task_agent_progress_events', column: 'agent_id' },
+  { table: 'task_agent_session_events', column: 'agent_id' },
+];
+
+const AGENT_ID_MAP: Record<string, string> = {
+  planner: 'planning',
+  implementer: 'exec',
+};
+
+function migrateAgentIds(db: Database) {
+  for (const { table, column } of AGENT_ID_RENAMES) {
+    for (const [oldId, newId] of Object.entries(AGENT_ID_MAP)) {
+      db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(
+        newId,
+        oldId,
+      );
+    }
+  }
+}
+
 export function initSchema(db: Database) {
   execRequired(db, TABLES);
   migrateTaskAgentRuntimeColumns(db);
+  migrateAgentIds(db);
   execBestEffort(db, INDEXES);
   execBestEffort(db, COLUMN_MIGRATIONS);
 }

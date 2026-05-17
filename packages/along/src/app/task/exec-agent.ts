@@ -5,6 +5,7 @@ import {
   LIFECYCLE,
   PLAN_STATUS,
   readTaskPlanningSnapshot,
+  TASK_AGENT_ID,
   type TaskPlanningSnapshot,
   type TaskPlanRevisionRecord,
   transitionTaskWorkflow,
@@ -267,7 +268,7 @@ export async function runTaskExecAgent(
   const context = readApprovedExecContext(input.taskId);
   if (!context.success) return context;
 
-  const agentId = input.agentId || 'implementer';
+  const agentId = input.agentId || TASK_AGENT_ID.EXEC;
   const stepsResult = await runInitialExecStepsIfNeeded(
     input,
     context.data,

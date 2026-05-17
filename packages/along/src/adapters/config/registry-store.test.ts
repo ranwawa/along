@@ -31,7 +31,11 @@ function createRegistry(): RegistryConfig {
       { id: 'model', providerId: 'openai', model: 'gpt-5.2', token: 'secret' },
     ],
     runtimes: [{ id: 'codex', kind: 'codex', modelId: 'model' }],
-    agents: [{ id: 'planner', runtimeId: 'codex' }],
+    agents: [
+      { id: 'planning', runtimeId: 'codex' },
+      { id: 'exec', runtimeId: 'codex' },
+      { id: 'delivery', runtimeId: 'codex' },
+    ],
     profiles: [{ id: 'title', modelId: 'model', systemPrompt: 'title' }],
   };
 }
@@ -58,7 +62,7 @@ describe('ai-registry-store', () => {
     const result = readRegistryConfig();
 
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.agents[0]?.id).toBe('planner');
+    if (result.success) expect(result.data.agents[0]?.id).toBe('planning');
   });
 
   it('读取旧版 registry 配置时迁移为数组结构', () => {
@@ -67,6 +71,8 @@ describe('ai-registry-store', () => {
       JSON.stringify({
         taskAgents: {
           planner: { editor: 'codex', model: 'gpt-5.5' },
+          implementer: { editor: 'codex', model: 'gpt-5.5' },
+          delivery: { editor: 'codex', model: 'gpt-5.5' },
         },
         providers: {
           deepseek: {
@@ -84,7 +90,7 @@ describe('ai-registry-store', () => {
     if (result.success) {
       expect(result.data.providers[0]?.id).toBe('deepseek');
       expect(result.data.agents[0]).toEqual({
-        id: 'planner',
+        id: 'planning',
         runtimeId: 'codex',
         modelId: 'gpt-5.5',
       });

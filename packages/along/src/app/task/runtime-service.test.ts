@@ -27,7 +27,7 @@ function createRegistry(): RegistryConfig {
       },
     ],
     runtimes: [{ id: 'codex', kind: 'codex', modelId: 'model' }],
-    agents: [{ id: 'planner', runtimeId: 'codex' }],
+    agents: [{ id: 'planning', runtimeId: 'codex' }],
     profiles: [],
   };
 }
@@ -41,7 +41,7 @@ describe('runtime-service', () => {
           runId: 'run-1',
           taskId: 'task-1',
           threadId: 'thread-1',
-          agentId: 'planner',
+          agentId: 'planning',
           runtimeId: 'codex',
           status: 'succeeded',
           inputArtifactIds: [],
@@ -58,7 +58,7 @@ describe('runtime-service', () => {
       {
         taskId: 'task-1',
         threadId: 'thread-1',
-        agentId: 'planner',
+        agentId: 'planning',
         prompt: 'hello',
         cwd: '/tmp/project',
       },
@@ -71,7 +71,7 @@ describe('runtime-service', () => {
     expect(result.success).toBe(true);
     expect(runCodexAgentTurn).toHaveBeenCalledWith(
       expect.objectContaining({
-        agentId: 'planner',
+        agentId: 'planning',
         apiKey: 'secret',
         baseUrl: 'https://api.openai.com/v1',
         model: 'gpt-5.2',
